@@ -1,0 +1,372 @@
+name: TV Cast APK derle
+
+# Bu tek dosya, Android TV uygulamasinin tum projesini kendisi olusturur ve APK derler.
+# Depoda sadece bu dosya ve tvcast.html (veya index.html) bulunmasi yeterlidir.
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # Bos birakirsaniz uygulama icindeki kopyayi kullanir.
+  # Internetteki en guncel surumu yuklemesini isterseniz tirnaklarin arasina adresi yazin,
+  # ornek: "https://kullanici.github.io/depo/"
+  START_URL: ""
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Proje dosyalarini olustur
+        run: |
+          mkdir -p app/src/main/assets app/src/main/res/values app/src/main/res/drawable-xhdpi app/src/main/res/mipmap-xxxhdpi
+          cat > settings.gradle <<'TVCAST_EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "TVCast"
+          include ':app'
+          TVCAST_EOF
+          cat > build.gradle <<'TVCAST_EOF'
+          plugins {
+              id 'com.android.application' version '8.5.2' apply false
+          }
+          TVCAST_EOF
+          cat > gradle.properties <<'TVCAST_EOF'
+          org.gradle.jvmargs=-Xmx2g
+          android.useAndroidX=false
+          android.nonTransitiveRClass=true
+          TVCAST_EOF
+          mkdir -p app
+          cat > app/build.gradle <<'TVCAST_EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.tvcast.player'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "com.tvcast.player"
+                  minSdk 21
+                  targetSdk 34
+                  versionCode (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
+                  versionName "1.0"
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_1_8
+                  targetCompatibility JavaVersion.VERSION_1_8
+              }
+          }
+          TVCAST_EOF
+          mkdir -p app/src/main
+          cat > app/src/main/AndroidManifest.xml <<'TVCAST_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+              <uses-feature android:name="android.software.leanback" android:required="false" />
+              <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+              <application
+                  android:allowBackup="false"
+                  android:banner="@drawable/banner"
+                  android:icon="@mipmap/ic_launcher"
+                  android:label="@string/app_name"
+                  android:hardwareAccelerated="true"
+                  android:usesCleartextTraffic="true"
+                  android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation|uiMode|screenLayout|smallestScreenSize"
+                      android:launchMode="singleTask">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                          <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          TVCAST_EOF
+          mkdir -p app/src/main/java/com/tvcast/player
+          cat > app/src/main/java/com/tvcast/player/MainActivity.java <<'TVCAST_EOF'
+          package com.tvcast.player;
+
+          import android.app.Activity;
+          import android.graphics.Bitmap;
+          import android.os.Bundle;
+          import android.view.View;
+          import android.view.ViewGroup;
+          import android.view.WindowManager;
+          import android.webkit.CookieManager;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebResourceError;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import android.widget.FrameLayout;
+          import android.widget.Toast;
+
+          import java.io.ByteArrayOutputStream;
+          import java.io.InputStream;
+
+          public class MainActivity extends Activity {
+
+              private static final String BASE_URL = "https://tvcast.app/";
+              private WebView web;
+              private FrameLayout root;
+              private View customView;
+              private WebChromeClient.CustomViewCallback customCb;
+              private long lastBack = 0;
+              private boolean fellBack = false;
+
+              @Override
+              protected void onCreate(Bundle b) {
+                  super.onCreate(b);
+                  getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                  root = new FrameLayout(this);
+                  root.setBackgroundColor(0xFF000000);
+                  web = new WebView(this);
+                  root.addView(web, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                  setContentView(root);
+                  setupWebView();
+                  immersive();
+                  load();
+              }
+
+              private void setupWebView() {
+                  WebSettings s = web.getSettings();
+                  s.setJavaScriptEnabled(true);
+                  s.setDomStorageEnabled(true);
+                  s.setDatabaseEnabled(true);
+                  s.setMediaPlaybackRequiresUserGesture(false);
+                  s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+                  s.setLoadWithOverviewMode(true);
+                  s.setUseWideViewPort(true);
+                  s.setSupportMultipleWindows(false);
+                  CookieManager.getInstance().setAcceptCookie(true);
+                  CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
+
+                  web.setBackgroundColor(0xFF000000);
+                  web.setFocusable(true);
+                  web.setFocusableInTouchMode(true);
+                  web.requestFocus();
+
+                  web.setWebViewClient(new WebViewClient() {
+                      @Override
+                      public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) {
+                          if (r.isForMainFrame() && !fellBack) {
+                              fellBack = true;
+                              loadBundled();
+                          }
+                      }
+                  });
+
+                  web.setWebChromeClient(new WebChromeClient() {
+                      @Override
+                      public void onShowCustomView(View view, CustomViewCallback cb) {
+                          if (customView != null) { cb.onCustomViewHidden(); return; }
+                          customView = view;
+                          customCb = cb;
+                          root.addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                          web.setVisibility(View.GONE);
+                          immersive();
+                      }
+
+                      @Override
+                      public void onHideCustomView() {
+                          hideCustom();
+                      }
+
+                      @Override
+                      public Bitmap getDefaultVideoPoster() {
+                          return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888);
+                      }
+                  });
+              }
+
+              private void hideCustom() {
+                  if (customView == null) return;
+                  root.removeView(customView);
+                  customView = null;
+                  web.setVisibility(View.VISIBLE);
+                  if (customCb != null) { try { customCb.onCustomViewHidden(); } catch (Exception ignored) {} customCb = null; }
+                  web.requestFocus();
+                  immersive();
+              }
+
+              private void load() {
+                  String url = getString(R.string.start_url).trim();
+                  if (url.length() > 0) {
+                      web.loadUrl(url + (url.contains("?") ? "&" : "?") + "tv=1");
+                  } else {
+                      loadBundled();
+                  }
+              }
+
+              private void loadBundled() {
+                  try {
+                      InputStream in = getAssets().open("tvcast.html");
+                      ByteArrayOutputStream out = new ByteArrayOutputStream();
+                      byte[] buf = new byte[16384];
+                      int n;
+                      while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                      in.close();
+                      String html = out.toString("UTF-8");
+                      String inject = "<script>try{localStorage.setItem('tv_tv_mode','1')}catch(e){}</script>";
+                      int i = html.indexOf("<head>");
+                      html = (i >= 0) ? html.substring(0, i + 6) + inject + html.substring(i + 6) : inject + html;
+                      web.loadDataWithBaseURL(BASE_URL, html, "text/html", "UTF-8", null);
+                  } catch (Exception e) {
+                      Toast.makeText(this, "tvcast.html yüklenemedi", Toast.LENGTH_LONG).show();
+                  }
+              }
+
+              private void immersive() {
+                  getWindow().getDecorView().setSystemUiVisibility(
+                          View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                                  | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                                  | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                                  | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                                  | View.SYSTEM_UI_FLAG_FULLSCREEN
+                                  | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+              }
+
+              @Override
+              public void onWindowFocusChanged(boolean hasFocus) {
+                  super.onWindowFocusChanged(hasFocus);
+                  if (hasFocus) immersive();
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (customView != null) { hideCustom(); return; }
+                  String js = "(function(){var l=document.getElementById('leftSidebar'),r=document.getElementById('rightSidebar');"
+                          + "if((l&&l.classList.contains('open'))||(r&&r.classList.contains('open'))){closeAllDrawers();return 1}return 0})()";
+                  web.evaluateJavascript(js, value -> {
+                      if ("1".equals(value)) return;
+                      long now = System.currentTimeMillis();
+                      if (now - lastBack < 2500) {
+                          finish();
+                      } else {
+                          lastBack = now;
+                          Toast.makeText(MainActivity.this, "Çıkmak için tekrar Geri'ye basın", Toast.LENGTH_SHORT).show();
+                      }
+                  });
+              }
+
+              @Override
+              protected void onPause() {
+                  super.onPause();
+                  /* Ses arka planda kesilmesin diye web.onPause() çağrılmıyor */
+              }
+
+              @Override
+              protected void onDestroy() {
+                  if (web != null) { web.loadUrl("about:blank"); web.destroy(); }
+                  super.onDestroy();
+              }
+          }
+          TVCAST_EOF
+          mkdir -p app/src/main/res/values
+          cat > app/src/main/res/values/strings.xml <<'TVCAST_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">TV Cast</string>
+              <string name="start_url">__START_URL__</string>
+          </resources>
+          TVCAST_EOF
+          sed -i "s|__START_URL__|$START_URL|" app/src/main/res/values/strings.xml
+          cat > make_icons.py <<'TVCAST_EOF'
+          from PIL import Image, ImageDraw, ImageFont
+          import glob
+          P='app/src/main/res/'
+          def font(sz):
+              for f in glob.glob('/usr/share/fonts/**/*Bold*.ttf',recursive=True)+glob.glob('/usr/share/fonts/**/*.ttf',recursive=True):
+                  try: return ImageFont.truetype(f,sz)
+                  except Exception: pass
+              return ImageFont.load_default()
+          def grad(w,h):
+              im=Image.new('RGB',(w,h)); px=im.load()
+              for y in range(h):
+                  for x in range(w):
+                      t=(x/w*0.6+y/h*0.4)
+                      px[x,y]=(int(30+70*t),int(20+40*t),int(70+110*t))
+              return im
+          b=grad(640,360); d=ImageDraw.Draw(b)
+          d.text((320,150),'TV Cast',font=font(150),fill='white',anchor='mm')
+          d.rounded_rectangle((250,260,390,272),6,fill=(0,206,201))
+          b.resize((320,180),Image.LANCZOS).save(P+'drawable-xhdpi/banner.png')
+          i=grad(192,192); d=ImageDraw.Draw(i)
+          d.rounded_rectangle((34,52,158,128),12,outline='white',width=8)
+          d.line((78,148,114,148),fill='white',width=8); d.line((96,128,96,148),fill='white',width=8)
+          d.polygon([(86,76),(86,104),(112,90)],fill=(0,206,201))
+          i.save(P+'mipmap-xxxhdpi/ic_launcher.png')
+          TVCAST_EOF
+          pip install pillow -q
+          python3 make_icons.py
+          if [ -f tvcast.html ]; then cp tvcast.html app/src/main/assets/tvcast.html
+          elif [ -f index.html ]; then cp index.html app/src/main/assets/tvcast.html
+          else echo "HATA: depoda tvcast.html veya index.html bulunamadi"; exit 1; fi
+
+      - name: Sabit imza anahtari (guncellemelerin ustune kurulabilmesi icin)
+        run: |
+          mkdir -p ~/.android
+          echo "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" | base64 -d > ~/.android/debug.keystore
+
+      - name: APK derle
+        run: gradle assembleDebug --no-daemon
+
+      - name: APK dosyasini hazirla
+        run: cp app/build/outputs/apk/debug/app-debug.apk tvcast.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tvcast-apk
+          path: tvcast.apk
+
+      - name: Herkese acik indirme baglantisi olustur
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete latest --cleanup-tag -y || true
+          gh release create latest tvcast.apk --title "TV Cast APK (son derleme)" --notes "Mi Stick icin APK."
