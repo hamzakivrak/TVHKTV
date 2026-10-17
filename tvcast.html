@@ -260,6 +260,15 @@
         .tv-remote button { width: 104px; height: 68px; border-radius: 16px; border: 2px solid rgba(255,255,255,.2); background: rgba(12,12,18,.9); color: #fff; font-size: 1.05rem; font-weight: 600; cursor: pointer; font-family: inherit; }
         .tv-remote button:hover, .tv-remote button:focus { border-color: var(--accent2); background: rgba(0,206,201,.22); outline: none; }
         .tv-remote .sep { height: 6px; }
+
+        /* v8: menü gezintisi */
+        #tvPicker { position: fixed; inset: 0; z-index: 100000; background: rgba(0,0,0,.78); display: flex; align-items: center; justify-content: center; }
+        .tvp-card { width: min(640px, 86vw); max-height: 80vh; overflow: auto; background: #1a1c23; border: 1px solid rgba(255,255,255,.15); border-radius: 18px; padding: 10px; }
+        .tvp-group { padding: 10px 16px 4px; color: #8e8e9a; font-size: .95rem; }
+        .tvp-item { padding: 16px 18px; font-size: 1.3rem; border-radius: 12px; margin: 3px 0; color: #fff; cursor: pointer; }
+        .tvp-item.sel { background: rgba(0,206,201,.25); outline: 3px solid var(--accent2); }
+        .tv-mode .drawer button:focus, .tv-mode .drawer select:focus, .tv-mode .drawer input:focus, .tv-mode .drawer textarea:focus, .tv-mode .drawer [tabindex]:focus, .tv-mode .drawer .module-header:focus { outline: 3px solid var(--accent2); outline-offset: 2px; }
+        .tv-mode .drawer select, .tv-mode .drawer .btn { min-height: 50px; font-size: 1.05rem; }
     </style>
 
     <script>
@@ -2122,41 +2131,120 @@ function startTv() {
     go(); showControls();
 }
 
+/* v8: menü gezintisi */
 const TV_KC = { 19: 'ArrowUp', 20: 'ArrowDown', 21: 'ArrowLeft', 22: 'ArrowRight', 23: 'Enter', 66: 'Enter', 4: 'Escape', 82: 'ContextMenu', 166: 'ChannelUp', 167: 'ChannelDown', 38: 'ArrowUp', 40: 'ArrowDown', 37: 'ArrowLeft', 39: 'ArrowRight', 13: 'Enter', 27: 'Escape', 8: 'Backspace', 85: 'MediaPlayPause', 179: 'MediaPlayPause', 87: 'MediaTrackNext', 88: 'MediaTrackPrevious' };
+const TV_FOC_SEL = 'button, select, input:not([type=hidden]), textarea, a[href], [onclick], .channel-item';
+let tvPick = null;
+
+function tvVisible(el) { return el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden'; }
+function tvFocusables(drawer) {
+    const seen = new Set(), out = [];
+    drawer.querySelectorAll(TV_FOC_SEL).forEach(el => {
+        if (seen.has(el) || el.disabled) return;
+        const ci = el.closest('.channel-item'); if (ci && ci !== el) return;
+        if (!tvVisible(el)) return;
+        seen.add(el); out.push(el);
+    });
+    return out;
+}
+function tvFocus(el, center) {
+    if (!el) return;
+    if (!el.matches('button, select, input, textarea, a[href]')) el.setAttribute('tabindex', '-1');
+    try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
+    try { el.scrollIntoView({ block: center ? 'center' : 'nearest' }); } catch (e) {}
+}
+function tvDrawerMove(drawer, dir) {
+    const list = tvFocusables(drawer); if (!list.length) return;
+    const ae = document.activeElement; let i = list.indexOf(ae); if (i < 0) i = list.findIndex(el => el.contains(ae));
+    if (i < 0) i = dir > 0 ? 0 : list.length - 1; else i = Math.max(0, Math.min(list.length - 1, i + dir));
+    tvFocus(list[i], list[i].classList.contains('channel-item'));
+}
+
+/* TV'ye uygun seçici (liste kutuları için) */
+function tvOpenPicker(sel) {
+    tvClosePicker();
+    const box = document.createElement('div'); box.id = 'tvPicker';
+    const card = document.createElement('div'); card.className = 'tvp-card';
+    const items = [];
+    const addOpt = (o) => {
+        if (o.disabled) return;
+        const d = document.createElement('div'); d.className = 'tvp-item'; d.textContent = o.textContent; d.dataset.v = o.value;
+        d.onclick = () => tvPickChoose(items.indexOf(d)); card.appendChild(d); items.push(d);
+    };
+    Array.from(sel.children).forEach(ch => {
+        if (ch.tagName === 'OPTGROUP') {
+            if (!ch.children.length) return;
+            const h = document.createElement('div'); h.className = 'tvp-group'; h.textContent = ch.label; card.appendChild(h);
+            Array.from(ch.children).forEach(addOpt);
+        } else if (ch.tagName === 'OPTION') addOpt(ch);
+    });
+    if (!items.length) return;
+    box.appendChild(card); document.body.appendChild(box);
+    let idx = items.findIndex(d => d.dataset.v === sel.value); if (idx < 0) idx = 0;
+    tvPick = { sel, box, items, idx }; tvPickPaint();
+}
+function tvPickPaint() { tvPick.items.forEach((d, i) => d.classList.toggle('sel', i === tvPick.idx)); try { tvPick.items[tvPick.idx].scrollIntoView({ block: 'center' }); } catch (e) {} }
+function tvClosePicker() { if (!tvPick) return; tvPick.box.remove(); tvPick = null; }
+function tvPickChoose(i) {
+    const p = tvPick; if (!p || i < 0) return; const v = p.items[i].dataset.v; tvClosePicker();
+    if (p.sel.value !== v) { p.sel.value = v; p.sel.dispatchEvent(new Event('change', { bubbles: true })); }
+    tvFocus(p.sel);
+}
+function tvPickerKey(k) {
+    if (k === 'ArrowUp') { tvPick.idx = Math.max(0, tvPick.idx - 1); tvPickPaint(); }
+    else if (k === 'ArrowDown') { tvPick.idx = Math.min(tvPick.items.length - 1, tvPick.idx + 1); tvPickPaint(); }
+    else if (k === 'Enter' || k === ' ' || k === 'Select') tvPickChoose(tvPick.idx);
+    else if (['Escape', 'BrowserBack', 'GoBack', 'Backspace', 'ContextMenu', 'Menu'].includes(k)) tvClosePicker();
+}
+(function () {
+    const _close = closeAllDrawers; closeAllDrawers = function () { if (tvPick) { tvClosePicker(); return; } const r = _close.apply(this, arguments); if (tvMode) { try { const ae = document.activeElement; if (ae && ae !== document.body && ae.blur) ae.blur(); } catch (e) {} } return r; };
+    const _openL = openLeftSidebar; openLeftSidebar = function () { _openL.apply(this, arguments); if (tvMode) setTimeout(() => tvFocus(document.getElementById('countrySelect')), 280); };
+})();
+
 window.addEventListener('keydown', function (e) {
     const kc = e.keyCode || e.which || 0;
     if (!tvMode) {
         /* TV kumandasına özgü tuş kodu gelirse TV modunu kendiliğinden aç */
         if (/Android/i.test(navigator.userAgent || '') && [21, 22, 23, 166, 167].includes(kc)) { applyTvMode(true); tvStarted = true; } else return;
     }
-    const t = e.target; if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
     let k = e.key; if (!k || k === 'Unidentified' || k === 'Process' || k === 'Dead') k = TV_KC[kc] || k;
     const stop = () => { e.preventDefault(); e.stopImmediatePropagation(); };
+    if (tvPick) { stop(); tvPickerKey(k); return; }
+    const t = e.target, tag = t && t.tagName;
     const startEl = document.getElementById('tvStart');
     if (startEl.classList.contains('show')) { stop(); startTv(); return; }
-    const leftOpen = document.getElementById('leftSidebar').classList.contains('open'), rightOpen = document.getElementById('rightSidebar').classList.contains('open');
+    const L = document.getElementById('leftSidebar'), Rr = document.getElementById('rightSidebar');
+    const leftOpen = L.classList.contains('open'), rightOpen = Rr.classList.contains('open');
+    const drawer = leftOpen ? L : (rightOpen ? Rr : null);
+    const isText = tag === 'TEXTAREA' || (tag === 'INPUT' && !/^(checkbox|radio|button|submit|range)$/.test(t.type));
+
+    if (drawer) {
+        if (k === 'Escape' || k === 'BrowserBack' || k === 'GoBack' || (k === 'Backspace' && !isText)) { stop(); closeAllDrawers(); return; }
+        if (k === 'ContextMenu' || k === 'Menu') { stop(); if (leftOpen) closeAllDrawers(); else { closeAllDrawers(); openLeftSidebar(); } return; }
+        if (isText) { if (k === 'ArrowUp' || k === 'ArrowDown') { stop(); tvDrawerMove(drawer, k === 'ArrowUp' ? -1 : 1); } return; }
+        const cur = document.activeElement; const onItem = !!(cur && cur.classList && cur.classList.contains('channel-item'));
+        if (k === 'ArrowUp' || k === 'ArrowDown') { stop(); tvDrawerMove(drawer, k === 'ArrowUp' ? -1 : 1); return; }
+        if (k === 'ArrowLeft') { stop(); if (onItem && rightOpen) { closeAllDrawers(); openLeftSidebar(); } else tvDrawerMove(drawer, -1); return; }
+        if (k === 'ArrowRight') { stop(); if (!onItem) tvDrawerMove(drawer, 1); return; }
+        if (k === 'Enter' || k === ' ' || k === 'Select') {
+            if (!cur || !drawer.contains(cur)) { stop(); tvDrawerMove(drawer, 1); return; }
+            stop();
+            if (tag === 'SELECT') tvOpenPicker(cur); else cur.click();
+            return;
+        }
+        return;
+    }
+
+    if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(tag)) { if (tvVisible(t)) return; try { t.blur(); } catch (e) {} }
     const onBtn = !!(t && t.closest && t.closest('button, .btn, .btn-icon'));
-    if (k === 'Escape' || k === 'BrowserBack' || k === 'GoBack' || k === 'Backspace') { if (leftOpen || rightOpen) { stop(); closeAllDrawers(); } return; }
-    if (k === 'ContextMenu' || k === 'Menu') { stop(); if (leftOpen) closeAllDrawers(); else openLeftSidebar(); return; }
-    if (leftOpen) return;
+    if (k === 'ContextMenu' || k === 'Menu') { stop(); openLeftSidebar(); return; }
     if (k === 'MediaPlayPause' || k === 'MediaPlay' || k === 'MediaPause') { stop(); togglePlayPause(); showControls(); return; }
     if (k === 'MediaTrackNext' || k === 'ChannelUp') { stop(); if (!e.repeat) nextCh(); return; }
     if (k === 'MediaTrackPrevious' || k === 'ChannelDown') { stop(); if (!e.repeat) prevCh(); return; }
-    if (k === 'ArrowLeft') { stop(); if (rightOpen) { closeAllDrawers(); openLeftSidebar(); } else tvVolume(-0.1); return; }
-    if (k === 'ArrowRight') { stop(); if (!rightOpen) tvVolume(0.1); return; }
-    if (k === 'ArrowUp' || k === 'ArrowDown') {
-        if (rightOpen && onBtn) return;
-        stop();
-        if (rightOpen) { tvListMove(k === 'ArrowUp' ? -1 : 1); return; }
-        if (!e.repeat) { if (k === 'ArrowUp') nextCh(); else prevCh(); showControls(); }
-        return;
-    }
-    if (k === 'Enter' || k === ' ' || k === 'Select') {
-        if (onBtn) return;
-        stop();
-        if (rightOpen) { const it = document.activeElement && document.activeElement.closest ? document.activeElement.closest('.channel-item') : null; if (it) it.click(); return; }
-        tvOpenList(); return;
-    }
+    if (k === 'ArrowLeft') { stop(); tvVolume(-0.1); return; }
+    if (k === 'ArrowRight') { stop(); tvVolume(0.1); return; }
+    if (k === 'ArrowUp' || k === 'ArrowDown') { if (onBtn) return; stop(); if (!e.repeat) { if (k === 'ArrowUp') nextCh(); else prevCh(); showControls(); } return; }
+    if (k === 'Enter' || k === ' ' || k === 'Select') { if (onBtn) return; stop(); tvOpenList(); return; }
 }, true);
 
 window.addEventListener('popstate', () => { if (tvMode) closeAllDrawers(); });
