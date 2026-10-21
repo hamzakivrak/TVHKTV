@@ -310,6 +310,7 @@
         setTimeout(() => { 
             const activeItem = document.getElementById(`c-${curIdx}`) || document.querySelector('.channel-item'); 
             if(activeItem) activeItem.focus(); 
+            else document.getElementById('filterInput').focus();
         }, 150); 
     }
 
@@ -382,7 +383,7 @@
 
     function injectExtraChannels() {
         allChannels = allChannels.filter(c => !c.id.startsWith('ch_ex_'));
-        const extras = extraChannelsDict[currentListContext] || [];
+        const extras = extraChannelsDict[currentListContext] || extraChannelsDict['tr'] || [];
         extras.forEach((ex, idx) => { const copy = {...ex}; copy.originalIndex = -1000 - idx; copy.broken = false; allChannels.unshift(copy); });
     }
 
@@ -670,7 +671,8 @@
         if (startEl && !startEl.classList.contains('hide')) {
             startEl.classList.add('hide');
             try { enterFullscreen(); } catch (e) {}
-            if (curIdx === -1 && allChannels.length) play(0, 1);
+            // Eğer liste boş değilse ilk kanalı oynat, boşsa hata verme
+            if (curIdx === -1 && allChannels.length > 0) play(0, 1);
             showControls();
             setTimeout(() => {
                 const pw = document.getElementById('playerWrapper');
@@ -733,6 +735,7 @@
 
     window.addEventListener('DOMContentLoaded', () => {
         updatePresetDropdown();
+        injectExtraChannels();
         changeCountry();
         setTimeout(() => {
             const pw = document.getElementById('playerWrapper');
