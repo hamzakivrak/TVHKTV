@@ -240,6 +240,7 @@
     let curIdx = -1;
     let hls = null;
     let controlsTimer, osdTimer;
+    let globalIdCounter = Date.now();
     let currentListContext = localStorage.getItem('tv_last_context') || 'tr';
     let favUrls = JSON.parse(localStorage.getItem('tv_favorites')) || [];
     let brokenUrls = JSON.parse(localStorage.getItem('tv_broken')) || [];
@@ -250,6 +251,12 @@
     let userYTApiKey = localStorage.getItem('tv_yt_api_key') || "";
     document.getElementById('userApiKey').value = userYTApiKey;
     document.getElementById('syncUserId').value = localStorage.getItem('tv_sync_id') || "";
+
+    if (localStorage.getItem('tv_extras') && !localStorage.getItem('tv_extras_dict')) {
+         extraChannelsDict['tr'] = JSON.parse(localStorage.getItem('tv_extras'));
+         localStorage.setItem('tv_extras_dict', JSON.stringify(extraChannelsDict));
+         localStorage.removeItem('tv_extras');
+    }
 
     function showOSD(name, subtitle = "") { 
         const osd = document.getElementById('osdTitle'); 
@@ -311,7 +318,6 @@
         document.getElementById('rightSidebar').classList.remove('open'); 
         document.getElementById('overlayBackdrop').classList.remove('show'); 
         resetControlsTimer();
-        // Çekmeceler kapandığında odak otomatik olarak ana player wrapper'a verilir (OK tuşu takılması engellenir)
         setTimeout(() => {
             const pw = document.getElementById('playerWrapper');
             if (pw) pw.focus();
@@ -361,7 +367,85 @@
         }
     }
 
-    /* BULUT SENKRONİZASYON FONKSİYONLARI */
+    /* YOUTUBE ID ÇÖZÜCÜ VE MANUEL KANAL ENJEKTÖRÜ */
+    function extractYTId(url) {
+        if (!url) return null;
+        if(url.includes('youtube.com') || url.includes('youtu.be')) {
+            try {
+                if (url.includes("youtu.be/")) return url.split("youtu.be/")[1].split("?")[0];
+                if (url.includes("/live/")) return url.split("/live/")[1].split("?")[0];
+                if (url.includes("v=")) return new URLSearchParams(url.substring(url.indexOf('?'))).get("v");
+            } catch(e) {}
+        }
+        return null;
+    }
+
+    function injectExtraChannels() {
+        allChannels = allChannels.filter(c => !c.id.startsWith('ch_ex_'));
+        const extras = extraChannelsDict[currentListContext] || [];
+        extras.forEach((ex, idx) => { const copy = {...ex}; copy.originalIndex = -1000 - idx; copy.broken = false; allChannels.unshift(copy); });
+    }
+
+    async function loadYTPlaylistFromId(listId) {
+         if (!userYTApiKey) { showOSD("API anahtarı gerekli", "Ayarlardan YouTube API Key girin"); return; }
+         showOSD("YouTube Listesi Yükleniyor..."); 
+         allChannels = [];
+         sortAndRenderList();
+
+         try {
+            let newChannels = []; 
+            let startIndex = 0;
+            let nextPageToken = '';
+            let fetchCount = 0;
+            
+            while (fetchCount < 10) {
+                let pageParam = nextPageToken ? `&pageToken=${nextPageToken}` : '';
+                const reqUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${listId}&maxResults=50${pageParam}&key=${userYTApiKey}`;
+                let res = await fetch(reqUrl); 
+                let data = await res.json();
+                if (data.error) throw new Error(data.error.message || 'API hatası');
+                
+                if (!data.items || data.items.length === 0) break;
+                
+                data.items.forEach(item => {
+                    if (!item.snippet.resourceId || !item.snippet.resourceId.videoId) return;
+                    let title = item.snippet.title; if (title === 'Private video' || title === 'Deleted video') return;
+                    let vidUrl = "https://www.youtube.com/watch?v=" + item.snippet.resourceId.videoId; let thumb = item.snippet.thumbnails?.medium?.url || '';
+                    newChannels.push({ id: 'ch_' + (globalIdCounter++), originalIndex: startIndex++, name: title, url: vidUrl, logo: thumb, broken: false, isFavorite: favUrls.includes(vidUrl) });
+                });
+
+                nextPageToken = data.nextPageToken;
+                fetchCount++;
+                if (!nextPageToken) break; 
+            }
+
+            allChannels = newChannels; 
+            injectExtraChannels(); 
+            sortAndRenderList();
+            showOSD("YouTube Liste Yüklendi", allChannels.length + " video");
+            if (allChannels.length) play(0, 1);
+         } catch(e) { showOSD("YT listesi açılamadı", e.message); }
+    }
+
+    async function addYTPlaylist() {
+        let url = document.getElementById('ytPlaylistUrl').value.trim();
+        if (!url) return;
+        if (!userYTApiKey) { alert("Önce YouTube API anahtarını kaydedin."); return; }
+        let listId = null;
+        try { if (url.includes('list=')) { listId = new URLSearchParams(url.substring(url.indexOf('?'))).get('list'); } else { listId = url; } } catch(e) {}
+        if (!listId) return;
+        try {
+            let listName = "YouTube Playlist";
+            const reqUrl = `https://www.googleapis.com/youtube/v3/playlists?part=snippet&id=${listId}&key=${userYTApiKey}`;
+            let resInfo = await fetch(reqUrl); let infoData = await resInfo.json();
+            if (infoData.items && infoData.items.length > 0) { listName = infoData.items[0].snippet.title; }
+            ytPlaylistsData.push({ id: listId, name: listName }); localStorage.setItem('tv_yt_playlists', JSON.stringify(ytPlaylistsData));
+            updatePresetDropdown(); syncAndChangeCountry('ytpl_' + listId); document.getElementById('ytPlaylistUrl').value = '';
+            showOSD("YouTube Liste Kaydedildi", listName);
+        } catch(e) { showOSD("Liste kaydedilemedi"); }
+    }
+
+    /* BULUT SENKRONİZASYON */
     function collectLocalLists() { const o = {}; personalPresets.forEach(p => { if (p && p.url && String(p.url).startsWith('local_')) o[p.url] = getLocalList(p.url); }); return o; }
     function getLocalList(id) { try { return JSON.parse(localStorage.getItem('tvl_' + id)) || []; } catch (e) { return []; } }
     
@@ -467,8 +551,20 @@
             else if (line.startsWith("http") && info.name) { newChannels.push({ id: 'ch_' + Date.now() + Math.random(), originalIndex: startIndex++, name: info.name, url: line, logo: info.logo, broken: brokenUrls.includes(line), isFavorite: favUrls.includes(line) }); info = {}; }
         }
         if (append) { allChannels = allChannels.concat(newChannels); } else { allChannels = newChannels; }
+        injectExtraChannels();
         sortAndRenderList();
         if (allChannels.length && !append) play(0, 1);
+    }
+
+    function manualLoad(append = false) { 
+        let val = document.getElementById('inputData').value.trim(); 
+        let name = document.getElementById('presetName').value.trim(); 
+        if (!val) return; 
+        if (val.startsWith('http')) {
+            if (name && !append) { if (!personalPresets.find(p => p.url === val)) { personalPresets.push({name: name, url: val}); localStorage.setItem('tv_presets', JSON.stringify(personalPresets)); updatePresetDropdown(); } }
+            syncAndChangeCountry(val);
+        } else { parseAndAdd(val, append); } 
+        document.getElementById('presetName').value = ""; 
     }
 
     function performSearch() { 
@@ -534,13 +630,15 @@
         
         if (hls) { hls.destroy(); hls = null; }
         
-        const ytId = ch.url.includes('youtube.com') || ch.url.includes('youtu.be') ? ch.url.split('v=')[1]?.split('&')[0] : null;
+        const ytId = extractYTId(ch.url);
         if (ytId) {
             video.style.display = 'none'; ytContainer.style.display = 'block';
             if (window.YT && ytPlayer) ytPlayer.loadVideoById(ytId);
         } else {
             ytContainer.style.display = 'none'; video.style.display = 'block';
-            if (Hls.isSupported()) {
+            if (urlIsRadio(ch.url)) {
+                playAudioDirect(video, ch.url, currentPlaySession);
+            } else if (Hls.isSupported()) {
                 hls = new Hls();
                 hls.loadSource(ch.url);
                 hls.attachMedia(video);
@@ -552,6 +650,13 @@
         }
         showOSD((curIdx + 1) + ". " + ch.name, "Oynatılıyor");
         resetControlsTimer();
+    }
+
+    function urlIsRadio(url) { return url.includes('#audio'); }
+    function playAudioDirect(video, url, token) {
+        video.removeAttribute('crossorigin');
+        video.src = url.split('#')[0];
+        video.play().catch(() => {});
     }
 
     function nextCh() { play((curIdx + 1) % allChannels.length, 1); }
