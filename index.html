@@ -203,7 +203,8 @@
 
             <div class="sub-module">
                 <span class="sub-module-title" style="color:#2ecc71;">YouTube API & Playlist</span>
-                <input type="password" id="userApiKey" placeholder="Google API Key" style="margin-bottom:8px;">
+                <!-- GÖNÜLLÜ OLARAK GÖRÜNÜR TEXT YAPILDI (PASSWORD DEĞİL) -->
+                <input type="text" id="userApiKey" placeholder="Google API Key" style="margin-bottom:8px;">
                 <button class="btn" style="width:100%; background:#2ecc71; font-weight:bold; margin-bottom:10px;" onclick="saveApiKey()">API Kaydet</button>
                 <input type="text" id="ytPlaylistUrl" placeholder="YouTube Playlist Linki">
                 <button class="btn" style="width:100%; background:#e84118; color:#fff;" onclick="addYTPlaylist()">Listeyi Kaydet</button>
@@ -574,7 +575,7 @@
         items.forEach(item => { const name = item.querySelector('.name').innerText.toLowerCase(); item.style.display = name.includes(term) ? 'flex' : 'none'; }); 
     }
 
-    /* 5 SIRA KARE KARE (GRID) KANALLAR VE AKILLI KENAR GEZİNTİSİ */
+    /* 5 SIRA KARE KARE (GRID) KANALLAR VE DOĞRU KENAR GEZİNTİSİ */
     function sortAndRenderList() {
         const currentId = (curIdx !== -1 && allChannels[curIdx]) ? allChannels[curIdx].id : null;
         allChannels.sort((a, b) => { if (a.broken !== b.broken) return a.broken ? 1 : -1; if (a.isFavorite !== b.isFavorite) return a.isFavorite ? -1 : 1; return a.originalIndex - b.originalIndex; });
@@ -593,15 +594,14 @@
             item.tabIndex = 0;
             item.onclick = () => { play(i, 0); closeAllDrawers(); };
             
+            /* DÜZELTME: Sadece en soldakilerde (0, 5, 10...) sola veya sağdakilerde (4, 9, 14...) sağa basıldığında ayarlara döner */
             item.onkeydown = (e) => {
                 const items = Array.from(container.querySelectorAll('.channel-item')).filter(el => el.style.display !== 'none');
                 const curPos = items.indexOf(item);
                 if (e.key === 'ArrowLeft' && curPos % 5 === 0) {
-                    e.preventDefault(); document.getElementById('filterInput').focus();
+                    e.preventDefault(); tryOpenSettings();
                 } else if (e.key === 'ArrowRight' && (curPos % 5 === 4 || curPos === items.length - 1)) {
-                    e.preventDefault(); document.getElementById('filterInput').focus();
-                } else if (e.key === 'ArrowUp' && curPos < 5) {
-                    e.preventDefault(); document.getElementById('filterInput').focus();
+                    e.preventDefault(); tryOpenSettings();
                 }
             };
             
@@ -671,7 +671,6 @@
         if (startEl && !startEl.classList.contains('hide')) {
             startEl.classList.add('hide');
             try { enterFullscreen(); } catch (e) {}
-            // Eğer liste boş değilse ilk kanalı oynat, boşsa hata verme
             if (curIdx === -1 && allChannels.length > 0) play(0, 1);
             showControls();
             setTimeout(() => {
@@ -681,9 +680,17 @@
         }
     }
 
-    /* KUMANDA TUŞ MİMARİSİ */
+    /* DÜZELTME: TV klavyesinden Backspace tuşuna basıldığında sayfa geriye gitmez, sadece metni siler */
     window.addEventListener('keydown', function (e) {
         let k = e.key;
+        const activeTag = document.activeElement ? document.activeElement.tagName : '';
+        const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag);
+
+        if (isInput && (k === 'Backspace' || e.keyCode === 8)) {
+            e.stopPropagation(); // Sayfanın/uygulamanın geri gitmesini engeller
+            return;
+        }
+
         const startEl = document.getElementById('tvStart');
         if (startEl && !startEl.classList.contains('hide')) {
             e.preventDefault(); e.stopImmediatePropagation();
@@ -698,24 +705,22 @@
 
         if (rightOpen) {
             if (['Escape', 'BrowserBack', 'GoBack', 'Backspace'].includes(k) || e.keyCode === 4 || e.keyCode === 27 || e.keyCode === 8) {
-                e.preventDefault(); e.stopImmediatePropagation();
-                closeAllDrawers();
-                return;
-            }
-            const activeEl = document.activeElement;
-            if (activeEl && activeEl.id === 'filterInput' && (k === 'ArrowDown' || e.keyCode === 40)) {
-                e.preventDefault();
-                const firstCh = document.querySelector('.channel-item');
-                if (firstCh) firstCh.focus();
+                if (!isInput) {
+                    e.preventDefault(); e.stopImmediatePropagation();
+                    closeAllDrawers();
+                    return;
+                }
             }
             return;
         }
 
         if (leftOpen) {
             if (['Escape', 'BrowserBack', 'GoBack', 'Backspace'].includes(k) || e.keyCode === 4 || e.keyCode === 27 || e.keyCode === 8) {
-                e.preventDefault(); e.stopImmediatePropagation();
-                closeAllDrawers();
-                return;
+                if (!isInput) {
+                    e.preventDefault(); e.stopImmediatePropagation();
+                    closeAllDrawers();
+                    return;
+                }
             }
             return;
         }
