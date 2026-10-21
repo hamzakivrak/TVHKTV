@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 env:
-  START_URL: "https://hamzakivrak.github.io/TVHKTV/tvcast.html"
+  START_URL: "https://hamzakivrak.github.io/TVHKTV/"
 
 jobs:
   build:
