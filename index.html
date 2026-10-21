@@ -236,11 +236,13 @@
 <script>
     const MY_CLOUD_PROXY = "https://quiet-cell-a027.hamzakivrak.workers.dev/?url=";
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const DEFAULT_LIST = "https://iptv-org.github.io/iptv/countries/tr.m3u";
     
     let allChannels = [];
     let curIdx = -1;
     let hls = null;
     let controlsTimer, osdTimer;
+    let currentPlaySession = 0;
     let globalIdCounter = Date.now();
     let currentListContext = localStorage.getItem('tv_last_context') || 'tr';
     let favUrls = JSON.parse(localStorage.getItem('tv_favorites')) || [];
@@ -254,7 +256,7 @@
     document.getElementById('syncUserId').value = localStorage.getItem('tv_sync_id') || "";
 
     if (localStorage.getItem('tv_extras') && !localStorage.getItem('tv_extras_dict')) {
-         extraChannelsDict['tr'] = JSON.parse(localStorage.getItem('tv_extras'));
+         extraChannelsDict[DEFAULT_LIST] = JSON.parse(localStorage.getItem('tv_extras'));
          localStorage.setItem('tv_extras_dict', JSON.stringify(extraChannelsDict));
          localStorage.removeItem('tv_extras');
     }
@@ -369,7 +371,26 @@
         }
     }
 
-    /* YOUTUBE ID ÇÖZÜCÜ VE MANUEL KANAL ENJEKTÖRÜ */
+    /* YOUTUBE API VE RADYO DESTEĞİ */
+    let ytPlayer = null;
+    let isYtApiReady = false;
+
+    function onYouTubeIframeAPIReady() {
+        isYtApiReady = true;
+        ytPlayer = new YT.Player('ytPlayer', {
+            height: '100%', width: '100%', videoId: '',
+            playerVars: { 'autoplay': 1, 'controls': 0, 'disablekb': 1, 'fs': 0, 'modestbranding': 1, 'rel': 0, 'playsinline': 1, 'showinfo': 0, 'enablejsapi': 1 },
+            events: { 'onStateChange': onYtPlayerStateChange, 'onError': onYtPlayerError }
+        });
+    }
+    function onYtPlayerStateChange(event) {
+        if (event.data === YT.PlayerState.PLAYING) { document.getElementById('playIcon').innerText = 'pause'; } 
+        else if (event.data === YT.PlayerState.PAUSED) { document.getElementById('playIcon').innerText = 'play_arrow'; } 
+        else if (event.data === YT.PlayerState.ENDED) { nextCh(); }
+    }
+    function onYtPlayerError(event) { nextCh(); }
+    if (window.YT && YT.Player && !ytPlayer) onYouTubeIframeAPIReady();
+
     function extractYTId(url) {
         if (!url) return null;
         if(url.includes('youtube.com') || url.includes('youtu.be')) {
@@ -384,7 +405,7 @@
 
     function injectExtraChannels() {
         allChannels = allChannels.filter(c => !c.id.startsWith('ch_ex_'));
-        const extras = extraChannelsDict[currentListContext] || extraChannelsDict['tr'] || [];
+        const extras = extraChannelsDict[currentListContext] || extraChannelsDict[DEFAULT_LIST] || [];
         extras.forEach((ex, idx) => { const copy = {...ex}; copy.originalIndex = -1000 - idx; copy.broken = false; allChannels.unshift(copy); });
     }
 
@@ -594,7 +615,6 @@
             item.tabIndex = 0;
             item.onclick = () => { play(i, 0); closeAllDrawers(); };
             
-            /* DÜZELTME: Sadece en soldakilerde (0, 5, 10...) sola veya sağdakilerde (4, 9, 14...) sağa basıldığında ayarlara döner */
             item.onkeydown = (e) => {
                 const items = Array.from(container.querySelectorAll('.channel-item')).filter(el => el.style.display !== 'none');
                 const curPos = items.indexOf(item);
@@ -615,7 +635,7 @@
 
     function play(idx, dir = 0) {
         if (idx < 0 || idx >= allChannels.length) return;
-        curIdx = idx; let ch = allChannels[curIdx]; 
+        currentPlaySession++; let mySession = currentPlaySession; curIdx = idx; let ch = allChannels[curIdx]; 
         try { localStorage.setItem('tv_last_channel', ch.url); } catch(e) {}
         
         document.querySelectorAll('.channel-item').forEach(el => el.classList.remove('active')); 
@@ -633,12 +653,21 @@
         
         const ytId = extractYTId(ch.url);
         if (ytId) {
-            video.style.display = 'none'; ytContainer.style.display = 'block';
-            if (window.YT && ytPlayer) ytPlayer.loadVideoById(ytId);
+            video.style.display = 'none'; video.pause(); video.removeAttribute('src');
+            ytContainer.style.display = 'block';
+            if (isYtApiReady && ytPlayer) {
+                ytPlayer.loadVideoById(ytId);
+            } else {
+                showOSD("YouTube Yükleniyor...", ch.name);
+                setTimeout(() => play(idx, 0), 1500);
+            }
         } else {
-            ytContainer.style.display = 'none'; video.style.display = 'block';
+            ytContainer.style.display = 'none'; 
+            if (isYtApiReady && ytPlayer && typeof ytPlayer.stopVideo === 'function') ytPlayer.stopVideo();
+            video.style.display = 'block';
+
             if (urlIsRadio(ch.url)) {
-                playAudioDirect(video, ch.url, currentPlaySession);
+                playAudioDirect(video, ch.url, mySession);
             } else if (Hls.isSupported()) {
                 hls = new Hls();
                 hls.loadSource(ch.url);
@@ -687,7 +716,7 @@
         const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag);
 
         if (isInput && (k === 'Backspace' || e.keyCode === 8)) {
-            e.stopPropagation(); // Sayfanın/uygulamanın geri gitmesini engeller
+            e.stopPropagation();
             return;
         }
 
