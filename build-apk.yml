@@ -1,8 +1,5 @@
 name: TV Cast APK derle
 
-# Bu tek dosya, Android TV uygulamasinin tum projesini kendisi olusturur ve APK derler.
-# Depoda sadece bu dosya ve tvcast.html (veya index.html) bulunmasi yeterlidir.
-
 on:
   push:
     branches: [main, master]
@@ -12,9 +9,6 @@ permissions:
   contents: write
 
 env:
-  # Bos birakirsaniz uygulama icindeki kopyayi kullanir.
-  # Internetteki en guncel surumu yuklemesini isterseniz tirnaklarin arasina adresi yazin,
-  # ornek: "https://kullanici.github.io/depo/"
   START_URL: "https://hamzakivrak.github.io/TVHKTV/tvcast.html"
 
 jobs:
@@ -77,8 +71,8 @@ jobs:
                   applicationId "com.tvcast.player"
                   minSdk 21
                   targetSdk 34
-                  versionCode (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
-                  versionName "1.0"
+                  versionCode 2
+                  versionName "1.1"
               }
 
               buildTypes {
@@ -183,6 +177,7 @@ jobs:
                   s.setLoadWithOverviewMode(true);
                   s.setUseWideViewPort(true);
                   s.setSupportMultipleWindows(false);
+                  s.setCacheMode(WebSettings.LOAD_DEFAULT);
                   CookieManager.getInstance().setAcceptCookie(true);
                   CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
 
@@ -237,7 +232,7 @@ jobs:
               private void load() {
                   String url = getString(R.string.start_url).trim();
                   if (url.length() > 0) {
-                      web.loadUrl(url + (url.contains("?") ? "&" : "?") + "tv=1");
+                      web.loadUrl(url + (url.contains("?") ? "&" : "?") + "tv=1&t=" + System.currentTimeMillis());
                   } else {
                       loadBundled();
                   }
@@ -297,7 +292,6 @@ jobs:
               @Override
               protected void onPause() {
                   super.onPause();
-                  /* Ses arka planda kesilmesin diye web.onPause() çağrılmıyor */
               }
 
               @Override
@@ -342,7 +336,7 @@ jobs:
           d.polygon([(86,76),(86,104),(112,90)],fill=(0,206,201))
           i.save(P+'mipmap-xxxhdpi/ic_launcher.png')
           TVCAST_EOF
-          pip install pillow -q
+          python3 -m pip install pillow -q --break-system-packages || pip install pillow -q
           python3 make_icons.py
           if [ -f tvcast.html ]; then cp tvcast.html app/src/main/assets/tvcast.html
           elif [ -f index.html ]; then cp index.html app/src/main/assets/tvcast.html
