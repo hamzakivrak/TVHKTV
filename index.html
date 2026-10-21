@@ -117,7 +117,7 @@
 </head>
 <body>
 
-<div id="playerWrapper">
+<div id="playerWrapper" tabindex="0">
     <video id="localPlayer" playsinline crossorigin="anonymous"></video>
     
     <div id="ytContainer"><div id="ytPlayer"></div></div>
@@ -289,6 +289,13 @@
         }
     }
 
+    function saveApiKey() {
+        const key = document.getElementById('userApiKey').value.trim();
+        localStorage.setItem('tv_yt_api_key', key);
+        userYTApiKey = key;
+        showOSD('YouTube API Kaydedildi', key ? 'Anahtar başarıyla saklandı' : 'Alan boşaltıldı');
+    }
+
     function openRightSidebar() { 
         document.getElementById('rightSidebar').classList.add('open'); 
         document.getElementById('overlayBackdrop').classList.add('show'); 
@@ -304,6 +311,11 @@
         document.getElementById('rightSidebar').classList.remove('open'); 
         document.getElementById('overlayBackdrop').classList.remove('show'); 
         resetControlsTimer();
+        // Çekmeceler kapandığında odak otomatik olarak ana player wrapper'a verilir (OK tuşu takılması engellenir)
+        setTimeout(() => {
+            const pw = document.getElementById('playerWrapper');
+            if (pw) pw.focus();
+        }, 100);
     }
 
     function resetControlsTimer() {
@@ -555,6 +567,10 @@
             try { enterFullscreen(); } catch (e) {}
             if (curIdx === -1 && allChannels.length) play(0, 1);
             showControls();
+            setTimeout(() => {
+                const pw = document.getElementById('playerWrapper');
+                if (pw) pw.focus();
+            }, 100);
         }
     }
 
@@ -613,6 +629,10 @@
     window.addEventListener('DOMContentLoaded', () => {
         updatePresetDropdown();
         changeCountry();
+        setTimeout(() => {
+            const pw = document.getElementById('playerWrapper');
+            if (pw) pw.focus();
+        }, 200);
     });
 </script>
 
