@@ -15,7 +15,7 @@ env:
   # Bos birakirsaniz uygulama icindeki kopyayi kullanir.
   # Internetteki en guncel surumu yuklemesini isterseniz tirnaklarin arasina adresi yazin,
   # ornek: "https://kullanici.github.io/depo/"
-  START_URL: ""
+ START_URL: "https://hamzakivrak.github.io/TVHKTV/tvcast.html"
 
 jobs:
   build:
