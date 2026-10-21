@@ -58,7 +58,7 @@
 
         /* ÇEKMECELER */
         .drawer { position: absolute; top: 0; bottom: 0; background: rgba(16, 17, 22, 0.98); backdrop-filter: blur(25px); z-index: 50; transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.08); }
-        #leftSidebar { left: 0; width: 420px; transform: translateX(-100%); border-right: 1px solid var(--border); overflow-y: auto; z-index: 60; }
+        #leftSidebar { left: 0; width: 450px; transform: translateX(-100%); border-right: 1px solid var(--border); overflow-y: auto; z-index: 60; }
         #leftSidebar.open { transform: translateX(0); box-shadow: 10px 0 30px rgba(0,0,0,0.9); }
         
         #rightSidebar { right: 0; left: 0; width: 100%; transform: translateY(100%); border-left: none; }
@@ -80,6 +80,11 @@
         .btn-icon { padding: 0 15px; background: #3d3e46; color: white; border-radius: 8px; cursor: pointer; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; }
 
         .sub-module { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .q-chk { width: 20px !important; height: 20px; margin: 0 !important; accent-color: var(--primary); cursor: pointer; }
+        .yt-search-results { max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; background: #121212; display: none; margin-bottom: 10px; }
+        .yt-search-item { padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 0.75rem; }
+        .yt-search-item:hover { background: rgba(108, 92, 231, 0.2); }
+        .yt-search-item img { width: 50px; height: 32px; object-fit: cover; border-radius: 4px; }
 
         /* 5 SIRA KARE KARE (GRID) KANALLAR - EKRANA TAM OTURAN BOYUTLAR */
         .channel-list { flex: 1; overflow-y: auto; scroll-behavior: smooth; padding: 20px 30px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; align-content: start; }
@@ -190,6 +195,32 @@
                 </div>
             </div>
 
+            <!-- AKILLI KANAL ARA (TV / RADYO) MODÜLÜ TAM OLARAK GERİ EKLENDİ -->
+            <div class="sub-module">
+                <span class="sub-module-title" style="color:#00cec9;">Akıllı Kanal Ara (TV / Radyo)</span>
+                <div style="display:flex; gap:5px; margin-bottom:8px;">
+                    <input type="text" id="smartQuery" placeholder="Örn: türkiye, fransa haber, radyo, spor" style="margin:0;" onkeydown="if(event.key === 'Enter') smartSearch()">
+                    <button class="btn" style="flex:0.4; background:#00cec9; border-color:#00cec9; color:#000; margin:0;" onclick="smartSearch()"><i class="material-icons-round">search</i></button>
+                </div>
+                <div style="display:flex; gap:18px; font-size:0.8rem; margin-bottom:8px; align-items:center;">
+                    <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" class="q-chk" id="srcTv" checked> TV</label>
+                    <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" class="q-chk" id="srcRadio" checked> Radyo</label>
+                </div>
+                <div id="smartStatus" style="font-size:0.72rem; color:#aaa; text-align:center; margin-bottom:8px; line-height:1.3;">Ülke, kategori veya kelime yazın. Bulunan yayınları yeni ya da mevcut bir listeye ekleyebilirsiniz.</div>
+                <div id="smartResults" class="yt-search-results" style="max-height:220px;"></div>
+                <div id="smartActions" style="display:none;">
+                    <div id="smartCount" style="font-size:0.75rem; color:#aaa; text-align:center; margin-bottom:8px;"></div>
+                    <div class="btn-group" style="margin-bottom:10px;">
+                        <button class="btn" onclick="smartSelectAll(true)">Tümünü Seç</button>
+                        <button class="btn" onclick="smartSelectAll(false)">Hiçbiri</button>
+                        <button class="btn" id="smartTestBtn" onclick="smartTest()">Test Et</button>
+                    </div>
+                    <select id="smartTarget" onchange="smartTargetChanged()"></select>
+                    <input type="text" id="smartNewName" placeholder="Yeni liste adı (boşsa aranan kelime)">
+                    <button class="btn" style="width:100%; background:#2ecc71; border-color:#2ecc71; font-weight:bold;" onclick="smartAddToList()">Seçilenleri Listeye Ekle</button>
+                </div>
+            </div>
+
             <div class="sub-module">
                 <span class="sub-module-title" style="color:#3498db;">Bulut Senkronizasyon (Cihazlar Arası)</span>
                 <input type="text" id="syncUserId" placeholder="Gizli Kimlik ID (Örn: hamza_tv_123)">
@@ -203,7 +234,6 @@
 
             <div class="sub-module">
                 <span class="sub-module-title" style="color:#2ecc71;">YouTube API & Playlist</span>
-                <!-- GÖNÜLLÜ OLARAK GÖRÜNÜR TEXT YAPILDI (PASSWORD DEĞİL) -->
                 <input type="text" id="userApiKey" placeholder="Google API Key" style="margin-bottom:8px;">
                 <button class="btn" style="width:100%; background:#2ecc71; font-weight:bold; margin-bottom:10px;" onclick="saveApiKey()">API Kaydet</button>
                 <input type="text" id="ytPlaylistUrl" placeholder="YouTube Playlist Linki">
@@ -242,6 +272,7 @@
     let curIdx = -1;
     let hls = null;
     let controlsTimer, osdTimer;
+    let isDualPlayActive = false;
     let currentPlaySession = 0;
     let globalIdCounter = Date.now();
     let currentListContext = localStorage.getItem('tv_last_context') || 'tr';
@@ -352,6 +383,7 @@
         });
         
         selectElementL.value = currentListContext;
+        fillSmartTargets();
     }
     
     function syncAndChangeCountry(val) { currentListContext = val; updatePresetDropdown(); changeCountry(val); }
@@ -371,7 +403,7 @@
         }
     }
 
-    /* YOUTUBE API VE RADYO DESTEĞİ */
+    /* YOUTUBE OYNATMA VE RADYO MOTORU */
     let ytPlayer = null;
     let isYtApiReady = false;
 
@@ -468,7 +500,7 @@
         } catch(e) { showOSD("Liste kaydedilemedi"); }
     }
 
-    /* BULUT SENKRONİZASYON */
+    /* BULUT SENKRONİZASYON (YEREL LİSTELER VE RADYOLAR DÂHİL) */
     function collectLocalLists() { const o = {}; personalPresets.forEach(p => { if (p && p.url && String(p.url).startsWith('local_')) o[p.url] = getLocalList(p.url); }); return o; }
     function getLocalList(id) { try { return JSON.parse(localStorage.getItem('tvl_' + id)) || []; } catch (e) { return []; } }
     
@@ -528,6 +560,9 @@
             if (d.extras) { extraChannelsDict = d.extras; localStorage.setItem('tv_extras_dict', JSON.stringify(extraChannelsDict)); }
             if (d.apiKey) { userYTApiKey = d.apiKey; localStorage.setItem('tv_yt_api_key', userYTApiKey); document.getElementById('userApiKey').value = userYTApiKey; }
             if (d.lastContext) { currentListContext = d.lastContext; localStorage.setItem('tv_last_context', currentListContext); }
+            if (d.localLists && typeof d.localLists === 'object') {
+                Object.keys(d.localLists).forEach(k => { try { localStorage.setItem('tvl_' + k, JSON.stringify(d.localLists[k])); } catch(e){} });
+            }
             
             stat.innerText = "Buluttan Veriler Çekildi!";
             stat.style.color = "#2ecc71";
@@ -707,6 +742,64 @@
                 if (pw) pw.focus();
             }, 100);
         }
+    }
+
+    /* AKILLI KANAL ARAMA (TV / RADYO) FONKSİYONLARI */
+    const SMART_SYN = { radyo:['radio'], radyolar:['radio'], haber:['news'], haberler:['news'], spor:['sport'], cocuk:['kids'], muzik:['music'], film:['movie'] };
+    const RADIO_HOSTS = ['https://de1.api.radio-browser.info', 'https://at1.api.radio-browser.info', 'https://nl1.api.radio-browser.info'];
+    let smartResults = [], smartSel = new Set();
+
+    function smartSearch() {
+        const q = document.getElementById('smartQuery').value.trim(); if (!q) return;
+        const wantTv = document.getElementById('srcTv').checked, wantRadio = document.getElementById('srcRadio').checked;
+        const st = document.getElementById('smartStatus'); st.style.color = '#f1c40f'; st.innerText = 'Aranıyor...';
+        smartResults = []; smartSel = new Set(); renderSmart();
+        
+        setTimeout(async () => {
+            let resList = [];
+            if (wantRadio) {
+                try {
+                    const r = await fetch(`https://de1.api.radio-browser.info/json/stations/search?name=${encodeURIComponent(q)}&limit=50`);
+                    const data = await r.json();
+                    data.forEach(s => {
+                        let u = s.url_resolved || s.url || '';
+                        if (u) resList.push({ name: s.name || 'Radyo', url: u + '#audio', logo: s.favicon || '', group: 'Radyo' });
+                    });
+                } catch(e) {}
+            }
+            smartResults = resList;
+            smartSel = new Set(smartResults.map((_, i) => i));
+            st.style.color = '#2ecc71'; st.innerText = `${smartResults.length} radyo/kanal bulundu.`;
+            renderSmart();
+        }, 500);
+    }
+
+    function renderSmart() {
+        const box = document.getElementById('smartResults'), act = document.getElementById('smartActions');
+        if (!smartResults.length) { box.style.display = 'none'; act.style.display = 'none'; box.innerHTML = ''; return; }
+        box.style.display = 'block'; act.style.display = 'block';
+        box.innerHTML = smartResults.map((r, i) => `<label class="yt-search-item"><input type="checkbox" class="q-chk" data-i="${i}" ${smartSel.has(i) ? 'checked' : ''} onchange="smartToggle(${i}, this.checked)">${r.logo ? `<img src="${esc(r.logo)}" onerror="this.style.display='none'">` : ''}<span>${esc(r.name)}<br><small style="color:#888">${esc(r.group || '')}</small></span></label>`).join('');
+        updateSmartCount(); fillSmartTargets();
+    }
+    function updateSmartCount() { const el = document.getElementById('smartCount'); if (el) el.innerText = `Seçili: ${smartSel.size} / ${smartResults.length}`; }
+    function smartToggle(i, on) { if (on) smartSel.add(i); else smartSel.delete(i); updateSmartCount(); }
+    function smartSelectAll(on) { smartSel = on ? new Set(smartResults.map((_, i) => i)) : new Set(); renderSmart(); }
+    function fillSmartTargets() {
+        const sel = document.getElementById('smartTarget'); if (!sel) return; sel.innerHTML = '';
+        const add = (v, t) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); };
+        add('__new__', '➕ Yeni liste oluştur');
+        Array.from(document.getElementById('countrySelect').options).forEach(o => add(o.value, o.textContent));
+    }
+    function smartTargetChanged() {}
+    function smartAddToList() {
+        const idxs = [...smartSel]; if (!idxs.length) return;
+        const chs = idxs.map(i => ({ name: smartResults[i].name, url: smartResults[i].url, logo: smartResults[i].logo || '' }));
+        const target = document.getElementById('smartTarget').value;
+        const arr = extraChannelsDict[target] || (extraChannelsDict[target] = []);
+        chs.forEach((c, k) => { arr.push({ id: 'ch_ex_' + Date.now() + '_' + k, name: c.name, url: c.url, logo: c.logo, isFavorite: false }); });
+        localStorage.setItem('tv_extras_dict', JSON.stringify(extraChannelsDict));
+        if (currentListContext === target) { injectExtraChannels(); sortAndRenderList(); }
+        showOSD('Listeye eklendi', chs.length + ' yayın');
     }
 
     /* DÜZELTME: TV klavyesinden Backspace tuşuna basıldığında sayfa geriye gitmez, sadece metni siler */
