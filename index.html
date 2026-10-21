@@ -56,20 +56,19 @@
         .ctrl-btn.main i { font-size: 34px; }
         .ctrl-btn.small i { font-size: 22px; }
 
-        /* KANALLAR LİSTESİ ÇEKMECESİ - TAM EKRAN MODU */
+        /* ÇEKMECELER */
         .drawer { position: absolute; top: 0; bottom: 0; background: rgba(16, 17, 22, 0.98); backdrop-filter: blur(25px); z-index: 50; transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.08); }
-        #leftSidebar { left: 0; width: 380px; transform: translateX(-100%); border-right: 1px solid var(--border); overflow-y: auto; z-index: 60; }
+        #leftSidebar { left: 0; width: 420px; transform: translateX(-100%); border-right: 1px solid var(--border); overflow-y: auto; z-index: 60; }
         #leftSidebar.open { transform: translateX(0); box-shadow: 10px 0 30px rgba(0,0,0,0.9); }
         
-        /* Sağ liste artık tüm ekranı kaplayan modern bir TV Hub arayüzü oldu */
         #rightSidebar { right: 0; left: 0; width: 100%; transform: translateY(100%); border-left: none; }
         #rightSidebar.open { transform: translateY(0); box-shadow: 0 -10px 40px rgba(0,0,0,0.9); }
         
-        .drawer-header { position: sticky; top: 0; background: rgba(20, 21, 28, 1); padding: 22px 30px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; z-index: 31; }
+        .drawer-header { position: sticky; top: 0; background: rgba(20, 21, 28, 1); padding: 20px 30px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; z-index: 31; }
         .overlay-backdrop { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 45; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
         .overlay-backdrop.show { opacity: 1; pointer-events: auto; }
 
-        .settings-content { padding: 20px; }
+        .settings-content { padding: 25px; }
         .module { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 15px; overflow: hidden; }
         .module-header { padding: 15px; background: rgba(255,255,255,0.03); cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
         .module-title { font-size: 0.8rem; font-weight: 600; color: #fff; margin: 0; }
@@ -80,43 +79,33 @@
         .btn { flex: 1; height: 40px; font-size: 0.8rem; border: 1px solid var(--border); border-radius: 8px; background: #3d3e46; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: 500; }
         .btn-icon { padding: 0 15px; background: #3d3e46; color: white; border-radius: 8px; cursor: pointer; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; }
 
-        /* KARE KARE (GRID) KANALLAR TASARIMI */
-        .channel-list { flex: 1; overflow-y: auto; scroll-behavior: smooth; padding: 25px 40px; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; align-content: start; }
-        .channel-item { background: rgba(25, 26, 33, 0.85); border: 2px solid rgba(255,255,255,0.07); border-radius: 14px; padding: 14px; cursor: pointer; font-size: 0.9rem; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; color: #ddd; transition: all 0.2s ease; position: relative; min-height: 110px; justify-content: center; }
-        .channel-item:hover { background: rgba(40, 42, 54, 0.95); border-color: rgba(108, 92, 231, 0.4); }
+        .sub-module { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+
+        /* 5 SIRA KARE KARE (GRID) KANALLAR TASARIMI */
+        .channel-list { flex: 1; overflow-y: auto; scroll-behavior: smooth; padding: 25px 40px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; align-content: start; }
+        .channel-item { background: rgba(25, 26, 33, 0.85); border: 2px solid rgba(255,255,255,0.07); border-radius: 14px; padding: 12px; cursor: pointer; font-size: 0.85rem; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; color: #ddd; transition: all 0.2s ease; position: relative; min-height: 105px; justify-content: center; }
         .channel-item.active { border-color: var(--accent2); background: rgba(0, 206, 201, 0.15); box-shadow: 0 0 20px rgba(0, 206, 201, 0.25); }
         .channel-item.broken { opacity: 0.4; }
         
-        .c-icon { width: 64px; height: 42px; border-radius: 8px; background: rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }
+        .c-icon { width: 56px; height: 38px; border-radius: 6px; background: rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }
         .c-icon img { width: 100%; height: 100%; object-fit: contain; }
-        .name { flex: 1; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; font-size: 0.95rem; }
-        .ch-num-badge { position: absolute; top: 10px; left: 12px; font-size: 0.75rem; color: #777; font-weight: 600; }
+        .name { flex: 1; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; font-size: 0.9rem; }
+        .ch-num-badge { position: absolute; top: 8px; left: 10px; font-size: 0.7rem; color: #777; font-weight: 600; }
         .channel-item.active .ch-num-badge, .channel-item:focus .ch-num-badge { color: var(--accent2); }
-        .fav-icon { position: absolute; top: 8px; right: 10px; color: #444; font-size: 18px; }
+        .fav-icon { position: absolute; top: 6px; right: 8px; color: #444; font-size: 16px; }
         .fav-icon.active { color: var(--fav); }
-        .del-icon { display: none; }
-        .drag-handle { display: none; }
 
         .osd-title { position: absolute; top: 15%; left: 50%; transform: translateX(-50%); background: rgba(12,12,18,.9); backdrop-filter: blur(14px); color: #fff; padding: 12px 30px; border-radius: 30px; font-size: 1.2rem; font-weight: 500; opacity: 0; transition: opacity 0.3s ease; z-index: 20; pointer-events: none; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 10px 30px rgba(0,0,0,0.8); white-space: nowrap; text-align: center; }
         .osd-title.show { opacity: 1; }
 
         /* TV Odak Çerçeveleri */
-        .tv-mode .channel-item:focus, .channel-item:focus-visible { outline: none; border-color: var(--accent2) !important; background: rgba(0,206,201,0.22) !important; transform: scale(1.04); box-shadow: 0 0 25px rgba(0,206,201,0.4); }
-        .tv-start { display: none; }
-        .tv-start.show { display: flex; position: absolute; inset: 0; z-index: 100; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: radial-gradient(circle at 50% 40%, rgba(108,92,231,.4), #05050a 72%); text-align: center; padding: 20px; }
+        .tv-mode .channel-item:focus, .channel-item:focus-visible, .btn-icon:focus, input:focus, select:focus { outline: none; border-color: var(--accent2) !important; background: rgba(0,206,201,0.22) !important; transform: scale(1.04); box-shadow: 0 0 25px rgba(0,206,201,0.4); }
+        
+        .tv-start { display: flex; position: absolute; inset: 0; z-index: 100; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: radial-gradient(circle at 50% 40%, rgba(108,92,231,.4), #05050a 72%); text-align: center; padding: 20px; transition: opacity 0.3s; }
+        .tv-start.hide { opacity: 0; pointer-events: none; }
         .tv-start h1 { margin: 0; font-size: 3rem; font-weight: 600; }
         .tv-start .ok { font-size: 1.6rem; color: var(--accent2); }
         .tv-start .keys { font-size: 1.1rem; color: #bbb; line-height: 1.9; }
-
-        .tv-remote { display: none; }
-        .tv-mode .tv-remote { display: flex; position: fixed; right: 22px; top: 50%; transform: translateY(-50%); flex-direction: column; gap: 10px; z-index: 40; opacity: 0; pointer-events: none; transition: opacity .25s; }
-        .tv-mode .tv-remote.show { opacity: 1; pointer-events: auto; }
-        .tv-remote button { width: 100px; height: 56px; border-radius: 14px; border: 2px solid rgba(255,255,255,.2); background: rgba(12,12,18,.9); color: #fff; font-size: .95rem; font-weight: 600; cursor: pointer; }
-        .tv-remote button:hover, .tv-remote button:focus { border-color: var(--accent2); background: rgba(0,206,201,.22); outline: none; }
-
-        .broken-divider { grid-column: 1 / -1; padding: 15px 0 5px; font-size: .75rem; font-weight: 700; color: rgba(231, 76, 60, 0.9); text-transform: uppercase; display: flex; align-items: center; gap: 10px; }
-        .broken-divider::before, .broken-divider::after { content: ""; flex: 1; height: 1px; background: rgba(231, 76, 60, 0.2); }
-        .quar-bar { grid-column: 1 / -1; display: flex; gap: 10px; margin-bottom: 10px; }
     </style>
 
     <script>
@@ -139,10 +128,12 @@
     </div>
 
     <div id="osdTitle" class="osd-title">TV Cast OS</div>
-    <div id="tvStart" class="tv-start" onclick="startTv()">
+    
+    <!-- İLK AÇILIŞ EKRANI: HERHANGİ BİR TUŞA BASINCA KAYBOLUR -->
+    <div id="tvStart" class="tv-start">
         <h1>TV Cast</h1>
-        <div class="ok">Başlamak için kumandada OK tuşuna basın</div>
-        <div class="keys">▲ ▼ ◀ ▶ &nbsp;Kanal / Ses &nbsp;&nbsp;·&nbsp;&nbsp; OK &nbsp;Kanal Listesi (Kare Grid)<br>Geri / Back &nbsp;Listeyi Kapat &nbsp;&nbsp;·&nbsp;&nbsp; Liste Türü Sadece Ayarlardan Değiştirilir</div>
+        <div class="ok">Başlamak için kumandada OK veya herhangi bir tuşa basın</div>
+        <div class="keys">▲ ▼ ◀ ▶ &nbsp;Kanal / Ses &nbsp;&nbsp;·&nbsp;&nbsp; OK &nbsp;Kanal Listesi (5 Sıralı Grid)<br>Geri / Back &nbsp;Listeyi Kapat &nbsp;&nbsp;·&nbsp;&nbsp; Sağ üstten Ayarlar (Şifre: 1234)</div>
     </div>
 
     <div id="controlsOverlay" onclick="event.stopPropagation()">
@@ -153,15 +144,7 @@
             </div>
             <div class="top-actions" style="display:flex; gap:8px;">
                 <button class="btn-icon" onclick="openRightSidebar()" style="background:var(--glass); border-color:rgba(255,255,255,0.2); height:42px;"><i class="material-icons-round" style="margin-right:6px;">grid_view</i> Kanallar</button>
-                <button class="btn-icon" onclick="openLeftSidebar()" style="background:var(--glass); border-color:rgba(255,255,255,0.2); height:42px;"><i class="material-icons-round" style="margin-right:6px;">settings</i> Ayarlar</button>
             </div>
-        </div>
-
-        <div id="tvRemote" class="tv-remote">
-            <button onclick="nextCh()">▲ Kanal</button>
-            <button onclick="prevCh()">▼ Kanal</button>
-            <button onclick="tvOpenList()">📺 Liste</button>
-            <button onclick="openLeftSidebar()">⚙ Ayarlar</button>
         </div>
 
         <div class="center-buttons">
@@ -175,49 +158,75 @@
     <div id="overlayBackdrop" class="overlay-backdrop" onclick="closeAllDrawers()"></div>
 </div>
 
-<!-- SOL AYARLAR MENÜSÜ -->
+<!-- SOL AYARLAR MENÜSÜ (1234 ŞİFRE KORUMALI) -->
 <div id="leftSidebar" class="drawer">
     <div class="drawer-header">
-        <span style="color: white; font-weight: 600; font-size: 1.1rem;">Ayarlar & Liste Seçimi</span>
+        <span style="color: white; font-weight: 600; font-size: 1.1rem;">Gelişmiş Ayarlar (Şifreli)</span>
         <i class="material-icons-round" onclick="closeAllDrawers()" style="color: var(--red); cursor: pointer; font-size: 24px;">close</i>
     </div>
     <div class="settings-content">
-        <div class="module">
-            <div class="module-header"><p class="module-title">Aktif M3U / Liste Türü</p></div>
-            <div class="module-body" style="border:none;">
-                <select id="countrySelect" onchange="syncAndChangeCountry(this.value)">
-                    <optgroup label="Varsayılan Listeler">
-                        <option value="tr" selected>🇹🇷 Türkiye (Varsayılan)</option>
-                        <option value="us">🇺🇸 ABD</option>
-                        <option value="uk">🇬🇧 İngiltere</option>
-                        <option value="de">🇩🇪 Almanya</option>
-                    </optgroup>
-                    <optgroup label="Kişisel Listelerim" id="personalPresets"></optgroup>
-                    <optgroup label="YouTube Listeleri" id="ytPlaylistsGroup"></optgroup>
-                </select>
-                <div id="status" style="font-size:0.75rem; text-align:center; margin-top:10px; color:#2ecc71;">Liste Hazır</div>
+        <!-- Şifre Giriş Ekranı -->
+        <div id="settingsLockBox" style="text-align:center; padding: 40px 20px;">
+            <i class="material-icons-round" style="font-size: 48px; color: var(--accent2); margin-bottom: 15px;">lock</i>
+            <h3 style="margin:0 0 10px 0; color:#fff;">Şifre Korumalı Alan</h3>
+            <p style="font-size:0.85rem; color:#aaa; margin-bottom:20px;">Ayarlara girmek için lütfen 4 haneli şifreyi girin (Varsayılan: 1234)</p>
+            <input type="password" id="settingsPassInput" placeholder="Şifre (1234)" style="text-align:center; font-size:1.2rem; letter-spacing:4px; margin-bottom:15px;" onkeydown="if(event.key==='Enter') checkSettingsPassword()">
+            <button class="btn" style="width:100%; background:var(--primary); font-weight:bold; height:45px;" onclick="checkSettingsPassword()">Giriş Yap</button>
+        </div>
+
+        <!-- Asıl Ayarlar İçeriği (Şifre Bilinince Açılır) -->
+        <div id="settingsUnlockedContent" style="display:none;">
+            <div class="module">
+                <div class="module-header"><p class="module-title">Aktif M3U / Liste Türü</p></div>
+                <div class="module-body" style="border:none;">
+                    <select id="countrySelect" onchange="syncAndChangeCountry(this.value)">
+                        <optgroup label="Varsayılan Listeler">
+                            <option value="tr" selected>🇹🇷 Türkiye (Varsayılan)</option>
+                            <option value="us">🇺🇸 ABD</option>
+                            <option value="uk">🇬🇧 İngiltere</option>
+                            <option value="de">🇩🇪 Almanya</option>
+                        </optgroup>
+                        <optgroup label="Kişisel Listelerim" id="personalPresets"></optgroup>
+                        <optgroup label="YouTube Listeleri" id="ytPlaylistsGroup"></optgroup>
+                    </select>
+                    <div id="status" style="font-size:0.75rem; text-align:center; margin-top:10px; color:#2ecc71;">Liste Hazır</div>
+                </div>
             </div>
-        </div>
-        <div class="sub-module" style="padding:10px 0;">
-            <span class="sub-module-title" style="color:#2ecc71;">YouTube Playlist Ekle</span>
-            <input type="text" id="ytPlaylistUrl" placeholder="Liste Linki (youtube.com/playlist?list=...)">
-            <button class="btn" style="width:100%; background:#e84118; color:#fff; border-color:#e84118;" onclick="addYTPlaylist()">Listeyi Kaydet</button>
-        </div>
-        <div class="sub-module" style="padding:10px 0;">
-            <span class="sub-module-title">Manuel M3U Linki Yükle</span>
-            <textarea id="inputData" placeholder="Link veya içerik yapıştır..."></textarea>
-            <input type="text" id="presetName" placeholder="Kaydetmek için isim ver">
-            <button class="btn" style="width:100%; background:#2ecc71; border-color:#2ecc71; font-weight:bold; margin-top:6px;" onclick="manualLoad(false)">Listeyi Değiştir ve Yükle</button>
+
+            <div class="sub-module">
+                <span class="sub-module-title" style="color:#3498db;">Bulut Senkronizasyon (Cihazlar Arası)</span>
+                <input type="text" id="syncUserId" placeholder="Gizli Kimlik ID (Örn: hamza_tv_123)">
+                <div class="btn-group" style="display:flex; gap:8px;">
+                    <button class="btn" style="background:#3498db; border-color:#3498db;" onclick="syncDataFromCloud()">Buluttan Çek</button>
+                    <button class="btn" style="background:#2980b9; border-color:#2980b9;" onclick="exportBackup()">Dosyaya İndir</button>
+                </div>
+            </div>
+
+            <div class="sub-module">
+                <span class="sub-module-title" style="color:#2ecc71;">YouTube API & Playlist</span>
+                <input type="password" id="userApiKey" placeholder="Google API Key" style="margin-bottom:8px;">
+                <button class="btn" style="width:100%; background:#2ecc71; font-weight:bold; margin-bottom:10px;" onclick="saveApiKey()">API Kaydet</button>
+                <input type="text" id="ytPlaylistUrl" placeholder="YouTube Playlist Linki">
+                <button class="btn" style="width:100%; background:#e84118; color:#fff;" onclick="addYTPlaylist()">Listeyi Kaydet</button>
+            </div>
+
+            <div class="sub-module" style="border:none; padding-bottom:0;">
+                <span class="sub-module-title">Manuel M3U Linki Yükle</span>
+                <textarea id="inputData" placeholder="Link veya içerik yapıştır..."></textarea>
+                <input type="text" id="presetName" placeholder="Kaydetmek için isim ver">
+                <button class="btn" style="width:100%; background:#2ecc71; border-color:#2ecc71; font-weight:bold; margin-top:6px;" onclick="manualLoad(false)">Listeyi Değiştir ve Yükle</button>
+            </div>
         </div>
     </div>
 </div>
 
-<!-- SAĞ KANAL LİSTESİ - KARE KARE (GRID) REHBER EKRANI -->
+<!-- SAĞ KANAL LİSTESİ - KARE KARE (GRID) REHBER EKRANI (5 SIRA) -->
 <div id="rightSidebar" class="drawer">
     <div class="drawer-header">
-        <div style="display:flex; align-items:center; gap:15px; width: 100%; max-width: 700px;">
-            <span style="color: white; font-weight: 600; font-size: 1.2rem;" id="listCountTitle">Kanallar</span>
-            <input type="text" id="filterInput" placeholder="Kanal ara..." onkeyup="performSearch()" style="margin:0; flex:1; padding: 10px 16px; font-size: 1rem;">
+        <div style="display:flex; align-items:center; gap:12px; width: 100%; max-width: 800px;">
+            <span style="color: white; font-weight: 600; font-size: 1.1rem;" id="listCountTitle">Kanallar</span>
+            <input type="text" id="filterInput" placeholder="Kanal ara..." onkeyup="performSearch()" style="margin:0; flex:1; padding: 10px 16px; font-size: 1rem;" id="channelSearchBox">
+            <button class="btn-icon" onclick="tryOpenSettings()" style="background:var(--primary); border-color:var(--primary); height:42px; display:flex; align-items:center; gap:6px;"><i class="material-icons-round">settings</i> Ayarlar</button>
         </div>
         <i class="material-icons-round" onclick="closeAllDrawers()" style="color: var(--red); cursor: pointer; font-size: 30px;">close</i>
     </div>
@@ -240,6 +249,8 @@
     let extraChannelsDict = JSON.parse(localStorage.getItem('tv_extras_dict')) || {};
     let ytPlaylistsData = JSON.parse(localStorage.getItem('tv_yt_playlists')) || [];
     let userYTApiKey = localStorage.getItem('tv_yt_api_key') || "";
+    document.getElementById('userApiKey').value = userYTApiKey;
+    document.getElementById('syncUserId').value = localStorage.getItem('tv_sync_id') || "";
 
     function showOSD(name, subtitle = "") { 
         const osd = document.getElementById('osdTitle'); 
@@ -254,8 +265,32 @@
         el.textContent = (curIdx >= 0 && allChannels[curIdx]) ? `${curIdx + 1} / ${allChannels.length}` : (allChannels.length ? `${allChannels.length} kanal` : '');
     }
 
-    function openLeftSidebar() { document.getElementById('leftSidebar').classList.add('open'); document.getElementById('overlayBackdrop').classList.add('show'); document.getElementById('controlsOverlay').classList.add('hide'); setTimeout(() => { const f = document.querySelector('#leftSidebar select, #leftSidebar input'); if(f) f.focus(); }, 150); }
-    
+    function tryOpenSettings() {
+        closeAllDrawers();
+        document.getElementById('leftSidebar').classList.add('open'); 
+        document.getElementById('overlayBackdrop').classList.add('show'); 
+        document.getElementById('controlsOverlay').classList.add('hide');
+        // Şifre kutusunu sıfırla ve odakla
+        document.getElementById('settingsPassInput').value = '';
+        document.getElementById('settingsLockBox').style.display = 'block';
+        document.getElementById('settingsUnlockedContent').style.display = 'none';
+        setTimeout(() => document.getElementById('settingsPassInput').focus(), 150);
+    }
+
+    function checkSettingsPassword() {
+        const val = document.getElementById('settingsPassInput').value.trim();
+        if (val === '1234') {
+            document.getElementById('settingsLockBox').style.display = 'none';
+            document.getElementById('settingsUnlockedContent').style.display = 'block';
+            showOSD('Şifre Doğru', 'Gelişmiş ayarlar açıldı');
+            setTimeout(() => { const f = document.querySelector('#settingsUnlockedContent select'); if(f) f.focus(); }, 150);
+        } else {
+            showOSD('Hatalı Şifre', 'Lütfen tekrar deneyin');
+            document.getElementById('settingsPassInput').value = '';
+            document.getElementById('settingsPassInput').focus();
+        }
+    }
+
     function openRightSidebar() { 
         document.getElementById('rightSidebar').classList.add('open'); 
         document.getElementById('overlayBackdrop').classList.add('show'); 
@@ -263,7 +298,6 @@
         setTimeout(() => { 
             const activeItem = document.getElementById(`c-${curIdx}`) || document.querySelector('.channel-item'); 
             if(activeItem) activeItem.focus(); 
-            else document.getElementById('filterInput').focus();
         }, 150); 
     }
 
@@ -272,15 +306,8 @@
         document.getElementById('rightSidebar').classList.remove('open'); 
         document.getElementById('overlayBackdrop').classList.remove('show'); 
         resetControlsTimer();
-        setTimeout(() => { const vid = document.getElementById('localPlayer'); if(vid) vid.focus(); }, 100);
     }
 
-    function showControls() {
-        const ctrl = document.getElementById('controlsOverlay');
-        ctrl.classList.remove('hide');
-        resetControlsTimer();
-    }
-    
     function resetControlsTimer() {
         const ctrl = document.getElementById('controlsOverlay');
         ctrl.classList.remove('hide'); 
@@ -292,6 +319,7 @@
     function updatePresetDropdown() {
         document.querySelectorAll('.tmp-opt').forEach(o => o.remove());
         const selectElementL = document.getElementById('countrySelect');
+        if (!selectElementL) return;
         const grpLeft = document.getElementById('personalPresets'); 
         const ytGrpLeft = document.getElementById('ytPlaylistsGroup');
         grpLeft.innerHTML = ''; ytGrpLeft.innerHTML = '';
@@ -303,15 +331,7 @@
             const optL = document.createElement('option'); optL.value = 'ytpl_' + p.id; optL.innerText = "📺 " + p.name; ytGrpLeft.appendChild(optL);
         });
         
-        if (currentListContext) {
-            let existsInOptions = Array.from(selectElementL.options).some(opt => opt.value === currentListContext);
-            if (!existsInOptions && currentListContext.startsWith('http')) {
-                const tempOpt = document.createElement('option');
-                tempOpt.value = currentListContext; tempOpt.className = 'tmp-opt'; tempOpt.innerText = "🌐 Özel Link";
-                selectElementL.appendChild(tempOpt);
-            }
-            selectElementL.value = currentListContext;
-        }
+        selectElementL.value = currentListContext;
     }
     
     function syncAndChangeCountry(val) { currentListContext = val; updatePresetDropdown(); changeCountry(val); }
@@ -348,7 +368,7 @@
             let text = await fetchText(url);
             parseAndAdd(text, append); 
             showOSD("Liste Yüklendi", allChannels.length + " kanal");
-        } catch(e) { showOSD("Liste açılabilemedi", e.message); }
+        } catch(e) { showOSD("Liste açılamadı", e.message); }
     }
 
     function parseAndAdd(text, append = false) {
@@ -369,12 +389,12 @@
         items.forEach(item => { const name = item.querySelector('.name').innerText.toLowerCase(); item.style.display = name.includes(term) ? 'flex' : 'none'; }); 
     }
 
-    /* KARE KARE (GRID) KANALLARI OLUŞTURMA */
+    /* 5 SIRA KARE KARE (GRID) KANALLARI OLUŞTURMA VE AKILLI KENAR GEZİNTİSİ */
     function sortAndRenderList() {
         const currentId = (curIdx !== -1 && allChannels[curIdx]) ? allChannels[curIdx].id : null;
         allChannels.sort((a, b) => { if (a.broken !== b.broken) return a.broken ? 1 : -1; if (a.isFavorite !== b.isFavorite) return a.isFavorite ? -1 : 1; return a.originalIndex - b.originalIndex; });
         if (currentId) curIdx = allChannels.findIndex(c => c.id === currentId);
-        document.getElementById('listCountTitle').innerText = `${allChannels.length} Kanal (Grid Rehber)`; 
+        document.getElementById('listCountTitle').innerText = `${allChannels.length} Kanal (5 Sıralı Grid)`; 
         updateChannelMeta();
         
         const container = document.getElementById('channelList'); 
@@ -385,11 +405,24 @@
             const item = document.createElement('div'); 
             item.className = `channel-item ${i===curIdx ? 'active' : ''} ${ch.broken ? 'broken' : ''}`; 
             item.id = `c-${i}`; 
-            item.tabIndex = 0; // Kumandayla odaklanılabilir (Focusable) olması için şart!
+            item.tabIndex = 0;
             item.onclick = () => { play(i, 0); closeAllDrawers(); };
             
-            let img = `<div class="c-icon"><i class="material-icons-round" style="font-size:24px;">tv</i></div>`; 
-            if (ch.logo) { img = `<div class="c-icon"><img src="${esc(ch.logo)}" onerror="this.onerror=null; this.parentNode.innerHTML='<i class=\'material-icons-round\' style=\'font-size:24px;\'>tv</i>'"></div>`; }
+            // AKILLI KENAR TUŞ MANTIĞI: Soldan sola veya sağdan sağa basınca arama çubuğuna / ayarlara zıpla
+            item.onkeydown = (e) => {
+                const items = Array.from(container.querySelectorAll('.channel-item')).filter(el => el.style.display !== 'none');
+                const curPos = items.indexOf(item);
+                if (e.key === 'ArrowLeft' && curPos % 5 === 0) {
+                    e.preventDefault(); document.getElementById('filterInput').focus();
+                } else if (e.key === 'ArrowRight' && (curPos % 5 === 4 || curPos === items.length - 1)) {
+                    e.preventDefault(); document.getElementById('filterInput').focus();
+                } else if (e.key === 'ArrowUp' && curPos < 5) {
+                    e.preventDefault(); document.getElementById('filterInput').focus();
+                }
+            };
+            
+            let img = `<div class="c-icon"><i class="material-icons-round" style="font-size:22px;">tv</i></div>`; 
+            if (ch.logo) { img = `<div class="c-icon"><img src="${esc(ch.logo)}" onerror="this.onerror=null; this.parentNode.innerHTML='<i class=\'material-icons-round\' style=\'font-size:22px;\'>tv</i>'"></div>`; }
             
             item.innerHTML = `<span class="ch-num-badge">#${i + 1}</span>${img}<span class="name">${esc(ch.name)}</span><i class="material-icons-round fav-icon ${ch.isFavorite ? 'active' : ''}">star</i>`;
             container.appendChild(item);
@@ -440,51 +473,75 @@
     function toggleMute() { const v = document.getElementById('localPlayer'); v.muted = !v.muted; }
     function toggleFullscreen() { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); }
 
-    function startTv() {
-        document.getElementById('tvStart').classList.remove('show');
-        try { enterFullscreen(); } catch (e) {}
-        if (curIdx === -1 && allChannels.length) play(0, 1);
-        showControls();
+    function dismissStartScreen() {
+        const startEl = document.getElementById('tvStart');
+        if (startEl && !startEl.classList.contains('hide')) {
+            startEl.classList.add('hide');
+            try { enterFullscreen(); } catch (e) {}
+            if (curIdx === -1 && allChannels.length) play(0, 1);
+            showControls();
+        }
     }
 
-    /* TV KUMANDA KONTROL MİMARİSİ (GERİ TUŞU KAPATIR, SAĞ/SOL SES OLUR, OK KARE SEÇER) */
+    /* KUMANDA TUŞ MİMARİSİ */
     window.addEventListener('keydown', function (e) {
         let k = e.key;
+        const startEl = document.getElementById('tvStart');
+        if (startEl && !startEl.classList.contains('hide')) {
+            e.preventDefault(); e.stopImmediatePropagation();
+            dismissStartScreen();
+            return;
+        }
+
         const Rr = document.getElementById('rightSidebar');
         const L = document.getElementById('leftSidebar');
         const rightOpen = Rr.classList.contains('open');
         const leftOpen = L.classList.contains('open');
 
-        // 1. LİSTE AÇIKKEN (GRID GÖRÜNÜMÜNDE) KUMANDA HAREKETLERİ
+        // LİSTE AÇIKKEN
         if (rightOpen) {
             if (['Escape', 'BrowserBack', 'GoBack', 'Backspace'].includes(k) || e.keyCode === 4 || e.keyCode === 27 || e.keyCode === 8) {
                 e.preventDefault(); e.stopImmediatePropagation();
                 closeAllDrawers();
                 return;
             }
-            // Arama kutusunda değilken ok tuşları ızgarada (grid) gezinsin
+            // Arama kutusundayken aşağı tuşuna basınca doğrudan ilk kanala geç
+            const activeEl = document.activeElement;
+            if (activeEl && activeEl.id === 'filterInput' && (k === 'ArrowDown' || e.keyCode === 40)) {
+                e.preventDefault();
+                const firstCh = document.querySelector('.channel-item');
+                if (firstCh) firstCh.focus();
+            }
             return;
         }
 
-        // 2. NORMAL YAYIN EKRANINDAYKEN KUMANDA
+        // AYARLAR MENÜSÜ AÇIKKEN
+        if (leftOpen) {
+            if (['Escape', 'BrowserBack', 'GoBack', 'Backspace'].includes(k) || e.keyCode === 4 || e.keyCode === 27 || e.keyCode === 8) {
+                e.preventDefault(); e.stopImmediatePropagation();
+                closeAllDrawers();
+                return;
+            }
+            return;
+        }
+
+        // NORMAL YAYIN EKRANI
         if (k === 'ArrowUp' || k === 'ChannelUp') { e.preventDefault(); prevCh(); showControls(); }
         else if (k === 'ArrowDown' || k === 'ChannelDown') { e.preventDefault(); nextCh(); showControls(); }
-        else if (k === 'ArrowLeft') { e.preventDefault(); toggleMute(); showControls(); } // Sol ok ses/sessiz
+        else if (k === 'ArrowLeft') { e.preventDefault(); toggleMute(); showControls(); }
         else if (k === 'ArrowRight') { e.preventDefault(); showControls(); }
         else if (k === 'Enter' || k === ' ') { 
             e.preventDefault(); 
-            if (!leftOpen && !rightOpen) openRightSidebar(); // OK tuşuna basınca kare kanal listesi açılır!
+            openRightSidebar(); 
         }
         else if (['Escape', 'BrowserBack', 'GoBack', 'Backspace'].includes(k) || e.keyCode === 4) {
             e.preventDefault();
-            if (leftOpen || rightOpen) closeAllDrawers();
         }
     }, true);
 
     window.addEventListener('DOMContentLoaded', () => {
         updatePresetDropdown();
         changeCountry();
-        document.getElementById('tvStart').classList.add('show');
     });
 </script>
 
