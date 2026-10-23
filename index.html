@@ -67,7 +67,7 @@
         .ch-counter:empty { display: none; }
 
         .top-actions { display: flex; gap: 10px; flex-shrink: 0; }
-        .center-buttons { display: flex; justify-content: center; align-items: center; gap: 10px; pointer-events: auto; position: absolute; bottom: 28px; left: 50%; transform: translateX(-50%); background: var(--glass); padding: 10px 18px; border-radius: 44px; border: 1px solid rgba(255,255,255,0.12); }
+        .center-buttons { display: flex; justify-content: center; align-items: center; gap: 10px; pointer-events: auto; position: absolute; bottom: 54px; left: 50%; transform: translateX(-50%); background: var(--glass); padding: 10px 18px; border-radius: 44px; border: 1px solid rgba(255,255,255,0.12); transition: bottom 0.2s ease; }
         .ctrl-btn { background: transparent; border: none; color: white; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 45px; height: 45px; flex-shrink: 0; }
         .ctrl-btn.main { width: 55px; height: 55px; background: var(--primary); }
         .ctrl-btn.small { width: 40px; height: 40px; } 
@@ -201,47 +201,50 @@
             color: #000 !important;
         }
         .ctrl-hint-pill {
-            position: absolute; bottom: 146px; left: 50%; transform: translateX(-50%);
+            position: absolute; bottom: 136px; left: 50%; transform: translateX(-50%);
             background: rgba(14, 15, 22, 0.88); color: #ccc; font-size: 0.78rem;
             padding: 5px 14px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.12);
-            pointer-events: none; white-space: nowrap; transition: bottom 0.2s ease;
+            pointer-events: none; white-space: nowrap; transition: all 0.2s ease;
         }
-        /* YENİ: YouTube Videoları & VOD / Geri Sarılabilir Yayınlar İçin Oynatma Çubuğu (Seek Bar) */
+        .ctrl-hint-pill.screen-active {
+            border-color: var(--accent2);
+            color: #fff;
+            background: rgba(0, 206, 201, 0.22);
+            box-shadow: 0 0 14px rgba(0, 206, 201, 0.35);
+        }
+        /* YENİ: Alt Kontrollerin Altında Beliren Salt-Görsel Oynatma Çubuğu (Sadece İleri/Geri Sararken Görünür) */
         .seek-bar-wrap {
-            position: absolute; bottom: 94px; left: 50%; transform: translateX(-50%);
-            width: min(720px, 88vw); background: var(--glass);
-            padding: 10px 18px; border-radius: 26px; border: 1px solid rgba(255,255,255,0.14);
-            display: none; align-items: center; gap: 14px; pointer-events: auto;
-            box-shadow: 0 8px 28px rgba(0,0,0,0.6);
+            position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+            width: min(680px, 88vw); background: rgba(14, 15, 22, 0.94);
+            padding: 7px 16px; border-radius: 22px; border: 1px solid rgba(0, 206, 201, 0.35);
+            display: none; align-items: center; gap: 12px; pointer-events: none;
+            box-shadow: 0 6px 22px rgba(0,0,0,0.7);
+            z-index: 16;
         }
         .seek-bar-wrap.show { display: flex; }
         .seek-time {
-            font-size: 0.86rem; font-weight: 600; color: #ececec;
+            font-size: 0.82rem; font-weight: 700; color: #fff;
             font-variant-numeric: tabular-nums; min-width: 48px; text-align: center;
         }
-        .seek-track {
-            flex: 1; height: 10px; background: rgba(255,255,255,0.18);
-            border-radius: 99px; position: relative; cursor: pointer;
-            outline: none; display: flex; align-items: center;
+        .seek-step-badge {
+            font-size: 0.78rem; font-weight: 700; color: var(--fav);
+            padding: 2px 8px; border-radius: 12px; background: rgba(241, 196, 15, 0.16);
+            white-space: nowrap;
         }
-        .seek-track:focus, .seek-track:focus-visible {
-            height: 13px;
-            background: rgba(255,255,255,0.28);
-            box-shadow: 0 0 0 3px var(--accent2);
+        .seek-step-badge:empty { display: none; }
+        .seek-track {
+            flex: 1; height: 8px; background: rgba(255,255,255,0.18);
+            border-radius: 99px; position: relative;
+            outline: none; display: flex; align-items: center; pointer-events: none;
         }
         .seek-fill {
             height: 100%; background: linear-gradient(90deg, var(--primary), var(--accent2));
             border-radius: 99px; width: 0%; position: relative; pointer-events: none;
         }
         .seek-thumb {
-            width: 18px; height: 18px; border-radius: 50%; background: #fff;
-            border: 3px solid var(--accent2); position: absolute; right: -9px; top: 50%;
-            transform: translateY(-50%); box-shadow: 0 2px 8px rgba(0,0,0,0.6);
-        }
-        .seek-track:focus .seek-thumb {
-            transform: translateY(-50%) scale(1.28);
-            background: var(--fav);
-            border-color: #fff;
+            width: 14px; height: 14px; border-radius: 50%; background: var(--fav);
+            border: 2px solid #fff; position: absolute; right: -7px; top: 50%;
+            transform: translateY(-50%); box-shadow: 0 2px 6px rgba(0,0,0,0.6);
         }
 
         /* YENİ: Arama kutusu ve Süpürge (Temizle) butonu sarmalayıcısı */
@@ -367,26 +370,27 @@
             </div>
         </div>
 
-        <div class="ctrl-hint-pill" id="ctrlHintPill">◀ ▶ Sarma &amp; Alt Kontroller · ▲ ▼ Kanal Değiştir · OK: Rehber · Geri: Kontroller</div>
-
-        <!-- YENİ: Oynatma Çubuğu & Video Süresi (YouTube Videoları ve Sarılabilir Yayınlar İçin) -->
-        <div class="seek-bar-wrap" id="seekBarWrap">
-            <span class="seek-time" id="seekCurTime">00:00</span>
-            <div class="seek-track" id="seekTrack" tabindex="0" onclick="onSeekTrackClick(event)" title="İleri / Geri Sarmak İçin Sol / Sağ Tuşlarını Kullanın">
-                <div class="seek-fill" id="seekFill"><div class="seek-thumb"></div></div>
-            </div>
-            <span class="seek-time" id="seekDurTime">00:00</span>
-        </div>
+        <div class="ctrl-hint-pill" id="ctrlHintPill">◀ ▶ Alt Kontroller &amp; Sarma · ▲ Ekran / Üst Menü · OK: Kanal Rehberi</div>
 
         <div class="center-buttons" id="bottomControlBar">
             <button class="ctrl-btn small" id="ccBtn" onclick="toggleSubtitles()" title="Altyazı Aç/Kapat"><i class="material-icons-round">closed_caption</i></button>
-            <button class="ctrl-btn" id="rewindBtn" onclick="seekRelative(-15)" title="15 Saniye Geri Sar"><i class="material-icons-round">replay_10</i></button>
+            <button class="ctrl-btn" id="rewindBtn" onclick="triggerSingleSeek(-1)" title="10 Saniye Geri Sar (Basılı Tutunca İvmelenir)"><i class="material-icons-round">replay_10</i></button>
             <button class="ctrl-btn main" id="playPauseBtn" onclick="togglePlayPause()" title="Oynat / Duraklat"><i class="material-icons-round" id="playIcon">play_arrow</i></button>
-            <button class="ctrl-btn" id="forwardBtn" onclick="seekRelative(15)" title="15 Saniye İleri Sar"><i class="material-icons-round">forward_10</i></button>
+            <button class="ctrl-btn" id="forwardBtn" onclick="triggerSingleSeek(1)" title="10 Saniye İleri Sar (Basılı Tutunca İvmelenir)"><i class="material-icons-round">forward_10</i></button>
             <button class="ctrl-btn small" id="muteBtn" onclick="toggleMute()" title="Sesi Kapat / Aç"><i class="material-icons-round" id="muteIcon">volume_up</i></button>
             <button class="ctrl-btn small" id="fsBtn" onclick="toggleFullscreen()" title="Tam Ekran"><i class="material-icons-round" id="fsIcon">fullscreen</i></button>
             <button class="ctrl-btn small fav-btn" id="mainFavBtn" onclick="toggleMainFavorite()" title="Favorilere Ekle / Çıkar"><i class="material-icons-round" id="mainFavIcon">star_border</i></button>
             <button class="ctrl-btn small" id="openListCtrlBtn" onclick="openRightSidebar()" title="Kanal Listesi"><i class="material-icons-round">grid_view</i></button>
+        </div>
+
+        <!-- YENİ: Alt Kontrollerin Altında Beliren Salt-Görsel Oynatma Çubuğu (Sadece İleri/Geri Sararken Görünür, Tıklanmaz) -->
+        <div class="seek-bar-wrap" id="seekBarWrap">
+            <span class="seek-time" id="seekCurTime">00:00</span>
+            <div class="seek-track" id="seekTrack">
+                <div class="seek-fill" id="seekFill"><div class="seek-thumb"></div></div>
+            </div>
+            <span class="seek-time" id="seekDurTime">00:00</span>
+            <span class="seek-step-badge" id="seekStepBadge"></span>
         </div>
     </div>
     
@@ -1164,16 +1168,33 @@
         }, 50);
     }
     
+    function updateControlHintPill() {
+        const pill = document.getElementById('ctrlHintPill');
+        if (!pill) return;
+        const ae = document.activeElement;
+        const topBtns = [document.getElementById('topChannelsBtn'), document.getElementById('topSettingsBtn')];
+        if (ae && ae.id === 'playerWrapper' && !document.getElementById('controlsOverlay').classList.contains('hide')) {
+            pill.classList.add('screen-active');
+            pill.innerHTML = '📺 <b>Ekran Aktif:</b> ▲ ▼ Kanal Değiştir · OK: Kanal Rehberi · ▲ (Üst Menü: Geri/Sağ) · ▼ Alt Kontroller';
+        } else if (topBtns.includes(ae)) {
+            pill.classList.remove('screen-active');
+            pill.innerHTML = '🔼 <b>Üst Menü Aktif:</b> OK ile Seçin · ▼ Ekran / Alt Kontroller';
+        } else {
+            pill.classList.remove('screen-active');
+            pill.innerHTML = '◀ ▶ Alt Kontroller &amp; Sarma (Basılı Tut: İvmeli Sarma) · ▲ Ekran Aktif · OK: Seç';
+        }
+    }
     function showControls(focusBottomBar = false) {
         const ctrl = document.getElementById('controlsOverlay');
         ctrl.classList.remove('hide');
-        resetControlsTimer();
         if (focusBottomBar) {
             const playBtn = document.getElementById('playPauseBtn');
             if (playBtn) {
                 try { playBtn.focus({ preventScroll: true }); } catch(e) { playBtn.focus(); }
             }
         }
+        updateControlHintPill();
+        resetControlsTimer();
     }
     
     function resetControlsTimer() {
@@ -1873,7 +1894,14 @@
     }
     function toggleSubtitles() { subtitlesActive = !subtitlesActive; const btn = document.getElementById('ccBtn'); if (subtitlesActive) btn.classList.add('active'); else btn.classList.remove('active'); const video = document.getElementById('localPlayer'); let foundTrack = false; for (let i = 0; i < video.textTracks.length; i++) { video.textTracks[i].mode = subtitlesActive ? 'showing' : 'hidden'; foundTrack = true; } showOSD("Altyazı " + (subtitlesActive ? "Açık" : "Kapalı"), foundTrack ? "" : "Gömülü altyazı yok"); }
 
-    /* YENİ: İLERİ / GERİ SARMA VE VİDEO SÜRE / OYNATMA ÇUBUĞU (SEEK BAR) SİSTEMİ */
+    /* YENİ: İVMELENEN İLERİ / GERİ SARMA (10sn x3 -> 2x Artarak 10dk'ya Kadar) & SADECE SARARKEN GÖRÜNEN SÜRE ÇUBUĞU */
+    let seekBarHideTimer = null;
+    let seekHoldTimer = null;
+    let seekHoldActive = false;
+    let seekHoldDir = 0;
+    let seekHoldStepCount = 0;
+    let lastSingleSeekAt = 0;
+
     function formatMediaTime(sec) {
         if (!isFinite(sec) || sec < 0) return "00:00";
         const s = Math.floor(sec);
@@ -1884,6 +1912,15 @@
             return `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
         }
         return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    function formatJumpLabel(secAbs) {
+        if (secAbs >= 60) {
+            const m = Math.floor(secAbs / 60);
+            const r = secAbs % 60;
+            return r > 0 ? `${m} dk ${r} sn` : `${m} dk`;
+        }
+        return `${secAbs} sn`;
     }
 
     function getMediaTimeState() {
@@ -1904,17 +1941,15 @@
         if (vid && vid.style.display !== 'none') {
             const dur = vid.duration;
             const cur = vid.currentTime || 0;
-            // Normal süreli video (YouTube reklamsız MP4 veya VOD)
             if (dur && isFinite(dur) && dur > 15) {
                 return { seekable: true, isVod: true, current: cur, start: 0, end: dur, duration: dur, engine: 'html5' };
             }
-            // Canlı yayında DVR / geçmiş kaydı varsa (seekable range > 25 sn)
             if (vid.seekable && vid.seekable.length > 0) {
                 try {
                     const start = vid.seekable.start(0);
                     const end = vid.seekable.end(vid.seekable.length - 1);
-                    if (end - start > 25) {
-                        const isVodLike = isFinite(dur) && dur > 0 && ( String(currentListContext).startsWith('ytpl_') || extractYTId(allChannels[curIdx]?.url || '') );
+                    if (end - start > 15) {
+                        const isVodLike = isFinite(dur) && dur > 0 && (String(currentListContext).startsWith('ytpl_') || extractYTId(allChannels[curIdx]?.url || ''));
                         return { seekable: true, isVod: !!isVodLike, current: cur, start, end, duration: end - start, engine: 'dvr' };
                     }
                 } catch (e) {}
@@ -1923,33 +1958,55 @@
         return { seekable: false, isVod: false, current: 0, start: 0, end: 0, duration: 0, engine: 'none' };
     }
 
-    function updateSeekBarUI() {
+    // Oynatma çubuğu doğrudan görünmez; yalnızca ileri/geri sarma yapıldığında (`reveal = true`) açılır ve 4 sn sonra gizlenir
+    function updateSeekBarUI(reveal = false, stepBadgeText = null) {
         const wrap = document.getElementById('seekBarWrap');
-        const pill = document.getElementById('ctrlHintPill');
         if (!wrap) return;
-        const st = getMediaTimeState();
-        const isYtListOrVideo = (curIdx >= 0 && allChannels[curIdx] && extractYTId(allChannels[curIdx].url)) || String(currentListContext).startsWith('ytpl_');
-        // Süreli video (YouTube / VOD) veya DVR aralığı varsa oynatma çubuğunu göster
-        if (st.seekable && (st.isVod || isYtListOrVideo || st.duration > 30)) {
+        if (reveal === true) {
             wrap.classList.add('show');
-            if (pill) pill.style.bottom = '152px';
-            const total = Math.max(1, st.end - st.start);
-            const relCur = Math.max(0, Math.min(total, st.current - st.start));
-            const pct = Math.max(0, Math.min(100, (relCur / total) * 100));
-            document.getElementById('seekFill').style.width = pct.toFixed(2) + '%';
-            document.getElementById('seekCurTime').innerText = formatMediaTime(relCur);
-            document.getElementById('seekDurTime').innerText = st.engine === 'dvr' && !st.isVod ? ('-' + formatMediaTime(Math.max(0, st.end - st.current))) : formatMediaTime(total);
-        } else {
+            if (seekBarHideTimer) clearTimeout(seekBarHideTimer);
+            seekBarHideTimer = setTimeout(() => {
+                if (!seekHoldActive) {
+                    wrap.classList.remove('show');
+                    const b = document.getElementById('seekStepBadge');
+                    if (b) b.innerText = '';
+                }
+            }, 4000);
+        }
+        if (!wrap.classList.contains('show')) return;
+        const st = getMediaTimeState();
+        if (!st.seekable) {
             wrap.classList.remove('show');
-            if (pill) pill.style.bottom = '92px';
+            return;
+        }
+        const total = Math.max(1, st.end - st.start);
+        const relCur = Math.max(0, Math.min(total, st.current - st.start));
+        const pct = Math.max(0, Math.min(100, (relCur / total) * 100));
+        document.getElementById('seekFill').style.width = pct.toFixed(2) + '%';
+        document.getElementById('seekCurTime').innerText = formatMediaTime(relCur);
+        document.getElementById('seekDurTime').innerText = (st.engine === 'dvr' && !st.isVod)
+            ? ('-' + formatMediaTime(Math.max(0, st.end - st.current)))
+            : formatMediaTime(total);
+        if (stepBadgeText !== null) {
+            const b = document.getElementById('seekStepBadge');
+            if (b) b.innerText = stepBadgeText;
         }
     }
 
-    function seekRelative(deltaSec) {
+    // Adım sayısına göre ivmelenen atlama süresi:
+    // İlk 3 adımda: 10 sn, 10 sn, 10 sn
+    // Devam ederse her adımda (saniyede) 2 kat artarak 10 dakikaya (600 sn) kadar çıkar: 20s -> 40s -> 80s -> 160s -> 320s -> 600s
+    function getAcceleratedJumpSeconds(stepCount) {
+        if (stepCount <= 3) return 10;
+        const exp = stepCount - 3; // 1, 2, 3, 4, 5, 6...
+        return Math.min(600, 10 * Math.pow(2, exp));
+    }
+
+    function seekRelative(deltaSec, stepCount = 1) {
         showControls();
         const st = getMediaTimeState();
         if (!st.seekable) {
-            showOSD("Bu Canlı Yayın Sarılamıyor", "Yayının geçmiş kaydı (DVR) bulunmuyor");
+            showOSD("Bu Yayın İleri/Geri Sarılamıyor", "Canlı yayının geçmiş kaydı (DVR) bulunmuyor");
             return;
         }
         const target = Math.max(st.start, Math.min(st.end, st.current + deltaSec));
@@ -1963,22 +2020,55 @@
         }
         const relCur = Math.max(0, target - st.start);
         const total = Math.max(1, st.end - st.start);
-        const sign = deltaSec > 0 ? `+${deltaSec} sn İleri` : `${deltaSec} sn Geri`;
-        showOSD(`${sign} Sarıldı`, `${formatMediaTime(relCur)} / ${formatMediaTime(total)}`);
-        setTimeout(updateSeekBarUI, 80);
+        const absJump = Math.abs(deltaSec);
+        const jumpTxt = (deltaSec > 0 ? '+' : '-') + formatJumpLabel(absJump);
+        const dirWord = deltaSec > 0 ? 'İleri' : 'Geri';
+        updateSeekBarUI(true, jumpTxt);
+        showOSD(`${jumpTxt} ${dirWord} (${formatMediaTime(relCur)} / ${formatMediaTime(total)})`, stepCount > 3 ? "⚡ Hızlı Sarma (Basılı Tutuluyor)" : "İleri/Geri Sarma");
+        setTimeout(() => updateSeekBarUI(false), 90);
     }
 
-    function onSeekTrackClick(e) {
-        const track = document.getElementById('seekTrack');
-        if (!track) return;
-        const st = getMediaTimeState();
-        if (!st.seekable) return;
-        const rect = track.getBoundingClientRect();
-        const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width)));
-        const target = st.start + ratio * (st.end - st.start);
-        seekRelative(target - st.current);
+    function triggerSingleSeek(dir) {
+        if (Date.now() - lastSingleSeekAt < 250) return;
+        lastSingleSeekAt = Date.now();
+        seekRelative(dir * 10, 1);
     }
-    
+
+    function startAcceleratingSeek(dir) {
+        stopAcceleratingSeek();
+        seekHoldActive = true;
+        seekHoldDir = dir;
+        seekHoldStepCount = 1;
+        lastSingleSeekAt = Date.now();
+        // 1. adım anında (10 sn)
+        seekRelative(dir * 10, 1);
+
+        function scheduleNextTick() {
+            if (!seekHoldActive) return;
+            // İlk 3 adım hızlı (450ms arayla 10sn), 3. adımdan sonra her 1 saniyede (1000ms) 2 katına çıkarak ivmelenir
+            const waitMs = seekHoldStepCount < 3 ? 450 : 950;
+            seekHoldTimer = setTimeout(() => {
+                if (!seekHoldActive) return;
+                seekHoldStepCount++;
+                const jumpSec = getAcceleratedJumpSeconds(seekHoldStepCount);
+                lastSingleSeekAt = Date.now();
+                seekRelative(seekHoldDir * jumpSec, seekHoldStepCount);
+                scheduleNextTick();
+            }, waitMs);
+        }
+        scheduleNextTick();
+    }
+
+    function stopAcceleratingSeek() {
+        if (seekHoldTimer) { clearTimeout(seekHoldTimer); seekHoldTimer = null; }
+        if (seekHoldActive) {
+            seekHoldActive = false;
+            seekHoldDir = 0;
+            seekHoldStepCount = 0;
+            updateSeekBarUI(true);
+        }
+    }
+
     function handleStreamError(sessionToken) {
         if (sessionToken !== undefined && sessionToken !== currentPlaySession) return;
         if (isErrorHandling || curIdx === -1 || !allChannels[curIdx]) return;
@@ -2060,6 +2150,8 @@
         const activeItem = document.getElementById(`c-${curIdx}`); 
         if (activeItem) { activeItem.classList.remove('broken'); activeItem.classList.add('active'); }
         
+        stopAcceleratingSeek();
+        const sbw = document.getElementById('seekBarWrap'); if (sbw) sbw.classList.remove('show');
         document.getElementById('previewTitle').innerText = ch.name; updateMainFavBtn(); updateChannelMeta();
         document.getElementById('pStatus').innerText = "Bağlanıyor..."; 
         showOSD((curIdx + 1) + ". " + ch.name); 
@@ -2527,11 +2619,17 @@
         try { target.scrollIntoView({ block: 'nearest' }); } catch (e) {}
     }
 
+    let screenFocusFromControls = false;
+
     /* KEYUP OLAYI */
     window.addEventListener('keyup', function (e) {
         const kc = e.keyCode || e.which || 0;
         let k = e.key;
         if (!k || k === 'Unidentified' || k === 'Process') k = TV_KC[kc] || k;
+
+        if (seekHoldActive && (k === 'Enter' || k === ' ' || k === 'ArrowLeft' || k === 'ArrowRight' || kc === 23 || kc === 13 || kc === 66)) {
+            stopAcceleratingSeek();
+        }
 
         if (k === 'Enter' || k === ' ' || kc === 23 || kc === 13 || kc === 66) {
             clearOkTimers();
@@ -2912,12 +3010,9 @@
             return;
         }
 
-        /* 4. TAM EKRAN TV İZLEME MODU & ALT OYNATMA / SÜRE ÇUBUĞU KUMANDA HAREKETLERİ */
+        /* 4. TAM EKRAN TV İZLEME MODU & 3 KADEMELİ (ALT KONTROLLER ⟷ EKRAN ⟷ ÜST MENÜ) KUMANDA HAREKETLERİ */
         const ctrlOverlay = document.getElementById('controlsOverlay');
         const ctrlVisible = !ctrlOverlay.classList.contains('hide');
-        const seekWrap = document.getElementById('seekBarWrap');
-        const seekTrack = document.getElementById('seekTrack');
-        const seekVisible = seekWrap && seekWrap.classList.contains('show');
         const bottomBtns = [
             document.getElementById('ccBtn'),
             document.getElementById('rewindBtn'),
@@ -2934,51 +3029,14 @@
         ].filter(Boolean);
         const inBottomIdx = bottomBtns.indexOf(ae);
         const inTopIdx = topBtns.indexOf(ae);
-        const onSeekTrack = (ae === seekTrack);
-
-        // Eğer kullanıcı Oynatma Süre Çubuğuna (seekTrack) odaklanmışsa:
-        if (ctrlVisible && onSeekTrack) {
-            resetControlsTimer();
-            if (['Escape', 'BrowserBack', 'GoBack'].includes(k) || kc === 4 || kc === 27) {
-                e.preventDefault(); e.stopImmediatePropagation();
-                ctrlOverlay.classList.add('hide');
-                const pw = document.getElementById('playerWrapper');
-                if (pw) pw.focus();
-                return;
-            }
-            if (k === 'ArrowLeft') {
-                e.preventDefault(); e.stopImmediatePropagation();
-                seekRelative(e.repeat ? -30 : -15);
-                return;
-            }
-            if (k === 'ArrowRight') {
-                e.preventDefault(); e.stopImmediatePropagation();
-                seekRelative(e.repeat ? 30 : 15);
-                return;
-            }
-            if (k === 'ArrowDown') {
-                e.preventDefault(); e.stopImmediatePropagation();
-                const playBtn = document.getElementById('playPauseBtn') || bottomBtns[0];
-                if (playBtn) playBtn.focus();
-                return;
-            }
-            if (k === 'ArrowUp') {
-                e.preventDefault(); e.stopImmediatePropagation();
-                if (topBtns[0]) topBtns[0].focus();
-                return;
-            }
-            if (k === 'Enter' || k === ' ' || kc === 23 || kc === 13 || kc === 66) {
-                e.preventDefault(); e.stopImmediatePropagation();
-                if (!e.repeat) togglePlayPause();
-                return;
-            }
-        }
 
         // Eğer kullanıcı alt veya üst kontrol butonlarından birine odaklanmışsa:
         if (ctrlVisible && (inBottomIdx !== -1 || inTopIdx !== -1)) {
             resetControlsTimer();
             if (['Escape', 'BrowserBack', 'GoBack'].includes(k) || kc === 4 || kc === 27) {
                 e.preventDefault(); e.stopImmediatePropagation();
+                stopAcceleratingSeek();
+                screenFocusFromControls = false;
                 ctrlOverlay.classList.add('hide');
                 const pw = document.getElementById('playerWrapper');
                 if (pw) pw.focus();
@@ -2987,35 +3045,54 @@
             if (inBottomIdx !== -1) {
                 if (k === 'ArrowLeft') {
                     e.preventDefault(); e.stopImmediatePropagation();
+                    stopAcceleratingSeek();
                     if (inBottomIdx > 0) bottomBtns[inBottomIdx - 1].focus();
                     else tvVolume(-0.1);
+                    updateControlHintPill();
                     return;
                 }
                 if (k === 'ArrowRight') {
                     e.preventDefault(); e.stopImmediatePropagation();
+                    stopAcceleratingSeek();
                     if (inBottomIdx < bottomBtns.length - 1) bottomBtns[inBottomIdx + 1].focus();
                     else tvVolume(0.1);
+                    updateControlHintPill();
                     return;
                 }
                 if (k === 'ArrowUp') {
                     e.preventDefault(); e.stopImmediatePropagation();
-                    if (seekVisible && seekTrack) {
-                        seekTrack.focus();
-                    } else if (!e.repeat) {
-                        nextCh(); showControls(true);
-                    }
+                    stopAcceleratingSeek();
+                    // Alt kontrollerden yukarı basınca doğrudan üstteki "Kanallar (OK)" butonuna atlamak yerine önce orta kademe olan EKRAN'ı aktif yap!
+                    screenFocusFromControls = true;
+                    const pw = document.getElementById('playerWrapper');
+                    if (pw) pw.focus();
+                    updateControlHintPill();
+                    showOSD("Ekran Aktif", "OK: Kanal Rehberi · ▲ Üst Menü · ▼ Alt Kontroller");
+                    resetControlsTimer();
                     return;
                 }
                 if (k === 'ArrowDown') {
                     e.preventDefault(); e.stopImmediatePropagation();
+                    stopAcceleratingSeek();
                     if (!e.repeat) { prevCh(); showControls(true); }
                     return;
                 }
                 if (k === 'Enter' || k === ' ' || kc === 23 || kc === 13 || kc === 66) {
                     e.preventDefault(); e.stopImmediatePropagation();
+                    const focusedBtn = bottomBtns[inBottomIdx];
+                    // Geri Sar veya İleri Sar butonunda OK'a basılı tutulursa ivmelenen sarma başlat!
+                    if (focusedBtn && (focusedBtn.id === 'rewindBtn' || focusedBtn.id === 'forwardBtn')) {
+                        const dir = focusedBtn.id === 'rewindBtn' ? -1 : 1;
+                        if (!e.repeat && !seekHoldActive) {
+                            okPressContext = 'controls_seek';
+                            startAcceleratingSeek(dir);
+                        }
+                        resetControlsTimer();
+                        return;
+                    }
                     if (!e.repeat) {
                         okPressContext = 'controls';
-                        bottomBtns[inBottomIdx].click();
+                        focusedBtn.click();
                         resetControlsTimer();
                     }
                     return;
@@ -3025,20 +3102,24 @@
                 if (k === 'ArrowLeft') {
                     e.preventDefault(); e.stopImmediatePropagation();
                     topBtns[Math.max(0, inTopIdx - 1)].focus();
+                    updateControlHintPill();
                     return;
                 }
                 if (k === 'ArrowRight') {
                     e.preventDefault(); e.stopImmediatePropagation();
                     topBtns[Math.min(topBtns.length - 1, inTopIdx + 1)].focus();
+                    updateControlHintPill();
                     return;
                 }
                 if (k === 'ArrowDown') {
                     e.preventDefault(); e.stopImmediatePropagation();
-                    if (seekVisible && seekTrack) seekTrack.focus();
-                    else {
-                        const playBtn = document.getElementById('playPauseBtn') || bottomBtns[0];
-                        if (playBtn) playBtn.focus();
-                    }
+                    // Üst menüden aşağı inince de önce orta kademe olan EKRAN aktif olur
+                    screenFocusFromControls = true;
+                    const pw = document.getElementById('playerWrapper');
+                    if (pw) pw.focus();
+                    updateControlHintPill();
+                    showOSD("Ekran Aktif", "OK: Kanal Rehberi · ▼ Alt Kontroller");
+                    resetControlsTimer();
                     return;
                 }
                 if (k === 'Enter' || k === ' ' || kc === 23 || kc === 13 || kc === 66) {
@@ -3052,9 +3133,32 @@
             }
         }
 
+        // Orta kademe: Kontroller görünürken EKRAN aktifse (Alt bardan Yukarı basılarak gelindiyse):
+        if (ctrlVisible && screenFocusFromControls) {
+            if (k === 'ArrowUp') {
+                e.preventDefault(); e.stopImmediatePropagation();
+                screenFocusFromControls = false;
+                if (topBtns[0]) topBtns[0].focus();
+                updateControlHintPill();
+                resetControlsTimer();
+                return;
+            }
+            if (k === 'ArrowDown') {
+                e.preventDefault(); e.stopImmediatePropagation();
+                screenFocusFromControls = false;
+                const playBtn = document.getElementById('playPauseBtn') || bottomBtns[0];
+                if (playBtn) playBtn.focus();
+                updateControlHintPill();
+                resetControlsTimer();
+                return;
+            }
+        }
+
         // Alt kontrol çubuğuna doğrudan ulaşım: Geri tuşu veya kontrol barı açıkken Sol/Sağ tuşları
         if (['Escape', 'BrowserBack', 'GoBack'].includes(k) || kc === 4 || kc === 27) {
             e.preventDefault(); e.stopImmediatePropagation();
+            stopAcceleratingSeek();
+            screenFocusFromControls = false;
             if (ctrlVisible) {
                 ctrlOverlay.classList.add('hide');
             } else {
@@ -3068,6 +3172,7 @@
         if (k === 'ArrowLeft') {
             e.preventDefault(); e.stopImmediatePropagation();
             if (ctrlVisible) {
+                screenFocusFromControls = false;
                 showControls(true);
             } else {
                 tvVolume(-0.1);
@@ -3078,6 +3183,7 @@
         if (k === 'ArrowRight') {
             e.preventDefault(); e.stopImmediatePropagation();
             if (ctrlVisible) {
+                screenFocusFromControls = false;
                 showControls(true);
             } else {
                 tvVolume(0.1);
@@ -3136,10 +3242,23 @@
         const sp = document.getElementById('bufSpinner');
         ['waiting','loadstart'].forEach(ev => vid.addEventListener(ev, () => sp.style.display = 'block'));
         ['playing','canplay','error','pause'].forEach(ev => vid.addEventListener(ev, () => sp.style.display = 'none'));
-        vid.addEventListener('play', () => { document.getElementById('playIcon').innerText = 'pause'; updateSeekBarUI(); });
-        vid.addEventListener('pause', () => { document.getElementById('playIcon').innerText = 'play_arrow'; updateSeekBarUI(); });
-        ['timeupdate', 'loadedmetadata', 'durationchange', 'progress'].forEach(ev => vid.addEventListener(ev, updateSeekBarUI));
-        setInterval(updateSeekBarUI, 500);
+        vid.addEventListener('play', () => { document.getElementById('playIcon').innerText = 'pause'; updateSeekBarUI(false); });
+        vid.addEventListener('pause', () => { document.getElementById('playIcon').innerText = 'play_arrow'; updateSeekBarUI(false); });
+        ['timeupdate', 'loadedmetadata', 'durationchange', 'progress'].forEach(ev => vid.addEventListener(ev, () => updateSeekBarUI(false)));
+        setInterval(() => updateSeekBarUI(false), 500);
+
+        const rwBtn = document.getElementById('rewindBtn');
+        const fwBtn = document.getElementById('forwardBtn');
+        if (rwBtn) {
+            rwBtn.addEventListener('mousedown', (e) => { if (e.button === 0) startAcceleratingSeek(-1); });
+            rwBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startAcceleratingSeek(-1); }, { passive: false });
+        }
+        if (fwBtn) {
+            fwBtn.addEventListener('mousedown', (e) => { if (e.button === 0) startAcceleratingSeek(1); });
+            fwBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startAcceleratingSeek(1); }, { passive: false });
+        }
+        window.addEventListener('mouseup', stopAcceleratingSeek);
+        window.addEventListener('touchend', stopAcceleratingSeek);
         vid.addEventListener('error', () => { if (!vid.currentSrc || vid.currentSrc === window.location.href) return; handleStreamError(currentPlaySession); });
         
         setTimeout(() => {
