@@ -315,6 +315,9 @@
             background: #163638 !important;
             border-color: var(--accent2) !important;
         }
+        #leftSidebar, .yt-search-results { overscroll-behavior: contain; scroll-behavior: auto; }
+        .yt-search-item { transition: none; }
+        .yt-search-item:focus { background: rgba(0, 206, 201, 0.18); }
     </style>
 
     <script>
@@ -806,6 +809,7 @@
     }
 
     function requestSettingsOpen() {
+        invalidateLeftNav();
         lastDrawerActionTime = Date.now();
         lockAllInputs();
         document.getElementById('rightSidebar').classList.remove('open');
@@ -835,7 +839,7 @@
         if (val === "1111") {
             document.getElementById('pinLockBox').style.display = 'none';
             document.getElementById('unlockedSettingsArea').style.display = 'block';
-            showOSD("Ayarlar Açıldı");
+            invalidateLeftNav(); showOSD("Ayarlar Açıldı");
             setTimeout(() => {
                 const sel = document.getElementById('countrySelect');
                 if (sel) sel.focus();
@@ -1159,7 +1163,7 @@
         document.getElementById('leftSidebar').classList.remove('open');
         document.getElementById('rightSidebar').classList.remove('open');
         document.getElementById('overlayBackdrop').classList.remove('show');
-        resetControlsTimer();
+        hideControlsNow();
         setTimeout(() => {
             const pw = document.getElementById('playerWrapper');
             if (pw) pw.focus();
@@ -1178,6 +1182,15 @@
             pill.classList.remove('screen-active');
             pill.innerHTML = '◀ ▶ Alt Kontroller &amp; Sarma · ▲ ▼ Kanal Değiştir · OK: Kanal Rehberi';
         }
+    }
+    function hideControlsNow() {
+        clearTimeout(controlsTimer);
+        const c = document.getElementById('controlsOverlay');
+        const pw = document.getElementById('playerWrapper');
+        if (c.contains(document.activeElement) && pw) pw.focus();
+        c.classList.add('hide');
+        const sbw = document.getElementById('seekBarWrap');
+        if (sbw) sbw.classList.remove('show');
     }
     function showControls(focusBottomBar = false) {
         const ctrl = document.getElementById('controlsOverlay');
@@ -2221,7 +2234,7 @@
         showOSD((curIdx + 1) + ". " + ch.name); 
         playLocally(ch.url, mySession);
         preloadNextYtStream(curIdx);
-        resetControlsTimer();
+        hideControlsNow();
     }
 
     async function playLocally(url, sessionToken) {
@@ -2500,26 +2513,24 @@
             'https://corsproxy.io/?' + encodeURIComponent(pageUrl),
             pageUrl
         ];
-        let lastErr = new Error('Sayfa okunamadı');
-        for (const p of proxies) {
-            try {
-                const r = await fetchTO(p, timeoutMs);
-                if (!r.ok) continue;
-                const txt = await r.text();
-                if (txt && txt.length > 80) return txt;
-            } catch (e) { lastErr = e; }
-        }
-        throw lastErr;
+        const jobs = proxies.map(p => fetchTO(p, timeoutMs).then(async r => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const txt = await r.text();
+            if (!txt || txt.length < 80) throw new Error('Bos sayfa');
+            return txt;
+        }));
+        return await Promise.any(jobs);
     }
 
     function extractStreamsFromHtml(html, sourceUrl = '') {
         if (!html) return { m3u8: [], yt: [], title: '', logo: '', iframes: [] };
         // Ters eğik çizgili kaçışları temizle (`https:\/\/...` -> `https://...`)
         const unescaped = html
-            .replace(/\\\//g, '/')
-            .replace(/\\//g, '/')
-            .replace(/\u002F/gi, '/')
-            .replace(/\u0026/gi, '&')
+            .split('\\/').join('/')
+            .split('\\u002F').join('/')
+            .split('\\u002f').join('/')
+            .split('\\x2F').join('/')
+            .split('\\u0026').join('&')
             .replace(/&amp;/gi, '&');
 
         let title = '';
@@ -2603,7 +2614,7 @@
 
             // Eğer ana sayfada doğrudan .m3u8 bulunamadıysa ve içerde player iframe'i varsa 1. seviye iframe'i de tara!
             if (results.length === 0 && ext.iframes.length > 0) {
-                for (const ifrUrl of ext.iframes.slice(0, 2)) {
+                for (const ifrUrl of ext.iframes.slice(0, 3)) {
                     try {
                         const ifrHtml = await fetchHtmlViaProxy(ifrUrl, 5500);
                         const ifrExt = extractStreamsFromHtml(ifrHtml, ifrUrl);
@@ -2647,13 +2658,18 @@
 
         // 2. Kelime ile arandıysa (örn: "kanal d", "atv", "star", "haber", "türkiye", "ulusal") eşleşen resmi siteleri bul
         const queryTokens = qNorm.split(' ').filter(Boolean).filter(w => !['canli', 'yayin', 'izle', 'tv'].includes(w));
-        const matchedSites = OFFICIAL_WEB_CHANNELS.filter(item => {
+        let matchedSites = OFFICIAL_WEB_CHANNELS.filter(item => {
             const hay = normTxt(item.name + ' ' + item.keys.join(' '));
             if (!queryTokens.length) return pq.country === 'tr' || qNorm.includes('tv') || qNorm.includes('canli');
             return queryTokens.every(t => hay.includes(t)) || item.keys.some(k => normTxt(k) === qNorm);
         });
 
         if (!matchedSites.length) return [];
+        const phraseQ = queryTokens.join(' ');
+        if (phraseQ && matchedSites.length > 1) {
+            const exactSites = matchedSites.filter(i => normTxt(i.name).includes(phraseQ) || i.keys.some(k => normTxt(k) === phraseQ));
+            if (exactSites.length) matchedSites = exactSites;
+        }
 
         // İlk 4 eşleşen resmi siteyi canlı olarak tara, geri kalanları hızlı CDN + otomatik site çözücüyle listele
         const toScrape = matchedSites.slice(0, 4);
@@ -2763,11 +2779,11 @@
         renderSmart();
     }
 
-    function renderSmart() {
+    function renderSmart() { invalidateLeftNav();
         const box = document.getElementById('smartResults'), act = document.getElementById('smartActions');
         if (!smartResults.length) { box.style.display = 'none'; act.style.display = 'none'; box.innerHTML = ''; return; }
         box.style.display = 'block'; act.style.display = 'block';
-        box.innerHTML = smartResults.slice(0, 200).map((r, i) => `<label class="yt-search-item" tabindex="0"><input type="checkbox" style="position:static; width:18px; height:18px;" data-i="${i}" ${smartSel.has(i) ? 'checked' : ''} onchange="smartToggle(${i}, this.checked)">${r.logo ? `<img src="${esc(r.logo)}" onerror="this.style.display='none'">` : ''}<span>${esc(r.name)}<br><small style="color:#888">${esc(r.group || '')}</small></span></label>`).join('');
+        box.innerHTML = smartResults.slice(0, 200).map((r, i) => `<label class="yt-search-item" tabindex="0"><input type="checkbox" style="position:static; width:18px; height:18px;" data-i="${i}" ${smartSel.has(i) ? 'checked' : ''} onchange="smartToggle(${i}, this.checked)">${r.logo ? `<img loading="lazy" decoding="async" src="${esc(r.logo)}" onerror="this.style.display='none'">` : ''}<span>${esc(r.name)}<br><small style="color:#888">${esc(r.group || '')}</small></span></label>`).join('');
         updateSmartCount(); fillSmartTargets();
     }
     function updateSmartCount() { const el = document.getElementById('smartCount'); if (el) el.innerText = `Seçili: ${smartSel.size} / ${smartResults.length}`; }
@@ -2966,17 +2982,43 @@
         p.sel.focus();
     }
 
-    function moveInLeftDrawer(dir) {
+    let leftNavCache = null, leftNavCacheAt = 0, lastLeftMoveTime = 0;
+    function invalidateLeftNav() { leftNavCache = null; }
+    function getLeftNavList() {
+        const now = performance.now();
+        if (leftNavCache && now - leftNavCacheAt < 250) return leftNavCache;
         const L = document.getElementById('leftSidebar');
-        const list = Array.from(L.querySelectorAll('button, select, input:not([type=hidden]), textarea, .yt-search-item')).filter(el => el.getClientRects().length > 0 && !el.disabled);
+        leftNavCache = Array.from(L.querySelectorAll('button, select, input:not([type=hidden]), textarea, .yt-search-item'))
+            .filter(el => !el.disabled && el.offsetParent !== null && !(el.tagName === 'INPUT' && el.closest('.yt-search-item')));
+        leftNavCacheAt = now;
+        return leftNavCache;
+    }
+    function fastScrollIntoView(el) {
+        let p = el.parentElement;
+        while (p) {
+            if (p.scrollHeight > p.clientHeight + 2) {
+                const ov = getComputedStyle(p).overflowY;
+                if (ov === 'auto' || ov === 'scroll') {
+                    const pr = p.getBoundingClientRect(), er = el.getBoundingClientRect();
+                    const padTop = p.id === 'leftSidebar' ? 80 : 8, padBot = 16;
+                    if (er.bottom > pr.bottom - padBot) p.scrollTop += (er.bottom - pr.bottom + padBot);
+                    else if (er.top < pr.top + padTop) p.scrollTop -= (pr.top + padTop - er.top);
+                }
+            }
+            if (p.id === 'leftSidebar') break;
+            p = p.parentElement;
+        }
+    }
+    function moveInLeftDrawer(dir, step = 1) {
+        const list = getLeftNavList();
         if (!list.length) return;
-        const cur = document.activeElement;
-        let idx = list.indexOf(cur);
-        if (idx < 0) idx = 0;
-        else idx = Math.max(0, Math.min(list.length - 1, idx + dir));
+        const ae = document.activeElement;
+        let idx = list.indexOf(ae);
+        if (idx < 0 && ae && ae.closest) { const it = ae.closest('.yt-search-item'); if (it) idx = list.indexOf(it); }
+        idx = idx < 0 ? 0 : Math.max(0, Math.min(list.length - 1, idx + dir * step));
         const target = list[idx];
-        try { target.focus({ preventScroll: true }); } catch(e) { target.focus(); }
-        try { target.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+        try { target.focus({ preventScroll: true }); } catch (e) { target.focus(); }
+        fastScrollIntoView(target);
     }
 
     let screenFocusFromControls = false;
@@ -3343,14 +3385,14 @@
                 if (!e.repeat) pinAdd(k);
                 return;
             }
-            if (k === 'ArrowDown' || k === 'ArrowRight') {
+            if (['ArrowDown', 'ArrowRight', 'ArrowUp', 'ArrowLeft', 'ChannelUp', 'ChannelDown', 'PageUp', 'PageDown'].includes(k)) {
                 e.preventDefault(); e.stopImmediatePropagation();
-                moveInLeftDrawer(1);
-                return;
-            }
-            if (k === 'ArrowUp' || k === 'ArrowLeft') {
-                e.preventDefault(); e.stopImmediatePropagation();
-                moveInLeftDrawer(-1);
+                const nowT = performance.now();
+                if (e.repeat && nowT - lastLeftMoveTime < 40) return;
+                lastLeftMoveTime = nowT;
+                const dirL = (k === 'ArrowDown' || k === 'ArrowRight' || k === 'ChannelDown' || k === 'PageDown') ? 1 : -1;
+                const stepL = (k === 'ChannelUp' || k === 'ChannelDown' || k === 'PageUp' || k === 'PageDown') ? 6 : 1;
+                moveInLeftDrawer(dirL, stepL);
                 return;
             }
             if (k === 'Enter' || k === ' ' || kc === 23 || kc === 13 || kc === 66) {
@@ -3423,7 +3465,7 @@
                     screenFocusFromControls = false;
                     const pw = document.getElementById('playerWrapper');
                     if (pw) pw.focus();
-                    if (!e.repeat) { nextCh(); showControls(false); }
+                    if (!e.repeat) { nextCh(); hideControlsNow(); }
                     return;
                 }
                 if (k === 'ArrowDown' || k === 'ChannelDown') {
@@ -3432,7 +3474,7 @@
                     screenFocusFromControls = false;
                     const pw = document.getElementById('playerWrapper');
                     if (pw) pw.focus();
-                    if (!e.repeat) { prevCh(); showControls(false); }
+                    if (!e.repeat) { prevCh(); hideControlsNow(); }
                     return;
                 }
                 if (k === 'Enter' || k === ' ' || kc === 23 || kc === 13 || kc === 66) {
@@ -3477,8 +3519,8 @@
             }
             return;
         }
-        if (k === 'ArrowUp' || k === 'ChannelUp') { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) { nextCh(); showControls(); } return; }
-        if (k === 'ArrowDown' || k === 'ChannelDown') { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) { prevCh(); showControls(); } return; }
+        if (k === 'ArrowUp' || k === 'ChannelUp') { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) { nextCh(); } return; }
+        if (k === 'ArrowDown' || k === 'ChannelDown') { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) { prevCh(); } return; }
         if (k === 'ArrowLeft') {
             e.preventDefault(); e.stopImmediatePropagation();
             if (ctrlVisible) {
