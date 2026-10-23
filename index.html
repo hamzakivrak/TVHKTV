@@ -2581,6 +2581,16 @@
             }
         }
 
+        // Meta etiketlerindeki oynatici (embed) adresleri: twitter:player / og:video
+        const metaRe = /<meta[^>]*(?:twitter:player|og:video)[^>]*>/gi;
+        let mm;
+        while ((mm = metaRe.exec(unescaped)) !== null) {
+            const cm = mm[0].match(/content=["']([^"']+)["']/i);
+            if (!cm) continue;
+            let mu = cm[1].trim();
+            if (mu.startsWith('//')) mu = 'https:' + mu;
+            if (/^https?:\/\//i.test(mu) && !iframes.includes(mu)) iframes.unshift(mu);
+        }
         return { m3u8, yt, title, logo, iframes };
     }
 
