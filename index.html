@@ -370,7 +370,7 @@
             </div>
         </div>
 
-        <div class="ctrl-hint-pill" id="ctrlHintPill">◀ ▶ Alt Kontroller &amp; Sarma · ▲ Ekran / Üst Menü · OK: Kanal Rehberi</div>
+        <div class="ctrl-hint-pill" id="ctrlHintPill">◀ ▶ Alt Kontroller &amp; Sarma · ▲ ▼ Kanal Değiştir · OK: Kanal Rehberi</div>
 
         <div class="center-buttons" id="bottomControlBar">
             <button class="ctrl-btn small" id="ccBtn" onclick="toggleSubtitles()" title="Altyazı Aç/Kapat"><i class="material-icons-round">closed_caption</i></button>
@@ -1172,16 +1172,13 @@
         const pill = document.getElementById('ctrlHintPill');
         if (!pill) return;
         const ae = document.activeElement;
-        const topBtns = [document.getElementById('topChannelsBtn'), document.getElementById('topSettingsBtn')];
-        if (ae && ae.id === 'playerWrapper' && !document.getElementById('controlsOverlay').classList.contains('hide')) {
+        const bottomBar = document.getElementById('bottomControlBar');
+        if (ae && bottomBar && bottomBar.contains(ae)) {
             pill.classList.add('screen-active');
-            pill.innerHTML = '📺 <b>Ekran Aktif:</b> ▲ ▼ Kanal Değiştir · OK: Kanal Rehberi · ▲ (Üst Menü: Geri/Sağ) · ▼ Alt Kontroller';
-        } else if (topBtns.includes(ae)) {
-            pill.classList.remove('screen-active');
-            pill.innerHTML = '🔼 <b>Üst Menü Aktif:</b> OK ile Seçin · ▼ Ekran / Alt Kontroller';
+            pill.innerHTML = '◀ ▶ Buton Seç · <b>OK (Basılı Tut): 2x İvmeli Sar (Max 20dk)</b> · ▲ ▼ Doğrudan Kanal Değiştir';
         } else {
             pill.classList.remove('screen-active');
-            pill.innerHTML = '◀ ▶ Alt Kontroller &amp; Sarma (Basılı Tut: İvmeli Sarma) · ▲ Ekran Aktif · OK: Seç';
+            pill.innerHTML = '◀ ▶ Alt Kontroller &amp; Sarma · ▲ ▼ Kanal Değiştir · OK: Kanal Rehberi';
         }
     }
     function showControls(focusBottomBar = false) {
@@ -1993,13 +1990,11 @@
         }
     }
 
-    // Adım sayısına göre ivmelenen atlama süresi:
-    // İlk 3 adımda: 10 sn, 10 sn, 10 sn
-    // Devam ederse her adımda (saniyede) 2 kat artarak 10 dakikaya (600 sn) kadar çıkar: 20s -> 40s -> 80s -> 160s -> 320s -> 600s
+    // Adım sayısına göre doğrudan 2 kat ivmelenen atlama süresi (Max 20 dakika = 1200 sn):
+    // 1. adım: 10 sn -> 2. adım: 20 sn -> 3. adım: 40 sn -> 4. adım: 80 sn (1dk 20sn) -> 5. adım: 160 sn (2dk 40sn) -> 6. adım: 320 sn (5dk 20sn) -> 7. adım: 640 sn (10dk 40sn) -> 8+ adım: 1200 sn (20 dk)
     function getAcceleratedJumpSeconds(stepCount) {
-        if (stepCount <= 3) return 10;
-        const exp = stepCount - 3; // 1, 2, 3, 4, 5, 6...
-        return Math.min(600, 10 * Math.pow(2, exp));
+        if (stepCount <= 1) return 10;
+        return Math.min(1200, 10 * Math.pow(2, stepCount - 1));
     }
 
     function seekRelative(deltaSec, stepCount = 1) {
@@ -2024,7 +2019,7 @@
         const jumpTxt = (deltaSec > 0 ? '+' : '-') + formatJumpLabel(absJump);
         const dirWord = deltaSec > 0 ? 'İleri' : 'Geri';
         updateSeekBarUI(true, jumpTxt);
-        showOSD(`${jumpTxt} ${dirWord} (${formatMediaTime(relCur)} / ${formatMediaTime(total)})`, stepCount > 3 ? "⚡ Hızlı Sarma (Basılı Tutuluyor)" : "İleri/Geri Sarma");
+        showOSD(`${jumpTxt} ${dirWord} (${formatMediaTime(relCur)} / ${formatMediaTime(total)})`, stepCount > 1 ? "⚡ 2x İvmeli Hızlı Sarma (Max 20 dk)" : "İleri/Geri Sarma");
         setTimeout(() => updateSeekBarUI(false), 90);
     }
 
@@ -2045,8 +2040,7 @@
 
         function scheduleNextTick() {
             if (!seekHoldActive) return;
-            // İlk 3 adım hızlı (450ms arayla 10sn), 3. adımdan sonra her 1 saniyede (1000ms) 2 katına çıkarak ivmelenir
-            const waitMs = seekHoldStepCount < 3 ? 450 : 950;
+            // Basılı tutulduğu sürece her 850ms'de bir 2 katına çıkarak 20 dakikaya (1200sn) kadar ivmelenir
             seekHoldTimer = setTimeout(() => {
                 if (!seekHoldActive) return;
                 seekHoldStepCount++;
@@ -2054,7 +2048,7 @@
                 lastSingleSeekAt = Date.now();
                 seekRelative(seekHoldDir * jumpSec, seekHoldStepCount);
                 scheduleNextTick();
-            }, waitMs);
+            }, 850);
         }
         scheduleNextTick();
     }
@@ -2082,44 +2076,62 @@
         setTimeout(() => { isErrorHandling = false; if (attempts < allChannels.length) { const newNextIdx = allChannels.findIndex(c => c.id === nextIdToPlay); if (newNextIdx !== -1) play(newNextIdx, dir); } else { showOSD("Hata", "Çalışan kanal bulunamadı"); } }, waitTime);
     }
 
-    /* HIZLI REKLAMSIZ YOUTUBE AKIŞ ÇÖZÜCÜSÜ (1.8 SANİYE HIZ SINIRLI + ÖNBELLEKLİ) */
+    /* GÜÇLENDİRİLMİŞ REKLAMSIZ YOUTUBE AKIŞ ÇÖZÜCÜSÜ (ÇOKLU SUNUCU + CLOUD PROXY + ARKA PLAN REKLAMSIZ GEÇİŞ) */
     const PIPED_FAST = [
         'https://pipedapi.kavin.rocks',
         'https://pipedapi.tokhmi.xyz',
         'https://pipedapi.moomoo.me',
-        'https://api.piped.private.coffee'
+        'https://api.piped.private.coffee',
+        'https://pipedapi.smnz.de',
+        'https://pipedapi.adminforge.de',
+        'https://pipedapi.drgns.space',
+        'https://pipedapi.ducks.party'
     ];
     const INVID_FAST = [
         'https://inv.tux.pizza',
         'https://invidious.protokolla.fi',
         'https://yt.artemislena.eu',
-        'https://inv.nadeko.net'
+        'https://inv.nadeko.net',
+        'https://invidious.nerdvpn.de',
+        'https://invidious.privacyredirect.com',
+        'https://invidious.jing.rocks'
     ];
 
-    async function fastJsonFetch(u, ms = 1700) {
-        const r = await fetchTO(u, ms);
-        if (!r.ok) throw 0;
-        return await r.json();
+    async function fastJsonFetch(u, ms = 2500) {
+        try {
+            const r = await fetchTO(u, ms);
+            if (r.ok) return await r.json();
+        } catch (e) {}
+        // Doğrudan erişim engelliyse veya CORS takıldıysa Cloud Proxy üzerinden dene
+        const pr = await fetchTO(MY_CLOUD_PROXY + encodeURIComponent(u), ms);
+        if (!pr.ok) throw 0;
+        return await pr.json();
     }
 
-    async function getFastAdFreeYt(id, maxWaitMs = 1800) {
+    function parsePipedStreamData(d) {
+        if (!d || d.error) throw 0;
+        if (d.livestream && d.hls) return { url: d.hls, type: 'hls' };
+        const v = (d.videoStreams || []).filter(x => !x.videoOnly && (x.mimeType || '').includes('mp4')).sort((a, b) => (b.height || 0) - (a.height || 0))[0];
+        if (!v || !v.url) throw 0;
+        return { url: v.url, type: 'mp4' };
+    }
+
+    function parseInvidStreamData(a, d) {
+        if (!d || d.error) throw 0;
+        if (d.liveNow && d.hlsUrl) return { url: d.hlsUrl.startsWith('http') ? d.hlsUrl : a + d.hlsUrl, type: 'hls' };
+        const v = (d.formatStreams || []).filter(x => (x.type || '').includes('mp4')).sort((x, y) => parseInt(y.resolution || '0', 10) - parseInt(x.resolution || '0', 10))[0];
+        if (!v || !v.url) throw 0;
+        return { url: v.url.startsWith('http') ? v.url : a + v.url, type: 'mp4' };
+    }
+
+    async function getFastAdFreeYt(id, maxWaitMs = 2800) {
         if (ytStreamCache.has(id)) {
             const cached = ytStreamCache.get(id);
-            if (Date.now() - cached.t < 20 * 60 * 1000) return cached.d;
+            if (Date.now() - cached.t < 25 * 60 * 1000) return cached.d;
         }
         const jobs = [
-            ...PIPED_FAST.map(a => fastJsonFetch(`${a}/streams/${id}`, maxWaitMs).then(d => {
-                if (d.livestream && d.hls) return { url: d.hls, type: 'hls' };
-                const v = (d.videoStreams || []).filter(x => !x.videoOnly && (x.mimeType || '').includes('mp4')).sort((a, b) => (b.height || 0) - (a.height || 0))[0];
-                if (!v || !v.url) throw 0;
-                return { url: v.url, type: 'mp4' };
-            })),
-            ...INVID_FAST.map(a => fastJsonFetch(`${a}/api/v1/videos/${id}?local=true`, maxWaitMs).then(d => {
-                if (d.liveNow && d.hlsUrl) return { url: d.hlsUrl.startsWith('http') ? d.hlsUrl : a + d.hlsUrl, type: 'hls' };
-                const v = (d.formatStreams || []).find(x => (x.type || '').includes('mp4'));
-                if (!v || !v.url) throw 0;
-                return { url: v.url.startsWith('http') ? v.url : a + v.url, type: 'mp4' };
-            }))
+            ...PIPED_FAST.map(a => fastJsonFetch(`${a}/streams/${id}`, maxWaitMs).then(parsePipedStreamData)),
+            ...INVID_FAST.map(a => fastJsonFetch(`${a}/api/v1/videos/${id}?local=true`, maxWaitMs).then(d => parseInvidStreamData(a, d)))
         ];
         try {
             const res = await Promise.any(jobs);
@@ -2132,13 +2144,67 @@
 
     function preloadNextYtStream(fromIdx) {
         if (!allChannels.length) return;
-        const nextIdx = (fromIdx + 1) % allChannels.length;
-        const nextChObj = allChannels[nextIdx];
-        if (!nextChObj) return;
-        const nextYtId = extractYTId(nextChObj.url);
-        if (nextYtId && !ytStreamCache.has(nextYtId)) {
-            getFastAdFreeYt(nextYtId, 3500).catch(() => {});
+        for (const offset of [1, 2, -1]) {
+            const targetIdx = (fromIdx + offset + allChannels.length) % allChannels.length;
+            const chObj = allChannels[targetIdx];
+            if (!chObj) continue;
+            const ytId = extractYTId(chObj.url);
+            if (ytId && !ytStreamCache.has(ytId)) {
+                getFastAdFreeYt(ytId, 5000).catch(() => {});
+            }
         }
+    }
+
+    function applyDirectYtStreamToVideo(direct, sessionToken, resumeTimeSec = 0) {
+        if (sessionToken !== currentPlaySession || !direct || !direct.url) return false;
+        const video = document.getElementById('localPlayer');
+        const ytContainer = document.getElementById('ytContainer');
+        if (ytAdSkipTimer) { clearInterval(ytAdSkipTimer); ytAdSkipTimer = null; }
+        ytContainer.style.display = 'none';
+        if (isYtApiReady && ytPlayer && typeof ytPlayer.stopVideo === 'function') {
+            try { ytPlayer.stopVideo(); } catch (e) {}
+        }
+        video.style.display = 'block';
+        if (hls) { hls.destroy(); hls = null; }
+
+        if (direct.type === 'hls' && Hls.isSupported()) {
+            hls = new Hls();
+            hls.loadSource(direct.url);
+            hls.attachMedia(video);
+            hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                if (resumeTimeSec > 2) { try { video.currentTime = resumeTimeSec; } catch (e) {} }
+                video.play().catch(() => {});
+                document.getElementById('pStatus').innerText = "İzleniyor (YT Reklamsız)";
+            });
+            hls.on(Hls.Events.ERROR, (e, d) => {
+                if (d.fatal) {
+                    const ytId = extractYTId(allChannels[curIdx]?.url || '');
+                    if (ytId) startYtIframeWithAdSkip(ytId, sessionToken, false);
+                }
+            });
+            return true;
+        } else if (direct.type === 'mp4') {
+            video.removeAttribute('crossorigin');
+            video.src = direct.url;
+            video.onloadedmetadata = () => {
+                if (resumeTimeSec > 2 && isFinite(video.duration) && resumeTimeSec < video.duration - 2) {
+                    try { video.currentTime = resumeTimeSec; } catch (e) {}
+                }
+            };
+            video.onended = () => nextCh();
+            video.onerror = () => {
+                const ytId = extractYTId(allChannels[curIdx]?.url || '');
+                if (ytId) startYtIframeWithAdSkip(ytId, sessionToken, false);
+            };
+            video.play().then(() => {
+                document.getElementById('pStatus').innerText = "İzleniyor (YT Reklamsız)";
+            }).catch(() => {
+                const ytId = extractYTId(allChannels[curIdx]?.url || '');
+                if (ytId) startYtIframeWithAdSkip(ytId, sessionToken, false);
+            });
+            return true;
+        }
+        return false;
     }
 
     async function play(idx, dir = 0) {
@@ -2165,34 +2231,19 @@
         const ytContainer = document.getElementById('ytContainer');
         document.getElementById('castOnlyScreen').style.display = 'none';
         video.onerror = null;
+        video.onloadedmetadata = null;
         if (ytAdSkipTimer) { clearInterval(ytAdSkipTimer); ytAdSkipTimer = null; }
         if (hls) { hls.destroy(); hls = null; }
         
         const ytId = extractYTId(url);
         if (ytId) {
-            document.getElementById('pStatus').innerText = "YT Hazırlanıyor...";
-            const direct = await getFastAdFreeYt(ytId, 1800);
+            document.getElementById('pStatus').innerText = "YT Reklamsız Akış Hazırlanıyor...";
+            const direct = await getFastAdFreeYt(ytId, 2800);
             if (sessionToken !== currentPlaySession) return;
             if (direct && direct.url) {
-                ytContainer.style.display = 'none';
-                if (isYtApiReady && ytPlayer && typeof ytPlayer.stopVideo === 'function') ytPlayer.stopVideo();
-                video.style.display = 'block';
-                if (direct.type === 'hls' && Hls.isSupported()) {
-                    hls = new Hls();
-                    hls.loadSource(direct.url); hls.attachMedia(video);
-                    hls.on(Hls.Events.MANIFEST_PARSED, () => { video.play().catch(()=>{}); document.getElementById('pStatus').innerText = "İzleniyor (YT Reklamsız)"; });
-                    hls.on(Hls.Events.ERROR, (e, d) => { if (d.fatal) startYtIframeWithAdSkip(ytId, sessionToken); });
-                    return;
-                } else if (direct.type === 'mp4') {
-                    video.removeAttribute('crossorigin');
-                    video.src = direct.url;
-                    video.onended = () => nextCh();
-                    video.onerror = () => startYtIframeWithAdSkip(ytId, sessionToken);
-                    video.play().then(() => { document.getElementById('pStatus').innerText = "İzleniyor (YT Reklamsız)"; }).catch(() => startYtIframeWithAdSkip(ytId, sessionToken));
-                    return;
-                }
+                if (applyDirectYtStreamToVideo(direct, sessionToken, 0)) return;
             }
-            startYtIframeWithAdSkip(ytId, sessionToken);
+            startYtIframeWithAdSkip(ytId, sessionToken, true);
         } else {
             video.onended = null;
             ytContainer.style.display = 'none';
@@ -2217,7 +2268,7 @@
         }
     }
 
-    function startYtIframeWithAdSkip(ytId, sessionToken) {
+    function startYtIframeWithAdSkip(ytId, sessionToken, trySeamlessUpgrade = true) {
         const video = document.getElementById('localPlayer');
         const ytContainer = document.getElementById('ytContainer');
         if (hls) { hls.destroy(); hls = null; }
@@ -2230,13 +2281,44 @@
         if (isYtApiReady && ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
             ytPlayer.loadVideoById({ videoId: ytId, startSeconds: 0 });
             document.getElementById('pStatus').innerText = "Cihazda İzleniyor (YT)";
-            
-            getFastAdFreeYt(ytId, 4500).then(direct => {
-                if (sessionToken !== currentPlaySession || !direct || !direct.url) return;
-            }).catch(()=>{});
+
+            // Arka planda 7.5 saniye daha geniş zaman aşımıyla reklamsız akış aramaya devam et;
+            // bulduğu anda IFrame'i kapatıp kaldığı saniyeden reklamsız HTML5 videoya geçir!
+            if (trySeamlessUpgrade) {
+                getFastAdFreeYt(ytId, 7500).then(direct => {
+                    if (sessionToken !== currentPlaySession || !direct || !direct.url) return;
+                    let curSec = 0;
+                    try {
+                        if (ytPlayer && typeof ytPlayer.getCurrentTime === 'function') {
+                            curSec = Number(ytPlayer.getCurrentTime() || 0);
+                        }
+                    } catch (e) {}
+                    applyDirectYtStreamToVideo(direct, sessionToken, curSec);
+                }).catch(() => {});
+            }
+
+            // Eğer hiçbir reklamsız sunucu yanıt vermezse ve IFrame kalırsa, olası kısa reklamları hızlandırarak atla
+            if (ytAdSkipTimer) clearInterval(ytAdSkipTimer);
+            ytAdSkipTimer = setInterval(() => {
+                if (sessionToken !== currentPlaySession || ytContainer.style.display === 'none') {
+                    clearInterval(ytAdSkipTimer);
+                    ytAdSkipTimer = null;
+                    return;
+                }
+                try {
+                    if (ytPlayer && typeof ytPlayer.getVideoData === 'function') {
+                        const vd = ytPlayer.getVideoData();
+                        if (vd && vd.video_id && vd.video_id !== ytId) {
+                            // Farklı bir reklam video_id'si oynuyorsa sonuna sar
+                            const d = ytPlayer.getDuration();
+                            if (d && d > 0 && d < 180) ytPlayer.seekTo(d, true);
+                        }
+                    }
+                } catch (e) {}
+            }, 1000);
         } else {
             document.getElementById('pStatus').innerText = "YT Hazırlanıyor...";
-            setTimeout(() => { if (sessionToken === currentPlaySession) startYtIframeWithAdSkip(ytId, sessionToken); }, 600);
+            setTimeout(() => { if (sessionToken === currentPlaySession) startYtIframeWithAdSkip(ytId, sessionToken, trySeamlessUpgrade); }, 600);
         }
     }
     
@@ -3059,22 +3141,22 @@
                     updateControlHintPill();
                     return;
                 }
-                if (k === 'ArrowUp') {
+                if (k === 'ArrowUp' || k === 'ChannelUp') {
                     e.preventDefault(); e.stopImmediatePropagation();
                     stopAcceleratingSeek();
-                    // Alt kontrollerden yukarı basınca doğrudan üstteki "Kanallar (OK)" butonuna atlamak yerine önce orta kademe olan EKRAN'ı aktif yap!
-                    screenFocusFromControls = true;
+                    screenFocusFromControls = false;
                     const pw = document.getElementById('playerWrapper');
                     if (pw) pw.focus();
-                    updateControlHintPill();
-                    showOSD("Ekran Aktif", "OK: Kanal Rehberi · ▲ Üst Menü · ▼ Alt Kontroller");
-                    resetControlsTimer();
+                    if (!e.repeat) { nextCh(); showControls(false); }
                     return;
                 }
-                if (k === 'ArrowDown') {
+                if (k === 'ArrowDown' || k === 'ChannelDown') {
                     e.preventDefault(); e.stopImmediatePropagation();
                     stopAcceleratingSeek();
-                    if (!e.repeat) { prevCh(); showControls(true); }
+                    screenFocusFromControls = false;
+                    const pw = document.getElementById('playerWrapper');
+                    if (pw) pw.focus();
+                    if (!e.repeat) { prevCh(); showControls(false); }
                     return;
                 }
                 if (k === 'Enter' || k === ' ' || kc === 23 || kc === 13 || kc === 66) {
