@@ -364,10 +364,7 @@
                     <span id="qualityBadge" class="ch-counter"></span>
                 </div>
             </div>
-            <div class="top-actions">
-                <button class="btn-icon" id="topChannelsBtn" onclick="openRightSidebar()" title="Kanal listesi"><i class="material-icons-round">grid_view</i> Kanallar (OK)</button>
-                <button class="btn-icon" id="topSettingsBtn" onclick="requestSettingsOpen()" title="Ayarlar"><i class="material-icons-round">lock</i> Ayarlar</button>
-            </div>
+
         </div>
 
         <div class="ctrl-hint-pill" id="ctrlHintPill">◀ ▶ Alt Kontroller &amp; Sarma · ▲ ▼ Kanal Değiştir · OK: Kanal Rehberi</div>
@@ -501,18 +498,19 @@
                     <button class="btn" style="width:100%; background:#e84118; color:#fff; border-color:#e84118;" onclick="addYTPlaylist()">Listeyi Kaydet</button>
                 </div>
 
-                <!-- AKILLI KANAL ARA (TV / RADYO) -->
+                <!-- AKILLI KANAL ARA (TV / RADYO / WEB CANLI YAYIN SİTELERİ) -->
                 <div class="sub-module">
-                    <span class="sub-module-title" style="color:#00cec9;">Akıllı Kanal Ara (TV / Radyo)</span>
+                    <span class="sub-module-title" style="color:#00cec9;">Akıllı Kanal Ara (TV / Radyo / Web Canlı Site)</span>
                     <div style="display:flex; gap:5px; margin-bottom:8px;">
-                        <input type="text" id="smartQuery" readonly placeholder="Örn: türkiye, fransa haber, radyo, spor" style="margin:0;">
+                        <input type="text" id="smartQuery" readonly placeholder="Kanal adı (kanal d, atv) veya site linki (kanald.com.tr/canli-yayin)" style="margin:0;">
                         <button class="btn" style="flex:0.4; background:#00cec9; border-color:#00cec9; color:#000; margin:0;" onclick="smartSearch()"><i class="material-icons-round">search</i></button>
                     </div>
-                    <div style="display:flex; gap:18px; font-size:0.85rem; margin-bottom:8px; align-items:center;">
-                        <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" style="position:static; width:20px; height:20px;" id="srcTv" checked> TV</label>
+                    <div style="display:flex; gap:14px; font-size:0.84rem; margin-bottom:8px; align-items:center; flex-wrap:wrap;">
+                        <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" style="position:static; width:20px; height:20px;" id="srcWeb" checked> Web Canlı Site</label>
+                        <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" style="position:static; width:20px; height:20px;" id="srcTv" checked> IPTV</label>
                         <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" style="position:static; width:20px; height:20px;" id="srcRadio" checked> Radyo</label>
                     </div>
-                    <div id="smartStatus" style="font-size:0.75rem; color:#aaa; text-align:center; margin-bottom:8px;">Ülke, kategori veya kelime yazın.</div>
+                    <div id="smartStatus" style="font-size:0.75rem; color:#aaa; text-align:center; margin-bottom:8px;">Kanal adı (örn: kanal d, show tv), ülke veya doğrudan canlı yayın web linki yazın.</div>
                     <div id="smartResults" class="yt-search-results" style="max-height:260px;"></div>
                     <div id="smartActions" style="display:none;">
                         <div id="smartCount" style="font-size:0.75rem; color:#aaa; text-align:center; margin-bottom:8px;"></div>
@@ -1855,7 +1853,7 @@
     }
     function testStreamBackground(url, ms = 4000) {
         return new Promise((resolve) => {
-            if (extractYTId(url)) { resolve(true); return; }
+            if (extractYTId(url) || url.includes('#web_live')) { resolve(true); return; }
             let done = false, tempHls = null, v = null, timer = null;
             const finish = (ok) => { if (done) return; done = true; clearTimeout(timer); try { if (tempHls) tempHls.destroy(); } catch (e) {} try { if (v) { v.onloadedmetadata = null; v.onerror = null; v.removeAttribute('src'); v.load(); } } catch (e) {} resolve(ok); };
             timer = setTimeout(() => finish(false), ms);
@@ -2235,6 +2233,30 @@
         if (ytAdSkipTimer) { clearInterval(ytAdSkipTimer); ytAdSkipTimer = null; }
         if (hls) { hls.destroy(); hls = null; }
         
+        // Eğer kanal linki bir canlı yayın web sayfasıysa (#web_live veya .m3u8/.mp4 olmayan bir TV web sayfasıysa) anlık olarak içindeki canlı yayını çöz!
+        const isWebPageLive = url.includes('#web_live') || (
+            /^https?:\/\//i.test(url) &&
+            !extractYTId(url) &&
+            !url.includes('.m3u') &&
+            !url.includes('.mp4') &&
+            !url.includes('#audio') &&
+            (/canli|live|watch|izle|webtv|\/tv/i.test(url))
+        );
+        if (isWebPageLive) {
+            const cleanPageUrl = url.split('#')[0];
+            document.getElementById('pStatus').innerText = "Web Canlı Yayın Çözülüyor...";
+            const knownSite = OFFICIAL_WEB_CHANNELS.find(c => cleanPageUrl.includes(new URL(c.pageUrl).hostname.replace(/^www\./, '')));
+            const scraped = await scrapeLivePageStreams(cleanPageUrl, '', knownSite ? knownSite.fallbackStreams : []);
+            if (sessionToken !== currentPlaySession) return;
+            const playable = scraped.find(x => !x.url.includes('#web_live'));
+            if (playable && playable.url) {
+                url = playable.url;
+            } else {
+                handleStreamError(sessionToken);
+                return;
+            }
+        }
+
         const ytId = extractYTId(url);
         if (ytId) {
             document.getElementById('pStatus').innerText = "YT Reklamsız Akış Hazırlanıyor...";
@@ -2424,6 +2446,249 @@
         throw last;
     }
 
+    /* ===== RESMİ WEB CANLI YAYIN SİTELERİ REHBERİ VE CANLI .M3U8 / YAYIN YAKALAYICI (WEB SCRAPER) ===== */
+    const OFFICIAL_WEB_CHANNELS = [
+        { name: 'Kanal D (Resmi Web Canlı)', pageUrl: 'https://www.kanald.com.tr/canli-yayin', keys: ['kanald', 'kanal d', 'ulusal', 'turkiye'], logo: 'https://i.imgur.com/8Q9Z5Zm.png', fallbackStreams: ['https://demiroren-live.daioncdn.net/kanald/kanald.m3u8'] },
+        { name: 'ATV (Resmi Web Canlı)', pageUrl: 'https://www.atv.com.tr/canli-yayin', keys: ['atv', 'ulusal', 'turkiye'], logo: '', fallbackStreams: ['https://trkvz-live.daioncdn.net/atv/atv.m3u8'] },
+        { name: 'Show TV (Resmi Web Canlı)', pageUrl: 'https://www.showtv.com.tr/canli-yayin', keys: ['show', 'show tv', 'showtv', 'ulusal', 'turkiye'], logo: '', fallbackStreams: ['https://ciner-live.daioncdn.net/showtv/showtv.m3u8'] },
+        { name: 'Star TV (Resmi Web Canlı)', pageUrl: 'https://www.startv.com.tr/canli-yayin', keys: ['star', 'star tv', 'startv', 'ulusal', 'turkiye'], logo: '', fallbackStreams: ['https://dogus-live.daioncdn.net/startv/startv.m3u8'] },
+        { name: 'NOW TV / FOX (Resmi Web Canlı)', pageUrl: 'https://www.nowtv.com.tr/canli-yayin', keys: ['now', 'now tv', 'nowtv', 'fox', 'ulusal', 'turkiye'], logo: '', fallbackStreams: [] },
+        { name: 'TV8 (Resmi Web Canlı)', pageUrl: 'https://www.tv8.com.tr/canli-yayin', keys: ['tv8', 'tv 8', 'ulusal', 'turkiye'], logo: '', fallbackStreams: ['https://tv8-live.daioncdn.net/tv8/tv8.m3u8'] },
+        { name: 'TV8,5 (Resmi Web Canlı)', pageUrl: 'https://www.tv8bucuk.com/tv8-5-canli-yayin', keys: ['tv8.5', 'tv8,5', 'tv85', 'tv8 bucuk', 'ulusal', 'spor', 'turkiye'], logo: '', fallbackStreams: ['https://tv8-live.daioncdn.net/tv8bucuk/tv8bucuk.m3u8'] },
+        { name: 'TRT 1 (Resmi Web Canlı)', pageUrl: 'https://www.tabii.com/tr/watch/live/trt1', keys: ['trt', 'trt1', 'trt 1', 'ulusal', 'turkiye'], logo: '', fallbackStreams: ['https://tv-trt1.medya.trt.com.tr/master.m3u8'] },
+        { name: 'TRT Haber (Resmi Web Canlı)', pageUrl: 'https://www.trthaber.com/canli-yayin-izle.html', keys: ['trt', 'trt haber', 'trthaber', 'haber', 'turkiye'], logo: '', fallbackStreams: ['https://tv-trthaber.medya.trt.com.tr/master.m3u8'] },
+        { name: 'TRT Spor (Resmi Web Canlı)', pageUrl: 'https://www.trtspor.com.tr/canli-yayin-izle/trt-spor', keys: ['trt', 'trt spor', 'trtspor', 'spor', 'turkiye'], logo: '', fallbackStreams: ['https://tv-trtspor1.medya.trt.com.tr/master.m3u8'] },
+        { name: 'TRT Spor Yıldız (Resmi Web Canlı)', pageUrl: 'https://www.trtspor.com.tr/canli-yayin-izle/trt-spor-yildiz', keys: ['trt', 'trt spor yildiz', 'spor', 'turkiye'], logo: '', fallbackStreams: ['https://tv-trtsporyildiz.medya.trt.com.tr/master.m3u8'] },
+        { name: 'TRT Çocuk (Resmi Web Canlı)', pageUrl: 'https://www.trtcocuk.net.tr/canli-yayin', keys: ['trt', 'trt cocuk', 'cocuk', 'turkiye'], logo: '', fallbackStreams: ['https://tv-trtcocuk.medya.trt.com.tr/master.m3u8'] },
+        { name: 'TRT Belgesel (Resmi Web Canlı)', pageUrl: 'https://www.tabii.com/tr/watch/live/trtbelgesel', keys: ['trt', 'trt belgesel', 'belgesel', 'turkiye'], logo: '', fallbackStreams: ['https://tv-trtbelgesel.medya.trt.com.tr/master.m3u8'] },
+        { name: 'TRT Müzik (Resmi Web Canlı)', pageUrl: 'https://www.tabii.com/tr/watch/live/trtmuzik', keys: ['trt', 'trt muzik', 'muzik', 'turkiye'], logo: '', fallbackStreams: ['https://tv-trtmuzik.medya.trt.com.tr/master.m3u8'] },
+        { name: 'CNN Türk (Resmi Web Canlı)', pageUrl: 'https://www.cnnturk.com/canli-yayin', keys: ['cnn', 'cnn turk', 'cnnturk', 'haber', 'turkiye'], logo: '', fallbackStreams: ['https://demiroren-live.daioncdn.net/cnnturk/cnnturk.m3u8'] },
+        { name: 'NTV (Resmi Web Canlı)', pageUrl: 'https://www.ntv.com.tr/canli-yayin/ntv', keys: ['ntv', 'haber', 'turkiye'], logo: '', fallbackStreams: ['https://dogus-live.daioncdn.net/ntv/ntv.m3u8'] },
+        { name: 'Habertürk TV (Resmi Web Canlı)', pageUrl: 'https://www.haberturk.com/canliyayin', keys: ['haberturk', 'haber turk', 'haber', 'turkiye'], logo: '', fallbackStreams: ['https://ciner-live.daioncdn.net/haberturktv/haberturktv.m3u8'] },
+        { name: 'A Haber (Resmi Web Canlı)', pageUrl: 'https://www.ahaber.com.tr/video/canli-yayin', keys: ['a haber', 'ahaber', 'haber', 'turkiye'], logo: '', fallbackStreams: ['https://trkvz-live.daioncdn.net/ahaber/ahaber.m3u8'] },
+        { name: 'A Spor (Resmi Web Canlı)', pageUrl: 'https://www.aspor.com.tr/webtv/canli-yayin', keys: ['a spor', 'aspor', 'spor', 'turkiye'], logo: '', fallbackStreams: ['https://trkvz-live.daioncdn.net/aspor/aspor.m3u8'] },
+        { name: 'A Para (Resmi Web Canlı)', pageUrl: 'https://www.apara.com.tr/canli-yayin', keys: ['a para', 'apara', 'ekonomi', 'haber', 'turkiye'], logo: '', fallbackStreams: ['https://trkvz-live.daioncdn.net/apara/apara.m3u8'] },
+        { name: 'A2 TV (Resmi Web Canlı)', pageUrl: 'https://www.atv.com.tr/a2tv/canli-yayin', keys: ['a2', 'a2 tv', 'dizi', 'turkiye'], logo: '', fallbackStreams: ['https://trkvz-live.daioncdn.net/a2tv/a2tv.m3u8'] },
+        { name: 'Halk TV (Resmi Web Canlı)', pageUrl: 'https://halktv.com.tr/canli-yayin', keys: ['halk', 'halk tv', 'halktv', 'haber', 'turkiye'], logo: '', fallbackStreams: ['https://halktv-live.daioncdn.net/halktv/halktv.m3u8'] },
+        { name: 'Sözcü TV - SZC (Resmi Web Canlı)', pageUrl: 'https://www.sozcu.com.tr/canli-yayin', keys: ['sozcu', 'szc', 'sozcu tv', 'haber', 'turkiye'], logo: '', fallbackStreams: [] },
+        { name: 'TELE1 (Resmi Web Canlı)', pageUrl: 'https://tele1.com.tr/canli-yayin/', keys: ['tele1', 'tele 1', 'haber', 'turkiye'], logo: '', fallbackStreams: [] },
+        { name: 'TV100 (Resmi Web Canlı)', pageUrl: 'https://www.tv100.com/canli-yayin', keys: ['tv100', 'tv 100', 'haber', 'turkiye'], logo: '', fallbackStreams: ['https://tv100-live.daioncdn.net/tv100/tv100.m3u8'] },
+        { name: 'Haber Global (Resmi Web Canlı)', pageUrl: 'https://haberglobal.com.tr/canli-yayin', keys: ['haber global', 'haberglobal', 'haber', 'turkiye'], logo: '', fallbackStreams: ['https://haberglobal-live.daioncdn.net/haberglobal/haberglobal.m3u8'] },
+        { name: 'TGRT Haber (Resmi Web Canlı)', pageUrl: 'https://www.tgrthaber.com/canli-yayin', keys: ['tgrt', 'tgrt haber', 'haber', 'turkiye'], logo: '', fallbackStreams: ['https://tgrthaber-live.daioncdn.net/tgrthaber/tgrthaber.m3u8'] },
+        { name: '24 TV (Resmi Web Canlı)', pageUrl: 'https://www.yirmidort.tv/canli-yayin', keys: ['24 tv', 'kanal 24', 'yirmidort', 'haber', 'turkiye'], logo: '', fallbackStreams: ['https://turkmedya-live.ercdn.net/tv24/tv24.m3u8'] },
+        { name: '360 TV (Resmi Web Canlı)', pageUrl: 'https://www.tv360.com.tr/canli-yayin', keys: ['360', '360 tv', 'tv360', 'ulusal', 'turkiye'], logo: '', fallbackStreams: ['https://turkmedya-live.ercdn.net/tv360/tv360.m3u8'] },
+        { name: 'Beyaz TV (Resmi Web Canlı)', pageUrl: 'https://www.beyaztv.com.tr/canli-yayin/', keys: ['beyaz', 'beyaz tv', 'beyaztv', 'ulusal', 'turkiye'], logo: '', fallbackStreams: ['https://beyaztv-live.daioncdn.net/beyaztv/beyaztv.m3u8'] },
+        { name: 'Kanal 7 (Resmi Web Canlı)', pageUrl: 'https://www.kanal7.com/canli-izle', keys: ['kanal 7', 'kanal7', 'ulusal', 'turkiye'], logo: '', fallbackStreams: ['https://kanal7-live.daioncdn.net/kanal7/kanal7.m3u8'] },
+        { name: 'Ülke TV (Resmi Web Canlı)', pageUrl: 'https://www.ulketv.com.tr/canli-yayin', keys: ['ulke', 'ulke tv', 'ulketv', 'haber', 'turkiye'], logo: '', fallbackStreams: ['https://ulketv-live.daioncdn.net/ulketv/ulketv.m3u8'] },
+        { name: 'TLC Türkiye (Resmi Web Canlı)', pageUrl: 'https://www.tlctv.com.tr/canli-izle', keys: ['tlc', 'tlc tv', 'belgesel', 'eglence', 'turkiye'], logo: '', fallbackStreams: ['https://dogus-live.daioncdn.net/tlc/tlc.m3u8'] },
+        { name: 'DMAX Türkiye (Resmi Web Canlı)', pageUrl: 'https://www.dmax.com.tr/canli-izle', keys: ['dmax', 'belgesel', 'eglence', 'turkiye'], logo: '', fallbackStreams: ['https://dogus-live.daioncdn.net/dmax/dmax.m3u8'] },
+        { name: 'Teve2 (Resmi Web Canlı)', pageUrl: 'https://www.teve2.com.tr/canli-yayin', keys: ['teve2', 'teve 2', 'tv2', 'ulusal', 'turkiye'], logo: '', fallbackStreams: ['https://demiroren-live.daioncdn.net/teve2/teve2.m3u8'] },
+        { name: 'Bloomberg HT (Resmi Web Canlı)', pageUrl: 'https://www.bloomberght.com/tv', keys: ['bloomberg', 'bloomberght', 'ekonomi', 'haber', 'turkiye'], logo: '', fallbackStreams: ['https://ciner-live.daioncdn.net/bloomberght/bloomberght.m3u8'] },
+        { name: 'Ekotürk TV (Resmi Web Canlı)', pageUrl: 'https://www.ekoturk.com/canli-yayin/', keys: ['ekoturk', 'ekonomi', 'haber', 'turkiye'], logo: '', fallbackStreams: [] },
+        { name: 'Kral Pop TV (Resmi Web Canlı)', pageUrl: 'https://www.kralmuzik.com.tr/tv/kral-pop-tv', keys: ['kral', 'kral pop', 'muzik', 'turkiye'], logo: '', fallbackStreams: ['https://dogus-live.daioncdn.net/kralpoptv/kralpoptv.m3u8'] },
+        { name: 'PowerTürk TV (Resmi Web Canlı)', pageUrl: 'https://www.powerapp.com.tr/tvs/powerturktv', keys: ['power', 'powerturk', 'power turk', 'muzik', 'turkiye'], logo: '', fallbackStreams: [] },
+        { name: 'Dream Türk TV (Resmi Web Canlı)', pageUrl: 'https://www.dreamturk.com.tr/canli-yayin', keys: ['dream', 'dream turk', 'muzik', 'turkiye'], logo: '', fallbackStreams: [] },
+        { name: 'Minika GO (Resmi Web Canlı)', pageUrl: 'https://www.minikago.com.tr/webtv/canli-yayin', keys: ['minika', 'minika go', 'cocuk', 'turkiye'], logo: '', fallbackStreams: ['https://trkvz-live.daioncdn.net/minikago/minikago.m3u8'] },
+        { name: 'Minika Çocuk (Resmi Web Canlı)', pageUrl: 'https://www.minikacocuk.com.tr/webtv/canli-yayin', keys: ['minika', 'minika cocuk', 'cocuk', 'turkiye'], logo: '', fallbackStreams: ['https://trkvz-live.daioncdn.net/minikacocuk/minikacocuk.m3u8'] },
+        { name: 'Cartoon Network Türkiye (Web Canlı)', pageUrl: 'https://www.canlitv.me/cartoon-network-canli-izle', keys: ['cartoon', 'cartoon network', 'cocuk', 'turkiye'], logo: '', fallbackStreams: [] }
+    ];
+
+    async function fetchHtmlViaProxy(pageUrl, timeoutMs = 9500) {
+        const proxies = [
+            MY_CLOUD_PROXY + encodeURIComponent(pageUrl),
+            'https://api.allorigins.win/raw?url=' + encodeURIComponent(pageUrl),
+            'https://corsproxy.io/?' + encodeURIComponent(pageUrl),
+            pageUrl
+        ];
+        let lastErr = new Error('Sayfa okunamadı');
+        for (const p of proxies) {
+            try {
+                const r = await fetchTO(p, timeoutMs);
+                if (!r.ok) continue;
+                const txt = await r.text();
+                if (txt && txt.length > 80) return txt;
+            } catch (e) { lastErr = e; }
+        }
+        throw lastErr;
+    }
+
+    function extractStreamsFromHtml(html, sourceUrl = '') {
+        if (!html) return { m3u8: [], yt: [], title: '', logo: '', iframes: [] };
+        // Ters eğik çizgili kaçışları temizle (`https:\/\/...` -> `https://...`)
+        const unescaped = html
+            .replace(/\\\//g, '/')
+            .replace(/\\//g, '/')
+            .replace(/\u002F/gi, '/')
+            .replace(/\u0026/gi, '&')
+            .replace(/&amp;/gi, '&');
+
+        let title = '';
+        const ogTitle = unescaped.match(/property=["']og:title["'][^>]*content=["']([^"']+)["']/i) ||
+                        unescaped.match(/content=["']([^"']+)["'][^>]*property=["']og:title["']/i) ||
+                        unescaped.match(/<title[^>]*>([^<]+)<\/title>/i);
+        if (ogTitle && ogTitle[1]) {
+            title = ogTitle[1].replace(/\s*[-|•].*$/, '').trim();
+        }
+        let logo = '';
+        const ogImg = unescaped.match(/property=["']og:image["'][^>]*content=["']([^"']+)["']/i) ||
+                      unescaped.match(/content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
+        if (ogImg && ogImg[1] && /^https?:\/\//i.test(ogImg[1])) logo = ogImg[1];
+
+        // 1. Tüm .m3u8 adreslerini yakala
+        const m3u8Regex = /https?:\/\/[A-Za-z0-9_\-\.\/:%\?=&~+#]+\.m3u8(?:\?[A-Za-z0-9_\-\.\/:%=&~+#]*)?/gi;
+        const rawM3u8 = unescaped.match(m3u8Regex) || [];
+        const m3u8 = [];
+        const seenM = new Set();
+        for (const u of rawM3u8) {
+            const clean = u.replace(/['"\)\]>]+$/, '');
+            if (clean.includes('example.com') || clean.endsWith('/.m3u8')) continue;
+            if (!seenM.has(clean)) { seenM.add(clean); m3u8.push(clean); }
+        }
+
+        // 2. YouTube canlı yayın embed / watch linklerini yakala
+        const yt = [];
+        const seenY = new Set();
+        const ytEmbedRegex = /https?:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\/(?:embed\/|watch\?v=|live\/)([A-Za-z0-9_\-]{11})/gi;
+        let m;
+        while ((m = ytEmbedRegex.exec(unescaped)) !== null) {
+            const vidId = m[1];
+            const watchUrl = `https://www.youtube.com/watch?v=${vidId}`;
+            if (!seenY.has(watchUrl)) { seenY.add(watchUrl); yt.push(watchUrl); }
+        }
+
+        // 3. Gömülü player iframe'lerini yakala (örn: daioncdn, ercdn, medyatriple, dailymotion, canlitv, player)
+        const iframes = [];
+        const iframeRegex = /<iframe[^>]+src=["']([^"']+)["']/gi;
+        while ((m = iframeRegex.exec(unescaped)) !== null) {
+            let iUrl = m[1].trim();
+            if (iUrl.startsWith('//')) iUrl = 'https:' + iUrl;
+            else if (iUrl.startsWith('/') && sourceUrl) {
+                try { iUrl = new URL(sourceUrl).origin + iUrl; } catch (e) {}
+            }
+            if (/^https?:\/\//i.test(iUrl) && !/doubleclick|googlesyndication|facebook|twitter| analytics|gtm/i.test(iUrl)) {
+                iframes.push(iUrl);
+            }
+        }
+
+        return { m3u8, yt, title, logo, iframes };
+    }
+
+    async function scrapeLivePageStreams(pageUrl, defaultName = '', fallbackStreams = [], defaultLogo = '') {
+        const results = [];
+        const seen = new Set();
+        let pageTitle = defaultName;
+        let pageLogo = defaultLogo;
+
+        const addStream = (url, labelSuffix = '', grp = 'Web Canlı Yayın') => {
+            if (!url || seen.has(url)) return;
+            seen.add(url);
+            results.push({
+                name: (pageTitle || 'Web Canlı Yayın') + (labelSuffix ? ` (${labelSuffix})` : ''),
+                url,
+                logo: pageLogo || defaultLogo || '',
+                group: grp,
+                cc: 'tr',
+                kind: 'web'
+            });
+        };
+
+        try {
+            const html = await fetchHtmlViaProxy(pageUrl, 8500);
+            const ext = extractStreamsFromHtml(html, pageUrl);
+            if (!pageTitle && ext.title) pageTitle = ext.title;
+            if (!pageLogo && ext.logo) pageLogo = ext.logo;
+
+            ext.m3u8.forEach((u, idx) => addStream(u, idx === 0 ? 'Canlı HLS' : `Alternatif #${idx + 1}`, 'Web Canlı (.m3u8)'));
+            ext.yt.forEach((u, idx) => addStream(u, idx === 0 ? 'YouTube Canlı' : `YT #${idx + 1}`, 'Web Canlı (YouTube)'));
+
+            // Eğer ana sayfada doğrudan .m3u8 bulunamadıysa ve içerde player iframe'i varsa 1. seviye iframe'i de tara!
+            if (results.length === 0 && ext.iframes.length > 0) {
+                for (const ifrUrl of ext.iframes.slice(0, 2)) {
+                    try {
+                        const ifrHtml = await fetchHtmlViaProxy(ifrUrl, 5500);
+                        const ifrExt = extractStreamsFromHtml(ifrHtml, ifrUrl);
+                        ifrExt.m3u8.forEach((u, idx) => addStream(u, idx === 0 ? 'Player HLS' : `Player #${idx + 1}`, 'Web Canlı (.m3u8)'));
+                        ifrExt.yt.forEach((u) => addStream(u, 'YouTube Canlı', 'Web Canlı (YouTube)'));
+                    } catch (e) {}
+                }
+            }
+        } catch (e) {}
+
+        // Yedek (bilinen CDN) akışlarını da ekle
+        (fallbackStreams || []).forEach((u, idx) => {
+            addStream(u, results.length === 0 && idx === 0 ? 'Resmi CDN' : `Yedek Akış`, 'Resmi Canlı CDN');
+        });
+
+        // Ayrıca dinamik çözücülü "Otomatik Yenilenen Web Linki" seçeneğini de ekle ki token süresi dolsa bile her açılışta siteden taze çeksin!
+        if (/^https?:\/\//i.test(pageUrl) && !pageUrl.endsWith('.m3u8')) {
+            const dynUrl = pageUrl + (pageUrl.includes('#') ? '' : '#web_live');
+            addStream(dynUrl, 'Siteden Otomatik Çek', 'Web Canlı (Otomatik Token)');
+        }
+
+        return results;
+    }
+
+    async function searchWebLiveSites(rawQuery, pq) {
+        const qTrim = String(rawQuery || '').trim();
+        const qNorm = normTxt(qTrim);
+        // 1. Kullanıcı doğrudan bir web adresi yapıştırdıysa (örn: https://www.kanald.com.tr/canli-yayin veya www.kanald.com.tr/...)
+        if (/^(https?:\/\/|www\.)/i.test(qTrim) || (qTrim.includes('.') && qTrim.includes('/') && !qTrim.includes(' '))) {
+            const fullUrl = /^https?:\/\//i.test(qTrim) ? qTrim : ('https://' + qTrim);
+            let hostTitle = '';
+            try { hostTitle = new URL(fullUrl).hostname.replace(/^www\./, '').split('.')[0].toUpperCase() + ' Canlı'; } catch (e) { hostTitle = 'Web Canlı'; }
+            const known = OFFICIAL_WEB_CHANNELS.find(c => fullUrl.includes(new URL(c.pageUrl).hostname.replace(/^www\./, '')));
+            return await scrapeLivePageStreams(
+                fullUrl,
+                known ? known.name : hostTitle,
+                known ? known.fallbackStreams : [],
+                known ? known.logo : ''
+            );
+        }
+
+        // 2. Kelime ile arandıysa (örn: "kanal d", "atv", "star", "haber", "türkiye", "ulusal") eşleşen resmi siteleri bul
+        const queryTokens = qNorm.split(' ').filter(Boolean).filter(w => !['canli', 'yayin', 'izle', 'tv'].includes(w));
+        const matchedSites = OFFICIAL_WEB_CHANNELS.filter(item => {
+            const hay = normTxt(item.name + ' ' + item.keys.join(' '));
+            if (!queryTokens.length) return pq.country === 'tr' || qNorm.includes('tv') || qNorm.includes('canli');
+            return queryTokens.every(t => hay.includes(t)) || item.keys.some(k => normTxt(k) === qNorm);
+        });
+
+        if (!matchedSites.length) return [];
+
+        // İlk 4 eşleşen resmi siteyi canlı olarak tara, geri kalanları hızlı CDN + otomatik site çözücüyle listele
+        const toScrape = matchedSites.slice(0, 4);
+        const rest = matchedSites.slice(4, 25);
+        const out = [];
+
+        const scrapedLists = await Promise.all(toScrape.map(item =>
+            scrapeLivePageStreams(item.pageUrl, item.name, item.fallbackStreams, item.logo).catch(() => [])
+        ));
+        scrapedLists.forEach(arr => out.push(...arr));
+
+        rest.forEach(item => {
+            if (item.fallbackStreams && item.fallbackStreams.length > 0) {
+                out.push({
+                    name: item.name,
+                    url: item.fallbackStreams[0],
+                    logo: item.logo || '',
+                    group: 'Resmi Canlı CDN',
+                    cc: 'tr',
+                    kind: 'web'
+                });
+            }
+            out.push({
+                name: item.name + ' (Siteden Otomatik)',
+                url: item.pageUrl + '#web_live',
+                logo: item.logo || '',
+                group: 'Web Canlı (Otomatik Token)',
+                cc: 'tr',
+                kind: 'web'
+            });
+        });
+
+        return out;
+    }
+
     async function searchTv(pq) {
         let list = null;
         if (pq.country) { try { list = parseIptvText(await fetchIptv(`https://iptv-org.github.io/iptv/countries/${pq.country}.m3u`, false), pq.country); } catch (e) { list = null; } }
@@ -2466,22 +2731,35 @@
     async function smartSearch() {
         const q = document.getElementById('smartQuery').value.trim(); if (!q) return;
         lockAllInputs();
+        const wantWebEl = document.getElementById('srcWeb');
+        const wantWeb = wantWebEl ? wantWebEl.checked : true;
         const wantTv = document.getElementById('srcTv').checked, wantRadio = document.getElementById('srcRadio').checked;
-        if (!wantTv && !wantRadio) { showOSD('Kaynak Seçin', 'En az bir kaynak seçin (TV veya Radyo)'); return; }
-        const st = document.getElementById('smartStatus'); st.style.color = '#f1c40f'; st.innerText = 'Aranıyor...';
+        if (!wantWeb && !wantTv && !wantRadio) { showOSD('Kaynak Seçin', 'En az bir kaynak seçin (Web, IPTV veya Radyo)'); return; }
+        const st = document.getElementById('smartStatus'); st.style.color = '#f1c40f'; st.innerText = 'Web siteleri ve yayın listeleri taranıyor...';
         smartResults = []; smartSel = new Set(); renderSmart();
-        const pq = parseSmartQuery(q); const notes = [], errs = []; let tv = [], radio = [];
+        const isDirectUrl = /^(https?:\/\/|www\.)/i.test(q) || (q.includes('.') && q.includes('/') && !q.includes(' '));
+        const pq = parseSmartQuery(q); const notes = [], errs = []; let webList = [], tv = [], radio = [];
         const jobs = [];
-        if (wantTv) jobs.push(searchTv(pq).then(r => { tv = r; }).catch(e => errs.push('TV: ' + (e && e.message || e))));
-        if (wantRadio) jobs.push(searchRadio(pq).then(r => { radio = r.list; if (r.note) notes.push(r.note); }).catch(e => errs.push('Radyo: ' + (e && e.message || e))));
+        if (wantWeb || isDirectUrl) {
+            jobs.push(searchWebLiveSites(q, pq).then(r => { webList = r || []; }).catch(e => errs.push('Web: ' + (e && e.message || e))));
+        }
+        if (wantTv && !isDirectUrl) {
+            jobs.push(searchTv(pq).then(r => { tv = r; }).catch(e => errs.push('TV: ' + (e && e.message || e))));
+        }
+        if (wantRadio && !isDirectUrl) {
+            jobs.push(searchRadio(pq).then(r => { radio = r.list; if (r.note) notes.push(r.note); }).catch(e => errs.push('Radyo: ' + (e && e.message || e))));
+        }
         await Promise.all(jobs);
         if (tv.length > 700) tv = tv.slice(0, 700);
         const seen = new Set(); smartResults = [];
-        tv.concat(radio).forEach(r => { const k = r.url.split('#')[0]; if (!seen.has(k)) { seen.add(k); smartResults.push(r); } });
+        webList.concat(tv).concat(radio).forEach(r => {
+            const k = r.url;
+            if (!seen.has(k)) { seen.add(k); smartResults.push(r); }
+        });
         smartSel = new Set(smartResults.map((_, i) => i));
         if (!smartResults.length) { st.style.color = '#e74c3c'; st.innerText = 'Sonuç bulunamadı.'; renderSmart(); return; }
         st.style.color = '#2ecc71';
-        st.innerText = `${smartResults.length} yayın bulundu (TV ${tv.length}, Radyo ${radio.length}).`;
+        st.innerText = `${smartResults.length} yayın bulundu (Web Canlı: ${webList.length}, IPTV: ${tv.length}, Radyo: ${radio.length}).`;
         renderSmart();
     }
 
@@ -3105,20 +3383,18 @@
             document.getElementById('mainFavBtn'),
             document.getElementById('openListCtrlBtn')
         ].filter(Boolean);
-        const topBtns = [
-            document.getElementById('topChannelsBtn'),
-            document.getElementById('topSettingsBtn')
-        ].filter(Boolean);
         const inBottomIdx = bottomBtns.indexOf(ae);
-        const inTopIdx = topBtns.indexOf(ae);
 
-        // Eğer kullanıcı alt veya üst kontrol butonlarından birine odaklanmışsa:
-        if (ctrlVisible && (inBottomIdx !== -1 || inTopIdx !== -1)) {
+        // Eğer kullanıcı alt kontrol butonlarından birine odaklanmışsa:
+        if (ctrlVisible && inBottomIdx !== -1) {
             resetControlsTimer();
             if (['Escape', 'BrowserBack', 'GoBack'].includes(k) || kc === 4 || kc === 27) {
                 e.preventDefault(); e.stopImmediatePropagation();
                 stopAcceleratingSeek();
                 screenFocusFromControls = false;
+                const sbw = document.getElementById('seekBarWrap');
+                if (sbw) sbw.classList.remove('show');
+                if (seekBarHideTimer) { clearTimeout(seekBarHideTimer); seekBarHideTimer = null; }
                 ctrlOverlay.classList.add('hide');
                 const pw = document.getElementById('playerWrapper');
                 if (pw) pw.focus();
@@ -3180,69 +3456,21 @@
                     return;
                 }
             }
-            if (inTopIdx !== -1) {
-                if (k === 'ArrowLeft') {
-                    e.preventDefault(); e.stopImmediatePropagation();
-                    topBtns[Math.max(0, inTopIdx - 1)].focus();
-                    updateControlHintPill();
-                    return;
-                }
-                if (k === 'ArrowRight') {
-                    e.preventDefault(); e.stopImmediatePropagation();
-                    topBtns[Math.min(topBtns.length - 1, inTopIdx + 1)].focus();
-                    updateControlHintPill();
-                    return;
-                }
-                if (k === 'ArrowDown') {
-                    e.preventDefault(); e.stopImmediatePropagation();
-                    // Üst menüden aşağı inince de önce orta kademe olan EKRAN aktif olur
-                    screenFocusFromControls = true;
-                    const pw = document.getElementById('playerWrapper');
-                    if (pw) pw.focus();
-                    updateControlHintPill();
-                    showOSD("Ekran Aktif", "OK: Kanal Rehberi · ▼ Alt Kontroller");
-                    resetControlsTimer();
-                    return;
-                }
-                if (k === 'Enter' || k === ' ' || kc === 23 || kc === 13 || kc === 66) {
-                    e.preventDefault(); e.stopImmediatePropagation();
-                    if (!e.repeat) {
-                        okPressContext = 'controls';
-                        topBtns[inTopIdx].click();
-                    }
-                    return;
-                }
-            }
         }
 
-        // Orta kademe: Kontroller görünürken EKRAN aktifse (Alt bardan Yukarı basılarak gelindiyse):
-        if (ctrlVisible && screenFocusFromControls) {
-            if (k === 'ArrowUp') {
-                e.preventDefault(); e.stopImmediatePropagation();
-                screenFocusFromControls = false;
-                if (topBtns[0]) topBtns[0].focus();
-                updateControlHintPill();
-                resetControlsTimer();
-                return;
-            }
-            if (k === 'ArrowDown') {
-                e.preventDefault(); e.stopImmediatePropagation();
-                screenFocusFromControls = false;
-                const playBtn = document.getElementById('playPauseBtn') || bottomBtns[0];
-                if (playBtn) playBtn.focus();
-                updateControlHintPill();
-                resetControlsTimer();
-                return;
-            }
-        }
-
-        // Alt kontrol çubuğuna doğrudan ulaşım: Geri tuşu veya kontrol barı açıkken Sol/Sağ tuşları
+        // İleri/geri sarma çubuğu veya alt kontroller açıkken Geri tuşuna ilk basışta hepsini gizle ve ana ekrana dön!
+        const sbWrap = document.getElementById('seekBarWrap');
+        const seekBarShowing = sbWrap && sbWrap.classList.contains('show');
         if (['Escape', 'BrowserBack', 'GoBack'].includes(k) || kc === 4 || kc === 27) {
             e.preventDefault(); e.stopImmediatePropagation();
             stopAcceleratingSeek();
             screenFocusFromControls = false;
-            if (ctrlVisible) {
+            if (ctrlVisible || seekBarShowing) {
+                if (sbWrap) sbWrap.classList.remove('show');
+                if (seekBarHideTimer) { clearTimeout(seekBarHideTimer); seekBarHideTimer = null; }
                 ctrlOverlay.classList.add('hide');
+                const pw = document.getElementById('playerWrapper');
+                if (pw) pw.focus();
             } else {
                 showControls(true);
                 showOSD("Alt Kontroller Aktif", "◀ ▶ ile İleri/Geri Sarma, Oynat/Durdur ve Altyazı seçin");
