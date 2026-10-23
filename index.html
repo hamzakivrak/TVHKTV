@@ -865,20 +865,15 @@
 
     let ytPlayer = null;
     let isYtApiReady = false;
-    let ytAdSkipTimer = null;
-    const ytStreamCache = new Map();
 
     function onYouTubeIframeAPIReady() {
         isYtApiReady = true;
         ytPlayer = new YT.Player('ytPlayer', {
-            host: 'https://www.youtube-nocookie.com',
             height: '100%', width: '100%', videoId: '',
-            playerVars: { 'autoplay': 1, 'controls': 0, 'disablekb': 1, 'fs': 0, 'modestbranding': 1, 'rel': 0, 'playsinline': 1, 'showinfo': 0, 'iv_load_policy': 3, 'enablejsapi': 1, ...(/^https?:/.test(location.protocol) ? { origin: location.origin } : {}) },
+            playerVars: { 'autoplay': 1, 'controls': 0, 'disablekb': 1, 'fs': 0, 'modestbranding': 1, 'rel': 0, 'playsinline': 1, 'showinfo': 0, 'enablejsapi': 1, ...(/^https?:/.test(location.protocol) ? { origin: location.origin } : {}) },
             events: { 'onStateChange': onYtPlayerStateChange, 'onError': onYtPlayerError }
         });
     }
-    let activeYtVideoId = '';
-    let lastPlayedYtVideoId = '';
 
     function onYtPlayerStateChange(event) {
         if (event.data === YT.PlayerState.PLAYING) {
@@ -889,47 +884,16 @@
         } else if (event.data === YT.PlayerState.PAUSED) {
             document.getElementById('playIcon').innerText = 'play_arrow';
             document.getElementById('bufSpinner').style.display = 'none';
-        } else if (event.data === YT.PlayerState.BUFFERING) {
-            document.getElementById('bufSpinner').style.display = 'block';
-        } else if (event.data === YT.PlayerState.CUED) {
-            setTimeout(() => {
-                try {
-                    if (ytPlayer && typeof ytPlayer.getPlayerState === 'function' && ytPlayer.getPlayerState() === YT.PlayerState.CUED) {
-                        ytPlayer.playVideo();
-                    }
-                } catch (e) {}
-            }, 80);
         } else if (event.data === YT.PlayerState.ENDED) {
-            try {
-                const vd = (ytPlayer && typeof ytPlayer.getVideoData === 'function') ? ytPlayer.getVideoData() : null;
-                if (vd && vd.video_id && activeYtVideoId && vd.video_id !== activeYtVideoId) {
-                    return; // Reklam bitti, ana videoya geçiliyor
-                }
-            } catch (e) {}
-            nextCh();
+            nextCh(); // Video bitince sonrakine geçer
         }
     }
-    async function onYtPlayerError(event) {
+
+    function onYtPlayerError(event) {
         const c = event.data;
-        const mySession = currentPlaySession;
-        const curCh = (curIdx >= 0 && allChannels[curIdx]) ? allChannels[curIdx] : null;
-        const ytId = activeYtVideoId || (curCh ? extractYTId(curCh.url) : null);
-        // Gömülü oynatma kısıtlıysa (101, 150, 15, 152, 153) veya HTML5 hatasıysa (5) doğrudan akış dene
-        if (ytId) {
-            document.getElementById('pStatus').innerText = "Alternatif YT Akışı Deneniyor...";
-            const direct = await getFastAdFreeYt(ytId, 4500);
-            if (mySession !== currentPlaySession) return;
-            if (direct && direct.url && applyDirectYtStreamToVideo(direct, mySession, 0, 0)) {
-                return;
-            }
-        }
-        if (c === 5) return; // Geçici HTML5 hatasında karantinaya atma
-        if (c === 101 || c === 150 || c === 152 || c === 153 || c === 15) {
-            showOSD("Gömülü Oynatma Kısıtlı (" + c + ")", "Sonraki videoya geçiliyor...");
-            setTimeout(() => { if (mySession === currentPlaySession) nextCh(); }, 1200);
-            return;
-        }
-        handleStreamError(mySession);
+        if (c === 152 || c === 153 || c === 15) { showOSD("YouTube oynatmayı reddetti (" + c + ")", "Sayfayı file:// yerine https adresinden açın"); document.getElementById('pStatus').innerText = "YouTube engelledi"; return; }
+        if (c === 101 || c === 150) showOSD("Bu video gömülü oynatılamıyor", "Atlanıyor...");
+        handleStreamError(currentPlaySession);
     }
     if (window.YT && YT.Player && !ytPlayer) onYouTubeIframeAPIReady();
 
@@ -2388,268 +2352,40 @@ async function resetQuarantine() {
         }, waitTime);
     }
 
-    /* ===== AD-FREE YT ENGINE (VERIFIED PROXIED STREAM + IFRAME AD-NUKER) ===== */
-    const PIPED_FAST = [
-        'https://pipedapi.kavin.rocks',
-        'https://pipedapi.tokhmi.xyz',
-        'https://pipedapi.moomoo.me',
-        'https://api.piped.private.coffee',
-        'https://pipedapi.adminforge.de',
-        'https://pipedapi.reallyaweso.me',
-        'https://pipedapi.drgns.space',
-        'https://pipedapi.ducks.party',
-        'https://pipedapi.smnz.de',
-        'https://pipedapi.leptons.xyz',
-        'https://pipedapi.orangenet.cc',
-        'https://pipedapi.astartes.nl'
-    ];
-    const INVID_FAST = [
-        'https://inv.tux.pizza',
-        'https://invidious.protokolla.fi',
-        'https://yt.artemislena.eu',
-        'https://inv.nadeko.net',
-        'https://invidious.nerdvpn.de',
-        'https://invidious.jing.rocks',
-        'https://invidious.privacyredirect.com',
-        'https://iv.ggtyler.dev',
-        'https://invidious.f5.si',
-        'https://yewtu.be',
-        'https://invidious.reallyaweso.me'
-    ];
-
-    // ÖNEMLİ: YouTube akış sorguları doğrudan istemciden yapılmalı;
-    // Cloudflare Worker üzerinden çekilen googlevideo linkleri Worker IP'sine kilitlendiği için TV'de 403 verir.
-    async function fastJsonFetch(u, ms = 2000) {
-        const r = await fetchTO(u, ms);
-        if (!r.ok) throw 0;
-        return await r.json();
-    }
-
-    function rewriteGoogleVideoToProxy(rawUrl, proxyBase) {
-        if (!rawUrl || !proxyBase) return '';
+    /* ===== YOUTUBE & STREAM ENGINE (index.html-8.txt MANTIĞI) ===== */
+    let PIPED = ['https://pipedapi.kavin.rocks','https://pipedapi.adminforge.de','https://api.piped.private.coffee','https://pipedapi.r4fo.com'];
+    let INVID = ['https://inv.nadeko.net','https://yewtu.be','https://invidious.nerdvpn.de'];
+    async function jf(u) { const r = await fetchTO(u, 6000); if (!r.ok) throw 0; return await r.json(); }
+    async function fastJsonFetch(u, ms = 4500) { const r = await fetchTO(u, ms); if (!r.ok) throw 0; return await r.json(); }
+    async function loadInstances() {
+        try { const c = JSON.parse(localStorage.getItem('tv_yt_inst') || 'null'); if (c && Date.now() - c.t < 6 * 3600e3) { PIPED = c.p; INVID = c.i; return; } } catch (e) {}
         try {
-            const u = new URL(rawUrl);
-            if (u.hostname.endsWith('googlevideo.com')) {
-                const p = new URL(proxyBase);
-                u.protocol = p.protocol;
-                u.host = p.host;
-                if (!u.searchParams.has('host')) u.searchParams.set('host', new URL(rawUrl).hostname);
-                return u.toString();
-            }
-            return rawUrl;
+            const [p, i] = await Promise.all([
+                fetchTO('https://piped-instances.kavin.rocks/', 5000).then(r => r.json()).catch(() => []),
+                fetchTO('https://api.invidious.io/instances.json?sort_by=health', 5000).then(r => r.json()).catch(() => [])
+            ]);
+            const np = (p || []).map(x => x.api_url).filter(Boolean).slice(0, 8);
+            const ni = (i || []).filter(x => x[1] && x[1].api && x[1].type === 'https').map(x => x[1].uri).slice(0, 8);
+            if (np.length || ni.length) { PIPED = [...new Set([...np, ...PIPED])].slice(0, 10); INVID = [...new Set([...ni, ...INVID])].slice(0, 10); localStorage.setItem('tv_yt_inst', JSON.stringify({ t: Date.now(), p: PIPED, i: INVID })); }
         } catch (e) {}
-        return '';
     }
-
-    function parsePipedStreamData(d) {
-        if (!d || d.error) throw 0;
-        const candidates = [];
-        if (d.hls && /^https?:\/\//i.test(d.hls) && !d.hls.includes('googlevideo.com')) {
-            candidates.push({ url: d.hls, type: 'hls' });
-        }
-        const mp4s = (d.videoStreams || [])
-            .filter(x => !x.videoOnly && (x.mimeType || '').includes('mp4') && x.url)
-            .sort((a, b) => (b.height || 0) - (a.height || 0));
-        for (const v of mp4s) {
-            if (!v.url.includes('googlevideo.com')) {
-                candidates.push({ url: v.url, type: 'mp4' });
-            } else if (d.proxyUrl) {
-                const proxied = rewriteGoogleVideoToProxy(v.url, d.proxyUrl);
-                if (proxied && !proxied.includes('googlevideo.com')) {
-                    candidates.push({ url: proxied, type: 'mp4' });
-                }
-            }
-        }
-        if (d.hls && /^https?:\/\//i.test(d.hls) && !candidates.some(c => c.url === d.hls)) {
-            candidates.push({ url: d.hls, type: 'hls' });
-        }
-        if (!candidates.length) throw 0;
-        return candidates;
-    }
-
-    function parseInvidStreamData(a, d, videoId) {
-        if (!d || d.error) throw 0;
-        const candidates = [];
-        if (d.liveNow && d.hlsUrl) {
-            const hlsU = d.hlsUrl.startsWith('http') ? d.hlsUrl : (a + d.hlsUrl);
-            if (!hlsU.includes('googlevideo.com')) candidates.push({ url: hlsU, type: 'hls' });
-        }
-        const vidId = videoId || d.videoId || '';
-        const mp4s = (d.formatStreams || [])
-            .filter(x => (x.type || '').includes('mp4') && x.url)
-            .sort((x, y) => parseInt(y.resolution || '0', 10) - parseInt(x.resolution || '0', 10));
-        for (const v of mp4s) {
-            if (v.url.startsWith('/')) {
-                candidates.push({ url: a + v.url + (v.url.includes('local=true') ? '' : '&local=true'), type: 'mp4' });
-            } else if (!v.url.includes('googlevideo.com')) {
-                candidates.push({ url: v.url + (v.url.includes('local=true') ? '' : (v.url.includes('?') ? '&local=true' : '?local=true')), type: 'mp4' });
-            }
-            const itag = v.itag || '18';
-            if (vidId) {
-                candidates.push({ url: `${a}/latest_version?id=${encodeURIComponent(vidId)}&itag=${encodeURIComponent(itag)}&local=true`, type: 'mp4' });
-            }
-        }
-        if (!candidates.length) throw 0;
-        return candidates;
-    }
-
-    // Aday akışı ana oynatıcıya vermeden önce arka planda gerçekten açılıp açılmadığını doğrula
-    function probeYtCandidate(cand, timeoutMs = 1700) {
-        return new Promise((resolve, reject) => {
-            if (!cand || !cand.url) { reject(0); return; }
-            let settled = false;
-            let tempHls = null;
-            let v = null;
-            const timer = setTimeout(() => finish(false), timeoutMs);
-            const finish = (ok) => {
-                if (settled) return;
-                settled = true;
-                clearTimeout(timer);
-                try { if (tempHls) tempHls.destroy(); } catch (e) {}
-                try {
-                    if (v) {
-                        v.onloadedmetadata = null;
-                        v.oncanplay = null;
-                        v.onerror = null;
-                        v.pause();
-                        v.removeAttribute('src');
-                        v.load();
-                    }
-                } catch (e) {}
-                if (ok) resolve(cand);
-                else reject(0);
-            };
-            if (cand.type === 'hls' && Hls.isSupported()) {
-                try {
-                    tempHls = new Hls({ autoStartLoad: false, manifestLoadingTimeOut: timeoutMs, manifestLoadingMaxRetry: 0 });
-                    tempHls.on(Hls.Events.MANIFEST_PARSED, () => finish(true));
-                    tempHls.on(Hls.Events.ERROR, (e, data) => { if (data && data.fatal) finish(false); });
-                    tempHls.loadSource(cand.url);
-                } catch (e) { finish(false); }
-            } else {
-                try {
-                    v = document.createElement('video');
-                    v.preload = 'metadata';
-                    v.muted = true;
-                    v.onloadedmetadata = () => finish(true);
-                    v.oncanplay = () => finish(true);
-                    v.onerror = () => finish(false);
-                    v.src = cand.url;
-                } catch (e) { finish(false); }
-            }
-        });
-    }
-
-    async function resolveVerifiedCandidateList(cands, probeTimeoutMs = 1700) {
-        for (const c of cands.slice(0, 2)) {
-            try {
-                const okCand = await probeYtCandidate(c, probeTimeoutMs);
-                if (okCand) return { url: okCand.url, type: okCand.type, candidates: [okCand, ...cands.filter(x => x.url !== okCand.url)] };
-            } catch (e) {}
-        }
-        throw 0;
-    }
-
-    async function getFastAdFreeYt(id, maxWaitMs = 2400) {
-        if (ytStreamCache.has(id)) {
-            const cached = ytStreamCache.get(id);
-            if (Date.now() - cached.t < 30 * 60 * 1000) return cached.d;
-            ytStreamCache.delete(id);
-        }
-        const apiTimeout = Math.max(1200, Math.min(2200, Math.floor(maxWaitMs * 0.65)));
-        const probeTimeout = Math.max(1100, Math.min(1900, Math.floor(maxWaitMs * 0.65)));
+    async function getDirectYtMp4(id) {
+        await loadInstances();
         const jobs = [
-            ...PIPED_FAST.map(a => fastJsonFetch(`${a}/streams/${id}`, apiTimeout).then(parsePipedStreamData).then(cands => resolveVerifiedCandidateList(cands, probeTimeout))),
-            ...INVID_FAST.map(a => fastJsonFetch(`${a}/api/v1/videos/${id}?local=true`, apiTimeout).then(d => parseInvidStreamData(a, d, id)).then(cands => resolveVerifiedCandidateList(cands, probeTimeout)))
+            ...PIPED.map(a => jf(`${a}/streams/${id}`).then(d => {
+                if (d.livestream && d.hls) return { url: d.hls, mime: 'application/x-mpegurl', type: 'hls' };
+                const v = (d.videoStreams || []).filter(x => !x.videoOnly && (x.mimeType || '').includes('mp4')).sort((a, b) => (b.height || 0) - (a.height || 0))[0];
+                if (!v || !v.url) throw 0; return { url: v.url, mime: 'video/mp4', type: 'mp4' };
+            })),
+            ...INVID.map(a => jf(`${a}/api/v1/videos/${id}?local=true`).then(d => {
+                if (d.liveNow && d.hlsUrl) return { url: d.hlsUrl.startsWith('http') ? d.hlsUrl : a + d.hlsUrl, mime: 'application/x-mpegurl', type: 'hls' };
+                const v = (d.formatStreams || []).find(x => (x.type || '').includes('mp4'));
+                if (!v || !v.url) throw 0; return { url: v.url.startsWith('http') ? v.url : a + v.url, mime: 'video/mp4', type: 'mp4' };
+            }))
         ];
-        try {
-            const res = await Promise.any(jobs);
-            if (res && res.url) {
-                ytStreamCache.set(id, { t: Date.now(), d: res });
-                return res;
-            }
-        } catch (e) {}
-        return null;
+        try { return await Promise.any(jobs); } catch (e) { return null; }
     }
-
-    function preloadNextYtStream(fromIdx) {
-        if (!allChannels.length) return;
-        for (const offset of [1, 2, -1]) {
-            const targetIdx = (fromIdx + offset + allChannels.length) % allChannels.length;
-            const chObj = allChannels[targetIdx];
-            if (!chObj) continue;
-            const ytId = extractYTId(chObj.url);
-            if (ytId && !ytStreamCache.has(ytId)) {
-                getFastAdFreeYt(ytId, 4500).catch(() => {});
-            }
-        }
-    }
-
-    function applyDirectYtStreamToVideo(direct, sessionToken, resumeTimeSec = 0, candIndex = 0) {
-        if (sessionToken !== currentPlaySession || !direct) return false;
-        const cands = (Array.isArray(direct.candidates) && direct.candidates.length) ? direct.candidates : [{ url: direct.url, type: direct.type }];
-        if (candIndex >= cands.length) return false;
-        const chosen = cands[candIndex];
-        if (!chosen || !chosen.url) return false;
-
-        const video = document.getElementById('localPlayer');
-        const ytContainer = document.getElementById('ytContainer');
-        if (ytAdSkipTimer) { clearInterval(ytAdSkipTimer); ytAdSkipTimer = null; }
-        ytContainer.style.display = 'none';
-        ytContainer.style.opacity = '1';
-        if (isYtApiReady && ytPlayer && typeof ytPlayer.stopVideo === 'function') { try { ytPlayer.stopVideo(); } catch (e) {} }
-        video.style.display = 'block';
-        if (hls) { hls.destroy(); hls = null; }
-
-        const tryNextCandidateOrIframe = () => {
-            if (sessionToken !== currentPlaySession) return;
-            const ytId = extractYTId(allChannels[curIdx]?.url || '');
-            if (candIndex + 1 < cands.length) {
-                applyDirectYtStreamToVideo(direct, sessionToken, resumeTimeSec, candIndex + 1);
-                return;
-            }
-            if (ytId) {
-                ytStreamCache.delete(ytId);
-                startYtIframeWithAdSkip(ytId, sessionToken, false);
-            }
-        };
-
-        if (chosen.type === 'hls' && Hls.isSupported()) {
-            hls = createHlsForStream(chosen.url, false);
-            hls.loadSource(chosen.url);
-            hls.attachMedia(video);
-            hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                if (resumeTimeSec > 2) { try { video.currentTime = resumeTimeSec; } catch (e) {} }
-                video.play().catch(() => {});
-                document.getElementById('bufSpinner').style.display = 'none';
-                markChannelHealthy(allChannels[curIdx]);
-                document.getElementById('pStatus').innerText = "İzleniyor (YT Reklamsız)";
-            });
-            hls.on(Hls.Events.ERROR, (e, d) => {
-                if (d && d.fatal) tryNextCandidateOrIframe();
-            });
-            return true;
-        } else {
-            video.removeAttribute('crossorigin');
-            video.src = chosen.url;
-            video.onloadedmetadata = () => {
-                if (resumeTimeSec > 2 && isFinite(video.duration) && resumeTimeSec < video.duration - 2) {
-                    try { video.currentTime = resumeTimeSec; } catch (e) {}
-                }
-            };
-            video.onended = () => nextCh();
-            video.onerror = () => tryNextCandidateOrIframe();
-            video.play().then(() => {
-                document.getElementById('bufSpinner').style.display = 'none';
-                markChannelHealthy(allChannels[curIdx]);
-                document.getElementById('pStatus').innerText = "İzleniyor (YT Reklamsız)";
-            }).catch((err) => {
-                if (err && err.name === 'AbortError') return;
-                tryNextCandidateOrIframe();
-            });
-            return true;
-        }
-    }
+    async function getFastAdFreeYt(id) { return await getDirectYtMp4(id); }
 
     async function tryAutoHealChannelStream(ch, failedUrl, sessionToken) {
         if (!ch || sessionToken !== currentPlaySession) return null;
@@ -2730,7 +2466,6 @@ async function resetQuarantine() {
         document.getElementById('pStatus').innerText = "Bağlanıyor...";
         showOSD((curIdx + 1) + ". " + ch.name);
         playLocally(ch.url, mySession);
-        preloadNextYtStream(curIdx);
         hideControlsNow();
     }
 
@@ -2739,7 +2474,6 @@ async function resetQuarantine() {
         const ytContainer = document.getElementById('ytContainer');
         document.getElementById('castOnlyScreen').style.display = 'none';
         video.onerror = null; video.onloadedmetadata = null;
-        if (ytAdSkipTimer) { clearInterval(ytAdSkipTimer); ytAdSkipTimer = null; }
         if (hls) { hls.destroy(); hls = null; }
 
         if (url.includes('#web_live')) {
@@ -2764,22 +2498,37 @@ async function resetQuarantine() {
 
         const ytId = extractYTId(url);
         if (ytId) {
-            document.getElementById('pStatus').innerText = "YT Reklamsız Hazırlanıyor...";
-            document.getElementById('bufSpinner').style.display = 'block';
-            // 1. Önce doğrulanmış reklamsız doğrudan akışı (Piped / Invidious) dene (ilk paylaştığınız sürümdeki gibi)
-            const direct = await getFastAdFreeYt(ytId, 2000);
-            if (sessionToken !== currentPlaySession) return;
-            if (direct && direct.url) {
-                if (applyDirectYtStreamToVideo(direct, sessionToken, 0, 0)) return;
+            // index.html-8.txt'deki birebir YouTube oynatma mantığı:
+            video.style.display = 'none';
+            video.pause();
+            video.removeAttribute('src');
+            ytContainer.style.display = 'block';
+            document.getElementById('bufSpinner').style.display = 'none';
+            if (isYtApiReady && ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+                ytPlayer.loadVideoById(ytId);
+                document.getElementById('pStatus').innerText = "Cihazda İzleniyor (YT)";
+                setTimeout(() => {
+                    try {
+                        if (sessionToken === currentPlaySession) {
+                            const st = ytPlayer.getPlayerState();
+                            if (st !== 1 && st !== 3) {
+                                ytPlayer.mute();
+                                ytPlayer.playVideo();
+                                document.getElementById('muteIcon').innerText = 'volume_off';
+                                showOSD("Ses kapalı başlatıldı", "Açmak için ses düğmesine dokunun");
+                            }
+                        }
+                    } catch(e) {}
+                }, 3500);
+            } else {
+                document.getElementById('pStatus').innerText = "YT Hazırlanıyor...";
+                setTimeout(() => { if (sessionToken === currentPlaySession) playLocally(url, sessionToken); }, 1000);
             }
-            // 2. Doğrudan akış 2 sn içinde yanıt vermezse IFrame ile aç ve arka planda reklamsız akış + reklam atlayıcıyı çalıştır
-            startYtIframeWithAdSkip(ytId, sessionToken, true);
             return;
         }
 
         video.onended = null;
         ytContainer.style.display = 'none';
-        ytContainer.style.opacity = '1';
         if (isYtApiReady && ytPlayer && typeof ytPlayer.pauseVideo === 'function') { try { ytPlayer.pauseVideo(); } catch (e) {} }
         video.style.display = 'block';
         if (url.includes('#audio') || /\.(mp3|aac|ogg)(\?|$)/i.test(url)) {
@@ -2845,126 +2594,6 @@ async function resetQuarantine() {
             video.onerror = function() { handleStreamError(sessionToken); };
             video.play().then(() => markChannelHealthy(allChannels[curIdx] || url)).catch(() => {});
         }
-    }
-
-    function startYtIframeWithAdSkip(ytId, sessionToken, trySeamlessUpgrade = true) {
-        const video = document.getElementById('localPlayer');
-        const ytContainer = document.getElementById('ytContainer');
-        if (hls) { hls.destroy(); hls = null; }
-        video.onerror = null;
-        video.style.display = 'none';
-        video.pause();
-        video.removeAttribute('src');
-        ytContainer.style.display = 'block';
-        ytContainer.style.opacity = '1';
-        document.getElementById('bufSpinner').style.display = 'block';
-
-        if (activeYtVideoId && activeYtVideoId !== ytId) {
-            lastPlayedYtVideoId = activeYtVideoId;
-        }
-        activeYtVideoId = ytId;
-
-        let ytLoadAttempts = 0;
-        let adMutedByGuard = false;
-        let adReloadCount = 0;
-        let lastAdReloadAt = 0;
-        const loadStartedAt = Date.now();
-        const knownPlaylistYtIds = new Set(allChannels.map(c => extractYTId(c.url)).filter(Boolean));
-
-        ensureYtOfficialDuration(ytId).catch(() => {});
-
-        // Arka planda doğrulanmış reklamsız akış bulursa IFrame'den reklamsız <video>'ya kesintisiz geç
-        if (trySeamlessUpgrade) {
-            getFastAdFreeYt(ytId, 5500).then(direct => {
-                if (sessionToken !== currentPlaySession || !direct || !direct.url) return;
-                let curSec = 0;
-                try {
-                    if (ytPlayer && typeof ytPlayer.getCurrentTime === 'function') {
-                        const vd = (typeof ytPlayer.getVideoData === 'function') ? ytPlayer.getVideoData() : null;
-                        if (!vd || !vd.video_id || vd.video_id === ytId) {
-                            curSec = Number(ytPlayer.getCurrentTime() || 0);
-                        }
-                    }
-                } catch (e) {}
-                applyDirectYtStreamToVideo(direct, sessionToken, curSec, 0);
-            }).catch(() => {});
-        }
-
-        const doYtLoad = () => {
-            if (sessionToken !== currentPlaySession) return;
-            if (isYtApiReady && ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-                try {
-                    ytPlayer.loadVideoById({ videoId: ytId, startSeconds: 0 });
-                } catch (e) {
-                    try { ytPlayer.loadVideoById(ytId); } catch (e2) {}
-                }
-                document.getElementById('pStatus').innerText = "Cihazda İzleniyor (YT)";
-
-                if (ytAdSkipTimer) clearInterval(ytAdSkipTimer);
-                ytAdSkipTimer = setInterval(() => {
-                    if (sessionToken !== currentPlaySession || ytContainer.style.display === 'none') {
-                        clearInterval(ytAdSkipTimer); ytAdSkipTimer = null; return;
-                    }
-                    if (Date.now() - loadStartedAt < 750) return;
-                    try {
-                        if (!ytPlayer || typeof ytPlayer.getPlayerState !== 'function') return;
-                        const pState = ytPlayer.getPlayerState();
-                        const adState = (typeof ytPlayer.getAdState === 'function') ? ytPlayer.getAdState() : -1;
-                        if (pState !== YT.PlayerState.PLAYING && adState !== 1) return;
-
-                        const vd = (typeof ytPlayer.getVideoData === 'function') ? ytPlayer.getVideoData() : null;
-                        const playingId = vd && vd.video_id ? String(vd.video_id) : '';
-                        const curDur = (typeof ytPlayer.getDuration === 'function') ? Number(ytPlayer.getDuration() || 0) : 0;
-                        const officialDur = ytOfficialDurationMap.get(ytId) || 0;
-
-                        const isForeignAdId = (playingId !== '' && playingId !== ytId && playingId !== lastPlayedYtVideoId && !knownPlaylistYtIds.has(playingId));
-                        const isShortAdDuration = (officialDur > 95 && curDur > 4 && curDur <= 62 && Math.abs(curDur - officialDur) > 35);
-                        const isAdPlaying = (adState === 1) || isForeignAdId || isShortAdDuration;
-
-                        if (isAdPlaying) {
-                            ytContainer.style.opacity = '0.01';
-                            document.getElementById('pStatus').innerText = "Reklam Atlanıyor...";
-                            if (typeof ytPlayer.isMuted === 'function' && !ytPlayer.isMuted()) {
-                                ytPlayer.mute();
-                                adMutedByGuard = true;
-                            }
-                            // 1. Yöntem: YouTube IFrame reklamdayken loadVideoById({startSeconds: 1}) çağrısı pre-roll reklamı düşürüp ana videoya geçer
-                            const now = Date.now();
-                            if (adReloadCount < 2 && (now - lastAdReloadAt > 1400)) {
-                                adReloadCount++;
-                                lastAdReloadAt = now;
-                                try {
-                                    ytPlayer.loadVideoById({ videoId: ytId, startSeconds: 1 });
-                                    return;
-                                } catch (e) {}
-                            }
-                            // 2. Yöntem: Hızlandırma ve sonuna sarma
-                            if (typeof ytPlayer.setPlaybackRate === 'function') {
-                                try { ytPlayer.setPlaybackRate(2); } catch (e) {}
-                            }
-                            if (curDur > 3 && curDur <= 120 && typeof ytPlayer.seekTo === 'function') {
-                                try { ytPlayer.seekTo(Math.max(0, curDur - 0.2), true); } catch (e) {}
-                            }
-                        } else {
-                            ytContainer.style.opacity = '1';
-                            if (adMutedByGuard) {
-                                try { ytPlayer.unMute(); } catch (e) {}
-                                adMutedByGuard = false;
-                            }
-                            if (typeof ytPlayer.getPlaybackRate === 'function' && ytPlayer.getPlaybackRate() > 1.5) {
-                                try { ytPlayer.setPlaybackRate(1); } catch (e) {}
-                            }
-                            markChannelHealthy(allChannels[curIdx]);
-                            document.getElementById('pStatus').innerText = "Cihazda İzleniyor (YT)";
-                        }
-                    } catch (e) {}
-                }, 250);
-            } else if (ytLoadAttempts++ < 40) {
-                document.getElementById('pStatus').innerText = "YT Hazırlanıyor...";
-                setTimeout(doYtLoad, 150);
-            }
-        };
-        doYtLoad();
     }
 
     function moveToNextWorking(dir) {
@@ -3621,7 +3250,7 @@ async function resetQuarantine() {
         function fallbackToIframe(id) {
             vid.style.display = 'none';
             iframeContainer.style.display = 'block';
-            iframeContainer.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${id}?autoplay=1&playsinline=1&start=1" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+            iframeContainer.innerHTML = `<iframe src="https://www.youtube.com/embed/${id}?autoplay=1&playsinline=1&start=1" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
             stat.innerText = "Oynatılıyor (YouTube)";
             stat.style.color = "#2ecc71";
         }
