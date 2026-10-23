@@ -930,6 +930,7 @@
             savedOrder.forEach((u, idx) => { if (!orderMap.has(u)) orderMap.set(u, idx); });
             allChannels.forEach((ch, idx) => {
                 if (orderMap.has(ch.url)) ch.customOrder = orderMap.get(ch.url);
+                else if (ch.id && ch.id.startsWith('ch_ex_')) ch.customOrder = -5000 + (ch.originalIndex ?? idx);
                 else ch.customOrder = 100000 + (ch.originalIndex ?? idx);
             });
         } else { allChannels.forEach((ch) => { delete ch.customOrder; }); }
@@ -1462,29 +1463,163 @@
         isScanning = false; btn.innerText = "Hepsini Tara"; btn.style.color = "var(--fav)"; btn.style.borderColor = "var(--fav)";
         if (!signal.aborted) { stat.innerText = "Tarama bitti."; showOSD("Tarama Tamamlandı", `${brokenCount} bozuk kanal bulundu.`); }
     }
-    function testStreamBackground(url, ms = 4000) {
+    function createHlsForStream(streamUrl, useProxy = false, extraConfig = {}) {
+        const cleanUrl = String(streamUrl || '').split('#')[0];
+        const workerOrigin = new URL(MY_CLOUD_PROXY).origin;
+        let lastPlaylistUrl = cleanUrl;
+        const baseCfg = Object.assign({
+            debug: false,
+            manifestLoadingTimeOut: 9000,
+            manifestLoadingMaxRetry: 2,
+            levelLoadingTimeOut: 9000,
+            levelLoadingMaxRetry: 2,
+            fragLoadingTimeOut: 10000,
+            fragLoadingMaxRetry: 2
+        }, extraConfig);
+        if (isDataSaver) {
+            baseCfg.autoLevelCapping = 0;
+            baseCfg.startLevel = 0;
+            baseCfg.capLevelToPlayerSize = true;
+        }
+        if (useProxy) {
+            baseCfg.xhrSetup = function(xhr, reqUrl) {
+                try {
+                    let targetUrl = reqUrl;
+                    if (targetUrl.startsWith(workerOrigin) && !targetUrl.includes('?url=')) {
+                        const relPath = targetUrl.substring(workerOrigin.length);
+                        const baseObj = new URL(lastPlaylistUrl);
+                        const dirPath = baseObj.pathname.substring(0, baseObj.pathname.lastIndexOf('/') + 1);
+                        if (relPath.startsWith(dirPath)) {
+                            targetUrl = baseObj.origin + relPath;
+                        } else {
+                            targetUrl = baseObj.origin + dirPath + relPath.replace(/^\//, '');
+                        }
+                    }
+                    if (/^https?:\/\//i.test(targetUrl) && !targetUrl.startsWith(MY_CLOUD_PROXY)) {
+                        if (targetUrl.includes('.m3u8')) lastPlaylistUrl = targetUrl;
+                        xhr.open('GET', MY_CLOUD_PROXY + encodeURIComponent(targetUrl), true);
+                    }
+                } catch (e) {}
+            };
+        }
+        return new Hls(baseCfg);
+    }
+
+    function testHlsCandidateOnce(rawUrl, useProxy, timeoutMs) {
         return new Promise((resolve) => {
-            if (extractYTId(url) || url.includes('#web_live')) { resolve(true); return; }
-            let done = false, tempHls = null, v = null, timer = null;
+            const cleanUrl = String(rawUrl || '').split('#')[0];
+            if (!cleanUrl || !/^https?:\/\//i.test(cleanUrl)) { resolve(false); return; }
+            if (!Hls.isSupported()) { resolve(true); return; }
+            let done = false, tempHls = null, timer = null;
             const finish = (ok) => {
-                if (done) return; done = true; clearTimeout(timer);
+                if (done) return;
+                done = true;
+                clearTimeout(timer);
                 try { if (tempHls) tempHls.destroy(); } catch (e) {}
-                try { if (v) { v.onloadedmetadata = null; v.onerror = null; v.removeAttribute('src'); v.load(); } } catch (e) {}
                 resolve(ok);
             };
-            timer = setTimeout(() => finish(false), ms);
-            if (Hls.isSupported() && url.includes('.m3u') && !url.includes('#audio')) {
-                tempHls = new Hls({ debug: false, autoStartLoad: false });
-                tempHls.on(Hls.Events.ERROR, function (event, data) { if (data.fatal) finish(false); });
-                tempHls.on(Hls.Events.MANIFEST_PARSED, function () { finish(true); });
-                tempHls.loadSource(url); tempHls.startLoad();
-            } else {
-                v = document.createElement('video'); v.preload = 'metadata';
-                v.onloadedmetadata = () => finish(true); v.onerror = () => finish(false); v.src = url.split('#')[0];
+            timer = setTimeout(() => finish(false), timeoutMs);
+            try {
+                tempHls = createHlsForStream(cleanUrl, useProxy, { autoStartLoad: true, manifestLoadingMaxRetry: 1, levelLoadingMaxRetry: 1 });
+                tempHls.on(Hls.Events.ERROR, function (event, data) {
+                    if (data && data.fatal) finish(false);
+                });
+                tempHls.on(Hls.Events.LEVEL_LOADED, function (event, data) {
+                    if (data && data.details && data.details.fragments && data.details.fragments.length > 0) finish(true);
+                    else finish(true);
+                });
+                tempHls.on(Hls.Events.MANIFEST_PARSED, function (event, data) {
+                    if (data && data.levels && data.levels.length > 0) {
+                        try { tempHls.startLoad(); } catch (e) { finish(true); }
+                        setTimeout(() => finish(true), 900);
+                    } else {
+                        finish(true);
+                    }
+                });
+                tempHls.loadSource(cleanUrl);
+            } catch (e) {
+                finish(false);
             }
         });
     }
-    async function resetQuarantine() {
+
+    async function verifyAndResolveStream(url, ms = 5500) {
+        if (!url) return { ok: false, url: '' };
+        const ytId = extractYTId(url);
+        if (ytId) {
+            try {
+                const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent('https://www.youtube.com/watch?v=' + ytId)}&format=json`;
+                const r = await fetchTO(oembedUrl, Math.min(ms, 3500));
+                if (r.ok) return { ok: true, url: `https://www.youtube.com/watch?v=${ytId}` };
+            } catch (e) {}
+            const direct = await getFastAdFreeYt(ytId, Math.min(ms, 3500));
+            return { ok: !!(direct && direct.url), url: `https://www.youtube.com/watch?v=${ytId}` };
+        }
+        if (url.includes('#web_live')) {
+            const cleanPageUrl = url.split('#')[0];
+            let known = null;
+            try {
+                const h = new URL(cleanPageUrl).hostname.replace(/^www\./, '');
+                known = OFFICIAL_WEB_CHANNELS.find(c => c.pageUrl.includes(h));
+            } catch (e) {}
+            const scraped = await scrapeLivePageStreams(cleanPageUrl, known ? known.name : '', known ? known.fallbackStreams : []);
+            const candidates = scraped.filter(x => !x.url.includes('#web_live'));
+            for (const cand of candidates) {
+                const check = await verifyAndResolveStream(cand.url, Math.min(ms, 4500));
+                if (check.ok) return check;
+            }
+            return { ok: false, url };
+        }
+        if (url.includes('#audio') || /\.(mp3|aac|ogg)(\?|$)/i.test(url)) {
+            return new Promise((resolve) => {
+                let done = false, v = document.createElement('video'), timer = null;
+                const finish = (ok) => {
+                    if (done) return; done = true; clearTimeout(timer);
+                    try { v.onloadedmetadata = null; v.oncanplay = null; v.onerror = null; v.removeAttribute('src'); v.load(); } catch (e) {}
+                    resolve({ ok, url });
+                };
+                timer = setTimeout(() => finish(false), ms);
+                v.preload = 'metadata';
+                v.onloadedmetadata = () => finish(true);
+                v.oncanplay = () => finish(true);
+                v.onerror = () => finish(false);
+                v.src = url.split('#')[0];
+            });
+        }
+        const cleanUrl = url.split('#')[0];
+        const wantsProxyFirst = url.includes('#cors_proxy');
+        if (Hls.isSupported() && (cleanUrl.includes('.m3u') || cleanUrl.includes('playlist') || cleanUrl.includes('master'))) {
+            if (wantsProxyFirst) {
+                const okP = await testHlsCandidateOnce(cleanUrl, true, Math.max(2800, Math.floor(ms * 0.7)));
+                if (okP) return { ok: true, url: cleanUrl + '#cors_proxy' };
+            }
+            const okDirect = await testHlsCandidateOnce(cleanUrl, false, Math.max(2600, Math.floor(ms * 0.6)));
+            if (okDirect) return { ok: true, url: cleanUrl };
+            const okProxy = await testHlsCandidateOnce(cleanUrl, true, Math.max(2800, Math.floor(ms * 0.65)));
+            if (okProxy) return { ok: true, url: cleanUrl + '#cors_proxy' };
+            return { ok: false, url };
+        }
+        return new Promise((resolve) => {
+            let done = false, v = document.createElement('video'), timer = null;
+            const finish = (ok) => {
+                if (done) return; done = true; clearTimeout(timer);
+                try { v.onloadedmetadata = null; v.onerror = null; v.removeAttribute('src'); v.load(); } catch (e) {}
+                resolve({ ok, url });
+            };
+            timer = setTimeout(() => finish(false), ms);
+            v.preload = 'metadata';
+            v.onloadedmetadata = () => finish(true);
+            v.onerror = () => finish(false);
+            v.src = cleanUrl;
+        });
+    }
+
+    async function testStreamBackground(url, ms = 5000) {
+        const res = await verifyAndResolveStream(url, ms);
+        return !!res.ok;
+    }
+    
+async function resetQuarantine() {
         const ok = await showTvConfirm("Karantinayı Temizle", "Karantinadaki bozuk kanalları sıfırlayıp listeye geri almak istiyor musunuz?");
         if (ok) { brokenUrls = []; localStorage.removeItem('tv_broken'); allChannels.forEach(c => c.broken = false); sortAndRenderList(); showOSD("Karantina Temizlendi"); }
     }
@@ -1675,61 +1810,147 @@
         }, waitTime);
     }
 
-    /* ===== AD-FREE YT ENGINE ===== */
+    /* ===== AD-FREE YT ENGINE (PROXIED STREAM + MULTI-FALLBACK + IFRAME AD-NUKER) ===== */
     const PIPED_FAST = [
-        'https://pipedapi.adminforge.de', 'https://pipedapi.reallyaweso.me', 'https://api.piped.private.coffee',
-        'https://pipedapi.drgns.space', 'https://pipedapi.ducks.party', 'https://pipedapi.kavin.rocks',
+        'https://pipedapi.kavin.rocks', 'https://pipedapi.adminforge.de', 'https://pipedapi.reallyaweso.me',
+        'https://api.piped.private.coffee', 'https://pipedapi.drgns.space', 'https://pipedapi.ducks.party',
         'https://pipedapi.smnz.de', 'https://pipedapi.leptons.xyz', 'https://pipedapi.orangenet.cc',
-        'https://pipedapi.astartes.nl'
+        'https://pipedapi.astartes.nl', 'https://piped-api.garudalinux.org'
     ];
     const INVID_FAST = [
-        'https://invidious.nerdvpn.de', 'https://inv.nadeko.net', 'https://invidious.jing.rocks',
+        'https://inv.nadeko.net', 'https://invidious.nerdvpn.de', 'https://invidious.jing.rocks',
         'https://invidious.privacyredirect.com', 'https://iv.ggtyler.dev', 'https://invidious.f5.si',
         'https://yewtu.be', 'https://invidious.reallyaweso.me', 'https://inv.tux.pizza',
-        'https://invidious.protokolla.fi'
+        'https://invidious.protokolla.fi', 'https://yt.artemislena.eu'
     ];
 
-    async function fastJsonFetch(u, ms = 2500) {
+    async function fastJsonFetch(u, ms = 2800) {
         try {
             const r = await fetchTO(u, ms);
             if (r.ok) return await r.json();
         } catch (e) {}
         try {
             const pr = await fetchTO(MY_CLOUD_PROXY + encodeURIComponent(u), ms);
-            if (!pr.ok) throw 0;
-            return await pr.json();
+            if (pr.ok) return await pr.json();
         } catch (e) {}
         throw 0;
     }
-    function parsePipedStreamData(d) {
-        if (!d || d.error) throw 0;
-        if (d.livestream && d.hls) return { url: d.hls, type: 'hls' };
-        const v = (d.videoStreams || []).filter(x => !x.videoOnly && (x.mimeType || '').includes('mp4')).sort((a, b) => (b.height || 0) - (a.height || 0))[0];
-        if (!v || !v.url) throw 0;
-        return { url: v.url, type: 'mp4' };
-    }
-    function parseInvidStreamData(a, d) {
-        if (!d || d.error) throw 0;
-        if (d.liveNow && d.hlsUrl) return { url: d.hlsUrl.startsWith('http') ? d.hlsUrl : a + d.hlsUrl, type: 'hls' };
-        const v = (d.formatStreams || []).filter(x => (x.type || '').includes('mp4')).sort((x, y) => parseInt(y.resolution || '0', 10) - parseInt(x.resolution || '0', 10))[0];
-        if (!v || !v.url) throw 0;
-        return { url: v.url.startsWith('http') ? v.url : a + v.url, type: 'mp4' };
+
+    function rewriteGoogleVideoToProxy(rawUrl, proxyBase) {
+        if (!rawUrl || !proxyBase) return rawUrl;
+        try {
+            const u = new URL(rawUrl);
+            if (u.hostname.endsWith('googlevideo.com')) {
+                const p = new URL(proxyBase);
+                u.protocol = p.protocol;
+                u.host = p.host;
+                if (!u.searchParams.has('host')) u.searchParams.set('host', new URL(rawUrl).hostname);
+                return u.toString();
+            }
+        } catch (e) {}
+        return rawUrl;
     }
 
-    async function getFastAdFreeYt(id, maxWaitMs = 5000) {
+    function parsePipedStreamData(d) {
+        if (!d || d.error) throw 0;
+        const candidates = [];
+        if (d.hls && /^https?:\/\//i.test(d.hls)) {
+            candidates.push({ url: d.hls, type: 'hls' });
+        }
+        const mp4s = (d.videoStreams || [])
+            .filter(x => !x.videoOnly && (x.mimeType || '').includes('mp4') && x.url)
+            .sort((a, b) => (b.height || 0) - (a.height || 0));
+        for (const v of mp4s) {
+            if (d.proxyUrl && v.url.includes('googlevideo.com')) {
+                candidates.push({ url: rewriteGoogleVideoToProxy(v.url, d.proxyUrl), type: 'mp4' });
+            }
+            candidates.push({ url: v.url, type: 'mp4' });
+        }
+        if (!candidates.length) throw 0;
+        return { url: candidates[0].url, type: candidates[0].type, candidates };
+    }
+
+    function parseInvidStreamData(a, d, videoId) {
+        if (!d || d.error) throw 0;
+        const candidates = [];
+        if (d.liveNow && d.hlsUrl) {
+            const hlsU = d.hlsUrl.startsWith('http') ? d.hlsUrl : (a + d.hlsUrl);
+            candidates.push({ url: hlsU, type: 'hls' });
+        }
+        const vidId = videoId || d.videoId || '';
+        const mp4s = (d.formatStreams || [])
+            .filter(x => (x.type || '').includes('mp4') && x.url)
+            .sort((x, y) => parseInt(y.resolution || '0', 10) - parseInt(x.resolution || '0', 10));
+        for (const v of mp4s) {
+            const itag = v.itag || '18';
+            if (vidId) {
+                candidates.push({ url: `${a}/latest_version?id=${encodeURIComponent(vidId)}&itag=${encodeURIComponent(itag)}&local=true`, type: 'mp4' });
+            }
+            if (v.url.startsWith('/')) {
+                candidates.push({ url: a + v.url + (v.url.includes('local=true') ? '' : '&local=true'), type: 'mp4' });
+            } else if (v.url.includes('googlevideo.com')) {
+                try {
+                    const uObj = new URL(v.url);
+                    const aObj = new URL(a);
+                    uObj.protocol = aObj.protocol;
+                    uObj.host = aObj.host;
+                    uObj.searchParams.set('local', 'true');
+                    candidates.push({ url: uObj.toString(), type: 'mp4' });
+                } catch (e) {}
+                candidates.push({ url: v.url, type: 'mp4' });
+            } else {
+                candidates.push({ url: v.url, type: 'mp4' });
+            }
+        }
+        if (d.hlsUrl && !d.liveNow) {
+            const hlsU = d.hlsUrl.startsWith('http') ? d.hlsUrl : (a + d.hlsUrl);
+            candidates.push({ url: hlsU, type: 'hls' });
+        }
+        if (!candidates.length) throw 0;
+        return { url: candidates[0].url, type: candidates[0].type, candidates };
+    }
+
+    async function extractYtFromWorkerDirect(id, timeoutMs = 3500) {
+        const watchUrl = `https://www.youtube.com/watch?v=${id}&bpctr=9999999999&has_verified=1`;
+        const r = await fetchTO(MY_CLOUD_PROXY + encodeURIComponent(watchUrl), timeoutMs);
+        if (!r.ok) throw 0;
+        const html = await r.text();
+        const m = html.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\});\s*(?:var\s|window\.|<\/script)/s);
+        if (!m) throw 0;
+        const pr = JSON.parse(m[1]);
+        const sd = pr && pr.streamingData;
+        if (!sd) throw 0;
+        const candidates = [];
+        if (sd.hlsManifestUrl) {
+            candidates.push({ url: sd.hlsManifestUrl, type: 'hls' });
+        }
+        const formats = (sd.formats || []).filter(f => f.url && (f.mimeType || '').includes('mp4')).sort((a, b) => (b.height || 0) - (a.height || 0));
+        for (const f of formats) {
+            candidates.push({ url: f.url, type: 'mp4' });
+        }
+        if (!candidates.length) throw 0;
+        return { url: candidates[0].url, type: candidates[0].type, candidates };
+    }
+
+    async function getFastAdFreeYt(id, maxWaitMs = 4200) {
         if (ytStreamCache.has(id)) {
             const cached = ytStreamCache.get(id);
-            if (Date.now() - cached.t < 2 * 60 * 60 * 1000) return cached.d;
+            if (Date.now() - cached.t < 45 * 60 * 1000) return cached.d;
         }
+        const perReqMs = Math.max(2400, Math.min(4000, maxWaitMs));
         const jobs = [
-            ...PIPED_FAST.map(a => fastJsonFetch(`${a}/streams/${id}`, maxWaitMs).then(parsePipedStreamData)),
-            ...INVID_FAST.map(a => fastJsonFetch(`${a}/api/v1/videos/${id}?local=true`, maxWaitMs).then(d => parseInvidStreamData(a, d)))
+            ...INVID_FAST.map(a => fastJsonFetch(`${a}/api/v1/videos/${id}?local=true`, perReqMs).then(d => parseInvidStreamData(a, d, id))),
+            ...PIPED_FAST.map(a => fastJsonFetch(`${a}/streams/${id}`, perReqMs).then(parsePipedStreamData)),
+            extractYtFromWorkerDirect(id, perReqMs)
         ];
         try {
             const res = await Promise.any(jobs);
-            if (res && res.url) ytStreamCache.set(id, { t: Date.now(), d: res });
-            return res;
-        } catch (e) { return null; }
+            if (res && res.url) {
+                ytStreamCache.set(id, { t: Date.now(), d: res });
+                return res;
+            }
+        } catch (e) {}
+        return null;
     }
 
     function preloadNextYtStream(fromIdx) {
@@ -1745,53 +1966,127 @@
         }
     }
 
-    function applyDirectYtStreamToVideo(direct, sessionToken, resumeTimeSec = 0) {
-        if (sessionToken !== currentPlaySession || !direct || !direct.url) return false;
+    function applyDirectYtStreamToVideo(direct, sessionToken, resumeTimeSec = 0, candIndex = 0) {
+        if (sessionToken !== currentPlaySession || !direct) return false;
+        const cands = (Array.isArray(direct.candidates) && direct.candidates.length) ? direct.candidates : [{ url: direct.url, type: direct.type }];
+        if (candIndex >= cands.length) return false;
+        const chosen = cands[candIndex];
+        if (!chosen || !chosen.url) return false;
+
         const video = document.getElementById('localPlayer');
         const ytContainer = document.getElementById('ytContainer');
         if (ytAdSkipTimer) { clearInterval(ytAdSkipTimer); ytAdSkipTimer = null; }
         ytContainer.style.display = 'none';
+        ytContainer.style.opacity = '1';
         if (isYtApiReady && ytPlayer && typeof ytPlayer.stopVideo === 'function') { try { ytPlayer.stopVideo(); } catch (e) {} }
         video.style.display = 'block';
         if (hls) { hls.destroy(); hls = null; }
-        if (direct.type === 'hls' && Hls.isSupported()) {
-            hls = new Hls();
-            hls.loadSource(direct.url);
+
+        const tryNextCandidateOrIframe = () => {
+            if (sessionToken !== currentPlaySession) return;
+            const ytId = extractYTId(allChannels[curIdx]?.url || '');
+            if (candIndex + 1 < cands.length) {
+                applyDirectYtStreamToVideo(direct, sessionToken, resumeTimeSec, candIndex + 1);
+                return;
+            }
+            if (ytId) {
+                ytStreamCache.delete(ytId);
+                startYtIframeWithAdSkip(ytId, sessionToken, true);
+            }
+        };
+
+        if (chosen.type === 'hls' && Hls.isSupported()) {
+            hls = createHlsForStream(chosen.url, false);
+            hls.loadSource(chosen.url);
             hls.attachMedia(video);
             hls.on(Hls.Events.MANIFEST_PARSED, () => {
                 if (resumeTimeSec > 2) { try { video.currentTime = resumeTimeSec; } catch (e) {} }
                 video.play().catch(() => {});
+                document.getElementById('bufSpinner').style.display = 'none';
                 document.getElementById('pStatus').innerText = "İzleniyor (YT Reklamsız)";
             });
             hls.on(Hls.Events.ERROR, (e, d) => {
-                if (d.fatal) {
-                    const ytId = extractYTId(allChannels[curIdx]?.url || '');
-                    if (ytId) startYtIframeWithAdSkip(ytId, sessionToken, false);
-                }
+                if (d && d.fatal) tryNextCandidateOrIframe();
             });
             return true;
-        } else if (direct.type === 'mp4') {
+        } else {
             video.removeAttribute('crossorigin');
-            video.src = direct.url;
+            video.src = chosen.url;
             video.onloadedmetadata = () => {
                 if (resumeTimeSec > 2 && isFinite(video.duration) && resumeTimeSec < video.duration - 2) {
                     try { video.currentTime = resumeTimeSec; } catch (e) {}
                 }
             };
             video.onended = () => nextCh();
-            video.onerror = () => {
-                const ytId = extractYTId(allChannels[curIdx]?.url || '');
-                if (ytId) startYtIframeWithAdSkip(ytId, sessionToken, false);
-            };
+            video.onerror = () => tryNextCandidateOrIframe();
             video.play().then(() => {
+                document.getElementById('bufSpinner').style.display = 'none';
                 document.getElementById('pStatus').innerText = "İzleniyor (YT Reklamsız)";
-            }).catch(() => {
-                const ytId = extractYTId(allChannels[curIdx]?.url || '');
-                if (ytId) startYtIframeWithAdSkip(ytId, sessionToken, false);
+            }).catch((err) => {
+                if (err && err.name === 'AbortError') return;
+                tryNextCandidateOrIframe();
             });
             return true;
         }
-        return false;
+    }
+
+    async function tryAutoHealChannelStream(ch, failedUrl, sessionToken) {
+        if (!ch || sessionToken !== currentPlaySession) return null;
+        const chNorm = normTxt(ch.name || '').replace(/\b(hd|sd|fhd|canli|yayin|tv|resmi|cdn|otomatik|siteden)\b/g, '').trim();
+        let cleanPageUrl = '';
+        if (failedUrl.includes('#web_src=')) {
+            try { cleanPageUrl = decodeURIComponent(failedUrl.split('#web_src=')[1].split('&')[0]); } catch (e) {}
+        } else if (failedUrl.includes('#web_live')) {
+            cleanPageUrl = failedUrl.split('#')[0];
+        }
+        const matchedOfficial = OFFICIAL_WEB_CHANNELS.find(item => {
+            if (cleanPageUrl && item.pageUrl && cleanPageUrl.includes(new URL(item.pageUrl).hostname.replace(/^www\./, ''))) return true;
+            const iNorm = normTxt(item.name);
+            if (chNorm && (iNorm === chNorm || item.keys.some(k => normTxt(k) === chNorm))) return true;
+            return (item.fallbackStreams || []).some(fs => fs.split('?')[0] === failedUrl.split('?')[0].split('#')[0]);
+        });
+        if (!matchedOfficial && !cleanPageUrl) return null;
+
+        document.getElementById('pStatus').innerText = "Yedek Canlı Kaynak Aranıyor...";
+        const pageToScrape = cleanPageUrl || (matchedOfficial ? matchedOfficial.pageUrl : '');
+        const fallbacks = matchedOfficial ? (matchedOfficial.fallbackStreams || []) : [];
+        const candidates = [];
+        for (const fb of fallbacks) {
+            if (fb !== failedUrl) candidates.push(fb);
+        }
+        if (pageToScrape) {
+            try {
+                const scraped = await scrapeLivePageStreams(pageToScrape, matchedOfficial ? matchedOfficial.name : ch.name, fallbacks);
+                for (const s of scraped) {
+                    if (!s.url.includes('#web_live') && !candidates.includes(s.url)) candidates.push(s.url);
+                }
+            } catch (e) {}
+        }
+        for (const candUrl of candidates) {
+            if (sessionToken !== currentPlaySession) return null;
+            const check = await verifyAndResolveStream(candUrl, 4500);
+            if (check.ok && check.url) {
+                const oldUrl = ch.url;
+                ch.url = check.url;
+                ch.broken = false;
+                brokenUrls = brokenUrls.filter(u => u !== oldUrl && u !== ch.url);
+                localStorage.setItem('tv_broken', JSON.stringify(brokenUrls));
+                if (Array.isArray(extraChannelsDict[currentListContext])) {
+                    extraChannelsDict[currentListContext].forEach(ex => { if (ex.id === ch.id || ex.url === oldUrl) ex.url = ch.url; });
+                    localStorage.setItem('tv_extras_dict', JSON.stringify(extraChannelsDict));
+                }
+                if (Array.isArray(customOrdersDict[currentListContext])) {
+                    const idxO = customOrdersDict[currentListContext].indexOf(oldUrl);
+                    if (idxO !== -1) {
+                        customOrdersDict[currentListContext][idxO] = ch.url;
+                        localStorage.setItem('tv_custom_orders', JSON.stringify(customOrdersDict));
+                    }
+                }
+                persistLocalIfNeeded();
+                return ch.url;
+            }
+        }
+        return null;
     }
 
     async function play(idx, dir = 0) {
@@ -1809,65 +2104,116 @@
         document.getElementById('pStatus').innerText = "Bağlanıyor...";
         showOSD((curIdx + 1) + ". " + ch.name);
         playLocally(ch.url, mySession);
-        const curYtId = extractYTId(ch.url);
-        if (curYtId) getFastAdFreeYt(curYtId, 6000).catch(() => {});
         preloadNextYtStream(curIdx);
         hideControlsNow();
     }
 
-    async function playLocally(url, sessionToken) {
+    async function playLocally(url, sessionToken, isRetryAfterHeal = false) {
         const video = document.getElementById('localPlayer');
         const ytContainer = document.getElementById('ytContainer');
         document.getElementById('castOnlyScreen').style.display = 'none';
         video.onerror = null; video.onloadedmetadata = null;
         if (ytAdSkipTimer) { clearInterval(ytAdSkipTimer); ytAdSkipTimer = null; }
         if (hls) { hls.destroy(); hls = null; }
+
         const isWebPageLive = url.includes('#web_live') || (
             /^https?:\/\//i.test(url) && !extractYTId(url) && !url.includes('.m3u') && !url.includes('.mp4') && !url.includes('#audio') && (/canli|live|watch|izle|webtv|\/tv/i.test(url))
         );
         if (isWebPageLive) {
             const cleanPageUrl = url.split('#')[0];
             document.getElementById('pStatus').innerText = "Web Canlı Yayın Çözülüyor...";
-            const scraped = await scrapeLivePageStreams(cleanPageUrl, '', []);
+            document.getElementById('bufSpinner').style.display = 'block';
+            const res = await verifyAndResolveStream(cleanPageUrl + '#web_live', 6500);
             if (sessionToken !== currentPlaySession) return;
-            const playable = scraped.find(x => !x.url.includes('#web_live'));
-            if (playable && playable.url) { url = playable.url; }
-            else {
-                const known = OFFICIAL_WEB_CHANNELS.find(c => cleanPageUrl.includes(new URL(c.pageUrl).hostname.replace(/^www\./, '')));
-                if (known && known.fallbackStreams && known.fallbackStreams.length > 0) { url = known.fallbackStreams[0]; }
+            if (res.ok && res.url) {
+                url = res.url;
+                if (allChannels[curIdx]) {
+                    allChannels[curIdx].url = url;
+                    persistLocalIfNeeded();
+                }
+            } else {
+                const healed = await tryAutoHealChannelStream(allChannels[curIdx], url, sessionToken);
+                if (sessionToken !== currentPlaySession) return;
+                if (healed) url = healed;
                 else { handleStreamError(sessionToken); return; }
             }
         }
+
         const ytId = extractYTId(url);
         if (ytId) {
-            const cached = ytStreamCache.get(ytId);
-            if (cached && (Date.now() - cached.t) < 2 * 60 * 60 * 1000) {
-                document.getElementById('bufSpinner').style.display = 'none';
-                if (applyDirectYtStreamToVideo(cached.d, sessionToken, 0)) return;
-            }
-            document.getElementById('pStatus').innerText = "YouTube Yükleniyor...";
+            document.getElementById('pStatus').innerText = "Reklamsız Akış Hazırlanıyor...";
             document.getElementById('bufSpinner').style.display = 'block';
-            startYtIframeWithAdSkip(ytId, sessionToken, true);
-        } else {
-            video.onended = null;
-            ytContainer.style.display = 'none';
-            if (isYtApiReady && ytPlayer && typeof ytPlayer.pauseVideo === 'function') ytPlayer.pauseVideo();
-            video.style.display = 'block';
-            if (url.includes('#audio')) { playAudioDirect(video, url, sessionToken); return; }
-            video.setAttribute('crossorigin', 'anonymous');
-            if (Hls.isSupported()) {
-                const hlsConfig = { manifestLoadingTimeOut: 10000, manifestLoadingMaxRetry: 3, levelLoadingTimeOut: 10000, levelLoadingMaxRetry: 3 };
-                if (isDataSaver) { hlsConfig.autoLevelCapping = 0; hlsConfig.startLevel = 0; hlsConfig.capLevelToPlayerSize = true; }
-                hls = new Hls(hlsConfig);
-                hls.on(Hls.Events.ERROR, function (event, data) { if (data.fatal) handleStreamError(sessionToken); });
-                hls.loadSource(url); hls.attachMedia(video);
-                hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                    video.play().then(() => { document.getElementById('pStatus').innerText = "Cihazda İzleniyor"; }).catch((e)=> { if (e.name !== 'NotAllowedError') handleStreamError(sessionToken); });
-                });
-            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                video.src = url; video.onerror = function() { handleStreamError(sessionToken); };
-                video.addEventListener('loadedmetadata', function() { video.play().catch(()=>{}); }, { once: true });
+            const direct = await getFastAdFreeYt(ytId, 3800);
+            if (sessionToken !== currentPlaySession) return;
+            if (direct && direct.url) {
+                if (applyDirectYtStreamToVideo(direct, sessionToken, 0, 0)) return;
             }
+            startYtIframeWithAdSkip(ytId, sessionToken, true);
+            return;
+        }
+
+        video.onended = null;
+        ytContainer.style.display = 'none';
+        ytContainer.style.opacity = '1';
+        if (isYtApiReady && ytPlayer && typeof ytPlayer.pauseVideo === 'function') { try { ytPlayer.pauseVideo(); } catch (e) {} }
+        video.style.display = 'block';
+        if (url.includes('#audio') || /\.(mp3|aac|ogg)(\?|$)/i.test(url)) {
+            playAudioDirect(video, url, sessionToken);
+            return;
+        }
+        video.removeAttribute('crossorigin');
+        const cleanStreamUrl = url.split('#')[0];
+        const forceProxyFirst = url.includes('#cors_proxy');
+
+        if (Hls.isSupported()) {
+            let triedProxyFallback = forceProxyFirst;
+            const startHlsPlayback = (useProxyMode) => {
+                if (sessionToken !== currentPlaySession) return;
+                if (hls) { try { hls.destroy(); } catch (e) {} hls = null; }
+                hls = createHlsForStream(cleanStreamUrl, useProxyMode);
+                hls.on(Hls.Events.ERROR, async function (event, data) {
+                    if (!data || !data.fatal) return;
+                    if (sessionToken !== currentPlaySession) return;
+                    if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                        try { hls.recoverMediaError(); return; } catch (e) {}
+                    }
+                    if (!triedProxyFallback) {
+                        triedProxyFallback = true;
+                        document.getElementById('pStatus').innerText = "Proxy ile Bağlanıyor...";
+                        startHlsPlayback(true);
+                        return;
+                    }
+                    if (!isRetryAfterHeal && allChannels[curIdx]) {
+                        const healedUrl = await tryAutoHealChannelStream(allChannels[curIdx], url, sessionToken);
+                        if (sessionToken !== currentPlaySession) return;
+                        if (healedUrl) {
+                            playLocally(healedUrl, sessionToken, true);
+                            return;
+                        }
+                    }
+                    handleStreamError(sessionToken);
+                });
+                hls.loadSource(cleanStreamUrl);
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                    if (sessionToken !== currentPlaySession) return;
+                    video.play().then(() => {
+                        document.getElementById('bufSpinner').style.display = 'none';
+                        document.getElementById('pStatus').innerText = useProxyMode ? "Cihazda İzleniyor (Proxy)" : "Cihazda İzleniyor";
+                    }).catch((e) => {
+                        if (e && e.name !== 'NotAllowedError' && e.name !== 'AbortError') handleStreamError(sessionToken);
+                    });
+                });
+            };
+            startHlsPlayback(forceProxyFirst);
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = cleanStreamUrl;
+            video.onerror = function() { handleStreamError(sessionToken); };
+            video.addEventListener('loadedmetadata', function() { video.play().catch(()=>{}); }, { once: true });
+        } else {
+            video.src = cleanStreamUrl;
+            video.onerror = function() { handleStreamError(sessionToken); };
+            video.play().catch(() => {});
         }
     }
 
@@ -1877,35 +2223,73 @@
         if (hls) { hls.destroy(); hls = null; }
         video.style.display = 'none'; video.pause(); video.removeAttribute('src');
         ytContainer.style.display = 'block';
+        ytContainer.style.opacity = '1';
         document.getElementById('bufSpinner').style.display = 'block';
         let ytLoadAttempts = 0;
+        let adMutedByGuard = false;
+        let lastCleanTimeSec = 1;
+        let lastAdReloadAt = 0;
+
         const doYtLoad = () => {
             if (sessionToken !== currentPlaySession) return;
             if (isYtApiReady && ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-                try { ytPlayer.loadVideoById(ytId); }
-                catch (e) { try { ytPlayer.loadVideoById({ videoId: ytId, startSeconds: 0 }); } catch (e2) {} }
+                try { ytPlayer.loadVideoById({ videoId: ytId, startSeconds: 1 }); }
+                catch (e) { try { ytPlayer.loadVideoById(ytId); } catch (e2) {} }
                 document.getElementById('pStatus').innerText = "Cihazda İzleniyor (YT)";
                 if (trySeamlessUpgrade) {
-                    getFastAdFreeYt(ytId, 6000).then(direct => {
+                    getFastAdFreeYt(ytId, 6500).then(direct => {
                         if (sessionToken !== currentPlaySession || !direct || !direct.url) return;
-                        let curSec = 0;
-                        try { if (ytPlayer && typeof ytPlayer.getCurrentTime === 'function') curSec = Number(ytPlayer.getCurrentTime() || 0); } catch (e) {}
-                        applyDirectYtStreamToVideo(direct, sessionToken, curSec);
+                        let curSec = lastCleanTimeSec;
+                        try {
+                            const vd = ytPlayer.getVideoData ? ytPlayer.getVideoData() : null;
+                            if ((!vd || !vd.video_id || vd.video_id === ytId) && typeof ytPlayer.getCurrentTime === 'function') {
+                                curSec = Number(ytPlayer.getCurrentTime() || 0);
+                            }
+                        } catch (e) {}
+                        applyDirectYtStreamToVideo(direct, sessionToken, curSec, 0);
                     }).catch(() => {});
                 }
                 if (ytAdSkipTimer) clearInterval(ytAdSkipTimer);
                 ytAdSkipTimer = setInterval(() => {
-                    if (sessionToken !== currentPlaySession || ytContainer.style.display === 'none') { clearInterval(ytAdSkipTimer); ytAdSkipTimer = null; return; }
+                    if (sessionToken !== currentPlaySession || ytContainer.style.display === 'none') {
+                        clearInterval(ytAdSkipTimer); ytAdSkipTimer = null; return;
+                    }
                     try {
-                        if (ytPlayer && typeof ytPlayer.getVideoData === 'function') {
-                            const vd = ytPlayer.getVideoData();
-                            if (vd && vd.video_id && vd.video_id !== ytId) {
-                                const d = ytPlayer.getDuration();
-                                if (d && d > 0 && d < 240) { try { ytPlayer.seekTo(d, true); } catch(e) {} }
+                        if (!ytPlayer || typeof ytPlayer.getVideoData !== 'function') return;
+                        const vd = ytPlayer.getVideoData();
+                        const playingId = vd && vd.video_id ? String(vd.video_id) : '';
+                        const isAdPlaying = (playingId && playingId !== ytId) || (typeof ytPlayer.getAdState === 'function' && ytPlayer.getAdState() === 1);
+                        if (isAdPlaying) {
+                            ytContainer.style.opacity = '0.01';
+                            document.getElementById('bufSpinner').style.display = 'block';
+                            document.getElementById('pStatus').innerText = "Reklam Atlanıyor...";
+                            if (typeof ytPlayer.isMuted === 'function' && !ytPlayer.isMuted()) {
+                                ytPlayer.mute();
+                                adMutedByGuard = true;
                             }
+                            const d = typeof ytPlayer.getDuration === 'function' ? Number(ytPlayer.getDuration() || 0) : 0;
+                            if (d > 0 && d < 300 && typeof ytPlayer.seekTo === 'function') {
+                                try { ytPlayer.seekTo(d, true); } catch (e) {}
+                            }
+                            const now = Date.now();
+                            if (now - lastAdReloadAt > 1100) {
+                                lastAdReloadAt = now;
+                                try {
+                                    ytPlayer.loadVideoById({ videoId: ytId, startSeconds: Math.max(1, Math.floor(lastCleanTimeSec || 1)) });
+                                } catch (e) {}
+                            }
+                        } else if (playingId === ytId) {
+                            ytContainer.style.opacity = '1';
+                            if (adMutedByGuard) {
+                                try { ytPlayer.unMute(); } catch (e) {}
+                                adMutedByGuard = false;
+                            }
+                            const ct = typeof ytPlayer.getCurrentTime === 'function' ? Number(ytPlayer.getCurrentTime() || 0) : 0;
+                            if (ct > 1) lastCleanTimeSec = ct;
+                            document.getElementById('pStatus').innerText = "Cihazda İzleniyor (YT)";
                         }
                     } catch (e) {}
-                }, 500);
+                }, 220);
             } else if (ytLoadAttempts++ < 40) {
                 document.getElementById('pStatus').innerText = "YT Hazırlanıyor...";
                 setTimeout(doYtLoad, 200);
@@ -1914,7 +2298,8 @@
         doYtLoad();
     }
 
-    function moveToNextWorking(dir) {
+    
+function moveToNextWorking(dir) {
         if(!allChannels.length) return;
         let next = curIdx; let attempts = 0;
         do { next = next + dir; if (next >= allChannels.length) next = 0; if (next < 0) next = allChannels.length - 1; attempts++; } while (allChannels[next].broken && attempts < allChannels.length);
@@ -2024,26 +2409,180 @@
         throw last;
     }
 
+    const TR_COMMUNITY_M3U_URLS = [
+        'https://gist.githubusercontent.com/zek/209bcd5888473014d4cc5d82390e7d56/raw',
+        'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlists/playlist_turkey.m3u8'
+    ];
+    let trCommunityCache = null;
+
     const OFFICIAL_WEB_CHANNELS = [
-        { name: 'Kanal D', pageUrl: 'https://www.kanald.com.tr/canli-yayin', keys: ['kanald', 'kanal d'], fallbackStreams: ['https://demiroren-live.daioncdn.net/kanald/kanald.m3u8'] },
-        { name: 'ATV', pageUrl: 'https://www.atv.com.tr/canli-yayin', keys: ['atv'], fallbackStreams: ['https://trkvz-live.daioncdn.net/atv/atv.m3u8'] },
-        { name: 'Show TV', pageUrl: 'https://www.showtv.com.tr/canli-yayin', keys: ['show', 'show tv', 'showtv'], fallbackStreams: ['https://ciner-live.daioncdn.net/showtv/showtv.m3u8'] },
-        { name: 'Star TV', pageUrl: 'https://www.startv.com.tr/canli-yayin', keys: ['star', 'star tv', 'startv'], fallbackStreams: ['https://dogus-live.daioncdn.net/startv/startv.m3u8'] },
-        { name: 'TV8', pageUrl: 'https://www.tv8.com.tr/canli-yayin', keys: ['tv8', 'tv 8'], fallbackStreams: ['https://tv8-live.daioncdn.net/tv8/tv8.m3u8'] },
-        { name: 'TRT 1', pageUrl: 'https://www.tabii.com/tr/watch/live/trt1', keys: ['trt', 'trt1', 'trt 1'], fallbackStreams: ['https://tv-trt1.medya.trt.com.tr/master.m3u8'] },
-        { name: 'TRT Haber', pageUrl: 'https://www.trthaber.com/canli-yayin-izle.html', keys: ['trt haber', 'trthaber'], fallbackStreams: ['https://tv-trthaber.medya.trt.com.tr/master.m3u8'] },
-        { name: 'TRT Spor', pageUrl: 'https://www.trtspor.com.tr/canli-yayin-izle/trt-spor', keys: ['trt spor', 'trtspor'], fallbackStreams: ['https://tv-trtspor1.medya.trt.com.tr/master.m3u8'] },
-        { name: 'TRT Çocuk', pageUrl: 'https://www.trtcocuk.net.tr/canli-yayin', keys: ['trt cocuk'], fallbackStreams: ['https://tv-trtcocuk.medya.trt.com.tr/master.m3u8'] },
-        { name: 'CNN Türk', pageUrl: 'https://www.cnnturk.com/canli-yayin', keys: ['cnn', 'cnn turk'], fallbackStreams: ['https://demiroren-live.daioncdn.net/cnnturk/cnnturk.m3u8'] },
-        { name: 'NTV', pageUrl: 'https://www.ntv.com.tr/canli-yayin/ntv', keys: ['ntv'], fallbackStreams: ['https://dogus-live.daioncdn.net/ntv/ntv.m3u8'] },
-        { name: 'Habertürk', pageUrl: 'https://www.haberturk.com/canliyayin', keys: ['haberturk'], fallbackStreams: ['https://ciner-live.daioncdn.net/haberturktv/haberturktv.m3u8'] },
-        { name: 'A Haber', pageUrl: 'https://www.ahaber.com.tr/video/canli-yayin', keys: ['a haber', 'ahaber'], fallbackStreams: ['https://trkvz-live.daioncdn.net/ahaber/ahaber.m3u8'] },
-        { name: 'Halk TV', pageUrl: 'https://halktv.com.tr/canli-yayin', keys: ['halk', 'halk tv'], fallbackStreams: ['https://halktv-live.daioncdn.net/halktv/halktv.m3u8'] },
-        { name: 'TV100', pageUrl: 'https://www.tv100.com/canli-yayin', keys: ['tv100'], fallbackStreams: ['https://tv100-live.daioncdn.net/tv100/tv100.m3u8'] },
-        { name: 'Haber Global', pageUrl: 'https://haberglobal.com.tr/canli-yayin', keys: ['haber global'], fallbackStreams: ['https://haberglobal-live.daioncdn.net/haberglobal/haberglobal.m3u8'] },
-        { name: 'TGRT Haber', pageUrl: 'https://www.tgrthaber.com/canli-yayin', keys: ['tgrt', 'tgrt haber'], fallbackStreams: ['https://tgrthaber-live.daioncdn.net/tgrthaber/tgrthaber.m3u8'] },
-        { name: 'Beyaz TV', pageUrl: 'https://www.beyaztv.com.tr/canli-yayin/', keys: ['beyaz', 'beyaz tv'], fallbackStreams: ['https://beyaztv-live.daioncdn.net/beyaztv/beyaztv.m3u8'] },
-        { name: 'Kanal 7', pageUrl: 'https://www.kanal7.com/canli-izle', keys: ['kanal 7', 'kanal7'], fallbackStreams: ['https://kanal7-live.daioncdn.net/kanal7/kanal7.m3u8'] }
+        { name: 'Kanal D', pageUrl: 'https://www.kanald.com.tr/canli-yayin', keys: ['kanald', 'kanal d', 'ulusal'], fallbackStreams: [
+            'https://demiroren.daioncdn.net/kanald/kanald.m3u8?app=kanald_web&ce=3',
+            'https://demiroren-live.daioncdn.net/kanald/kanald.m3u8?app=kanald_web&ce=3',
+            'https://demiroren-live.daioncdn.net/kanald/kanald.m3u8',
+            'https://live.duhnet.tv/S2/HLS_LIVE/eurodnp/playlist.m3u8'
+        ]},
+        { name: 'ATV', pageUrl: 'https://www.atv.com.tr/canli-yayin', keys: ['atv', 'ulusal'], fallbackStreams: [
+            'https://rnttwmjcin.turknet.ercdn.net/lcpmvefbyo/atv/atv_1080p.m3u8',
+            'https://rnttwmjcin.turknet.ercdn.net/lcpmvefbyo/atv/atv.m3u8',
+            'https://trkvz.daioncdn.net/atv/atv.m3u8?app=web&ce=3',
+            'https://trkvz-live.daioncdn.net/atv/atv.m3u8'
+        ]},
+        { name: 'Show TV', pageUrl: 'https://www.showtv.com.tr/canli-yayin', keys: ['show', 'show tv', 'showtv', 'ulusal'], fallbackStreams: [
+            'https://ciner-live.daioncdn.net/showtv/showtv.m3u8',
+            'https://ciner.daioncdn.net/showtv/showtv.m3u8?app=web&ce=3',
+            'https://canlitvulusal.xyz/live/showturk/index.m3u8'
+        ]},
+        { name: 'Star TV', pageUrl: 'https://www.startv.com.tr/canli-yayin', keys: ['star', 'star tv', 'startv', 'ulusal'], fallbackStreams: [
+            'https://dogus.daioncdn.net/startv/startv_720p.m3u8?&sid=8l4w3lst4co5&app=a20ac41e-bdc3-4aa1-934d-26b484480ac9&ce=3',
+            'https://dogus.daioncdn.net/startv/startv.m3u8?app=startv_web&ce=3',
+            'https://dogus-live.daioncdn.net/startv/startv.m3u8',
+            'https://dogus-live.daioncdn.net/startv/playlist.m3u8'
+        ]},
+        { name: 'TV8', pageUrl: 'https://www.tv8.com.tr/canli-yayin', keys: ['tv8', 'tv 8', 'ulusal'], fallbackStreams: [
+            'https://tv8.daioncdn.net/tv8/tv8.m3u8?app=7ddc255a-ef47-4e81-ab14-c0e5f2949788&ce=3',
+            'https://tv8-live.daioncdn.net/tv8/tv8.m3u8'
+        ]},
+        { name: 'NOW TV', pageUrl: 'https://www.nowtv.com.tr/canli-yayin', keys: ['now', 'now tv', 'nowtv', 'fox', 'fox tv', 'ulusal'], fallbackStreams: [
+            'https://uycyyuuzyh.turknet.ercdn.net/nphindgytw/nowtv/nowtv.m3u8'
+        ]},
+        { name: 'TRT 1', pageUrl: 'https://www.tabii.com/tr/watch/live/trt1', keys: ['trt', 'trt1', 'trt 1', 'ulusal'], fallbackStreams: [
+            'https://tv-trt1.medya.trt.com.tr/master.m3u8',
+            'https://tv-trt1.medya.trt.com.tr/master_720.m3u8'
+        ]},
+        { name: 'TRT Haber', pageUrl: 'https://www.trthaber.com/canli-yayin-izle.html', keys: ['trt haber', 'trthaber', 'trt', 'haber'], fallbackStreams: [
+            'https://tv-trthaber.medya.trt.com.tr/master.m3u8'
+        ]},
+        { name: 'TRT Spor', pageUrl: 'https://www.trtspor.com.tr/canli-yayin-izle/trt-spor', keys: ['trt spor', 'trtspor', 'trt', 'spor'], fallbackStreams: [
+            'https://tv-trtspor1.medya.trt.com.tr/master.m3u8'
+        ]},
+        { name: 'TRT Spor Yıldız', pageUrl: 'https://www.trtspor.com.tr/canli-yayin-izle/trt-spor-yildiz', keys: ['trt spor yildiz', 'trt spor 2', 'spor'], fallbackStreams: [
+            'https://tv-trtspor2.medya.trt.com.tr/master.m3u8'
+        ]},
+        { name: 'TRT Çocuk', pageUrl: 'https://www.trtcocuk.net.tr/canli-yayin', keys: ['trt cocuk', 'trtcocuk', 'cocuk'], fallbackStreams: [
+            'https://tv-trtcocuk.medya.trt.com.tr/master.m3u8'
+        ]},
+        { name: 'TRT Belgesel', pageUrl: 'https://www.trtbelgesel.com.tr/canli-yayin', keys: ['trt belgesel', 'belgesel'], fallbackStreams: [
+            'https://tv-trtbelgesel.medya.trt.com.tr/master.m3u8',
+            'https://tv-trtbelgesel-dai.medya.trt.com.tr/master.m3u8'
+        ]},
+        { name: 'TRT Müzik', pageUrl: 'https://www.trtmuzik.net.tr/canli-yayin', keys: ['trt muzik', 'muzik'], fallbackStreams: [
+            'https://tv-trtmuzik.medya.trt.com.tr/master.m3u8'
+        ]},
+        { name: 'TRT 2', pageUrl: 'https://www.trt2.com.tr/canli-yayin', keys: ['trt 2', 'trt2', 'kultur'], fallbackStreams: [
+            'https://tv-trt2.medya.trt.com.tr/master.m3u8'
+        ]},
+        { name: 'TRT Türk', pageUrl: 'https://www.trtturk.com.tr/canli-yayin', keys: ['trt turk', 'trtturk'], fallbackStreams: [
+            'https://tv-trtturk.medya.trt.com.tr/master.m3u8'
+        ]},
+        { name: 'TRT Avaz', pageUrl: 'https://www.trtavaz.com.tr/canli-yayin', keys: ['trt avaz', 'trtavaz'], fallbackStreams: [
+            'https://tv-trtavaz.medya.trt.com.tr/master.m3u8'
+        ]},
+        { name: 'CNN Türk', pageUrl: 'https://www.cnnturk.com/canli-yayin', keys: ['cnn', 'cnn turk', 'cnnturk', 'haber'], fallbackStreams: [
+            'https://demiroren.daioncdn.net/cnnturk/cnnturk.m3u8?app=cnnturk_web&ce=3',
+            'https://demiroren-live.daioncdn.net/cnnturk/cnnturk.m3u8'
+        ]},
+        { name: 'NTV', pageUrl: 'https://www.ntv.com.tr/canli-yayin/ntv', keys: ['ntv', 'haber'], fallbackStreams: [
+            'https://dogus-live.daioncdn.net/ntv/ntv.m3u8',
+            'https://dogus.daioncdn.net/ntv/ntv.m3u8?app=ntv_web&ce=3'
+        ]},
+        { name: 'Habertürk TV', pageUrl: 'https://www.haberturk.com/canliyayin', keys: ['haberturk', 'haber turk', 'haber'], fallbackStreams: [
+            'https://ciner-live.daioncdn.net/haberturktv/haberturktv.m3u8',
+            'https://ensonhaber-live.ercdn.net/haberturk/haberturk.m3u8'
+        ]},
+        { name: 'Bloomberg HT', pageUrl: 'https://www.bloomberght.com/tv', keys: ['bloomberg', 'bloomberg ht', 'bloomberght', 'ekonomi', 'haber'], fallbackStreams: [
+            'https://ciner.daioncdn.net/bloomberght/bloomberght.m3u8'
+        ]},
+        { name: 'CNBC-e', pageUrl: 'https://www.cnbce.com/canli-yayin', keys: ['cnbce', 'cnbc-e', 'cnbc', 'ekonomi', 'haber'], fallbackStreams: [
+            'https://hnpsechtsc.turknet.ercdn.net/xpnvudnlsv/cnbc-e/cnbc-e.m3u8'
+        ]},
+        { name: 'A Haber', pageUrl: 'https://www.ahaber.com.tr/video/canli-yayin', keys: ['a haber', 'ahaber', 'haber'], fallbackStreams: [
+            'https://rnttwmjcin.turknet.ercdn.net/lcpmvefbyo/ahaber/ahaber.m3u8',
+            'https://trkvz-live.daioncdn.net/ahaber/ahaber.m3u8'
+        ]},
+        { name: 'A Spor', pageUrl: 'https://www.aspor.com.tr/webtv/canli-yayin', keys: ['a spor', 'aspor', 'spor'], fallbackStreams: [
+            'https://rnttwmjcin.turknet.ercdn.net/lcpmvefbyo/aspor/aspor.m3u8',
+            'https://trkvz-live.daioncdn.net/aspor/aspor.m3u8'
+        ]},
+        { name: 'HT Spor', pageUrl: 'https://www.htspor.com/canli-yayin', keys: ['ht spor', 'htspor', 'spor'], fallbackStreams: [
+            'https://ciner.daioncdn.net/ht-spor/ht-spor.m3u8?app=web'
+        ]},
+        { name: 'A2 TV', pageUrl: 'https://www.a2tv.com.tr/webtv/canli-yayin', keys: ['a2', 'a2 tv', 'a2tv'], fallbackStreams: [
+            'https://rnttwmjcin.turknet.ercdn.net/lcpmvefbyo/a2tv/a2tv.m3u8'
+        ]},
+        { name: 'Teve2', pageUrl: 'https://www.teve2.com.tr/canli-yayin', keys: ['teve2', 'teve 2', 'tv2'], fallbackStreams: [
+            'https://demiroren-live.daioncdn.net/teve2/teve2.m3u8',
+            'https://demiroren.daioncdn.net/teve2/teve2.m3u8?app=teve2_web&ce=3'
+        ]},
+        { name: 'TLC', pageUrl: 'https://www.tlctv.com.tr/canli-izle', keys: ['tlc', 'tlc tv'], fallbackStreams: [
+            'https://dogus-live.daioncdn.net/tlc/tlc.m3u8'
+        ]},
+        { name: 'DMAX', pageUrl: 'https://www.dmax.com.tr/canli-izle', keys: ['dmax', 'belgesel'], fallbackStreams: [
+            'https://dogus-live.daioncdn.net/dmax/dmax_720p.m3u8',
+            'https://dogus-live.daioncdn.net/dmax/dmax.m3u8'
+        ]},
+        { name: 'Kral Pop TV', pageUrl: 'https://www.kralmuzik.com.tr/tv/kral-pop-tv', keys: ['kral', 'kral pop', 'kralpoptv', 'muzik'], fallbackStreams: [
+            'https://dogus-live.daioncdn.net/kralpoptv/playlist.m3u8'
+        ]},
+        { name: 'Number 1 Türk', pageUrl: 'https://www.numberone.com.tr/canli-yayin/', keys: ['number1', 'number 1', 'nr1', 'muzik'], fallbackStreams: [
+            'https://mn-nl.mncdn.com/blutv_nr1turk2/live.m3u8',
+            'https://b01c02nl.mediatriple.net/videoonlylive/mtkgeuihrlfwlive/u_stream_5c9e17cd6360b_1/playlist.m3u8'
+        ]},
+        { name: 'Minika Çocuk', pageUrl: 'https://www.minikacocuk.com.tr/webtv/canli-yayin', keys: ['minika', 'minika cocuk', 'cocuk'], fallbackStreams: [
+            'https://rnttwmjcin.turknet.ercdn.net/lcpmvefbyo/minikago_cocuk/minikago_cocuk.m3u8'
+        ]},
+        { name: 'Minika GO', pageUrl: 'https://www.minikago.com.tr/webtv/canli-yayin', keys: ['minika', 'minika go', 'minikago', 'cocuk'], fallbackStreams: [
+            'https://rnttwmjcin.turknet.ercdn.net/lcpmvefbyo/minikago/minikago.m3u8'
+        ]},
+        { name: 'Halk TV', pageUrl: 'https://halktv.com.tr/canli-yayin', keys: ['halk', 'halk tv', 'halktv', 'haber'], fallbackStreams: [
+            'https://halktv-live.daioncdn.net/halktv/halktv.m3u8',
+            'https://halktv.blutv.com/blutv_halktv_live/live.m3u8'
+        ]},
+        { name: 'Sözcü TV', pageUrl: 'https://www.sozcu.com.tr/canli-yayin', keys: ['sozcu', 'sozcu tv', 'szc', 'haber'], fallbackStreams: [
+            'https://sozcutv-live.daioncdn.net/sozcutv/sozcutv.m3u8'
+        ]},
+        { name: 'TV100', pageUrl: 'https://www.tv100.com/canli-yayin', keys: ['tv100', 'tv 100', 'haber'], fallbackStreams: [
+            'https://tv100-live.daioncdn.net/tv100/tv100.m3u8',
+            'https://tv100-live.daioncdn.net/tv100/tv100_1080p.m3u8'
+        ]},
+        { name: 'Haber Global', pageUrl: 'https://haberglobal.com.tr/canli-yayin', keys: ['haber global', 'haberglobal', 'haber'], fallbackStreams: [
+            'https://ensonhaber-live.ercdn.net/haberglobal/haberglobal.m3u8',
+            'https://haberglobal-live.daioncdn.net/haberglobal/haberglobal.m3u8'
+        ]},
+        { name: '24 TV', pageUrl: 'https://www.yirmidort.tv/canli-yayin', keys: ['24 tv', '24tv', 'kanal 24', 'haber'], fallbackStreams: [
+            'https://turkmedya-live.ercdn.net/tv24/tv24.m3u8',
+            'https://mn-nl.mncdn.com/kanal24/smil:kanal24.smil/playlist.m3u8'
+        ]},
+        { name: '360 TV', pageUrl: 'https://www.tv360.com.tr/canli-yayin', keys: ['360', '360 tv', 'tv360', 'ulusal'], fallbackStreams: [
+            'https://turkmedya-live.ercdn.net/tv360/tv360.m3u8'
+        ]},
+        { name: 'TVNET', pageUrl: 'https://www.tvnet.com.tr/canli-yayin', keys: ['tvnet', 'tv net', 'haber'], fallbackStreams: [
+            'https://tvnet-live.lg.mncdn.com/tvnet/tvnet/playlist.m3u8'
+        ]},
+        { name: 'Tele 1', pageUrl: 'https://tele1.com.tr/canli-yayin/', keys: ['tele1', 'tele 1', 'haber'], fallbackStreams: [
+            'https://tele1-live.ercdn.net/tele1/tele1.m3u8'
+        ]},
+        { name: 'Flash Haber TV', pageUrl: 'https://www.flashhabertv.com.tr/canli-yayin', keys: ['flash', 'flash tv', 'flash haber', 'haber'], fallbackStreams: [
+            'https://mn-nl.mncdn.com/blutv_flashtv/live.m3u8'
+        ]},
+        { name: 'TGRT Haber', pageUrl: 'https://www.tgrthaber.com/canli-yayin', keys: ['tgrt', 'tgrt haber', 'haber'], fallbackStreams: [
+            'https://tgrthaber-live.daioncdn.net/tgrthaber/tgrthaber.m3u8'
+        ]},
+        { name: 'Beyaz TV', pageUrl: 'https://www.beyaztv.com.tr/canli-yayin/', keys: ['beyaz', 'beyaz tv', 'beyaztv', 'ulusal'], fallbackStreams: [
+            'https://beyaztv.daioncdn.net/beyaztv/beyaztv.m3u8?app=fcd5c66b-da9d-44ba-a410-4f34805c397d&ce=3',
+            'https://beyaztv-live.daioncdn.net/beyaztv/beyaztv_1080p.m3u8',
+            'https://beyaztv-live.daioncdn.net/beyaztv/beyaztv.m3u8'
+        ]},
+        { name: 'Kanal 7', pageUrl: 'https://www.kanal7.com/canli-izle', keys: ['kanal 7', 'kanal7', 'ulusal'], fallbackStreams: [
+            'https://kanal7-live.daioncdn.net/kanal7/kanal7.m3u8',
+            'https://yurhnwtpys.turknet.ercdn.net/cvmbjbpmdx/kanal7/kanal7_1080p.m3u8'
+        ]},
+        { name: 'Ülke TV', pageUrl: 'https://www.ulketv.com.tr/canli-yayin', keys: ['ulke', 'ulke tv', 'ulketv', 'haber'], fallbackStreams: [
+            'https://mn-nl.mncdn.com/blutv_ulketv2/live.m3u8'
+        ]},
+        { name: 'TBMM TV', pageUrl: 'https://www.tbmm.gov.tr/tbmm-tv', keys: ['tbmm', 'meclis', 'meclis tv', 'haber'], fallbackStreams: [
+            'https://meclistv-live.ercdn.net/meclistv/meclistv.m3u8'
+        ]}
     ];
 
     async function fetchHtmlViaProxy(pageUrl, timeoutMs = 9500) {
@@ -2063,22 +2602,34 @@
     }
 
     function extractStreamsFromHtml(html, sourceUrl = '') {
-        if (!html) return { m3u8: [], yt: [], title: '', logo: '', iframes: [] };
-        const unescaped = html.split('\\/').join('/').split('\\u002F').join('/').split('\\u002f').join('/').split('\\x2F').join('/').split('\\u0026').join('&').replace(/&amp;/gi, '&');
+        if (!html) return { m3u8: [], yt: [], dm: [], title: '', logo: '', iframes: [] };
+        const unescaped = html
+            .split('\\/').join('/')
+            .split('\\u002F').join('/')
+            .split('\\u002f').join('/')
+            .split('\\x2F').join('/')
+            .split('\\u0026').join('&')
+            .split('\\u003d').join('=')
+            .split('\\u003D').join('=')
+            .split('\\u003f').join('?')
+            .split('\\u003F').join('?')
+            .replace(/&amp;/gi, '&');
         let title = '';
         const ogTitle = unescaped.match(/property=["']og:title["'][^>]*content=["']([^"']+)["']/i) || unescaped.match(/content=["']([^"']+)["'][^>]*property=["']og:title["']/i) || unescaped.match(/<title[^>]*>([^<]+)<\/title>/i);
         if (ogTitle && ogTitle[1]) title = ogTitle[1].replace(/\s*[-|•].*$/, '').trim();
         let logo = '';
         const ogImg = unescaped.match(/property=["']og:image["'][^>]*content=["']([^"']+)["']/i) || unescaped.match(/content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
         if (ogImg && ogImg[1] && /^https?:\/\//i.test(ogImg[1])) logo = ogImg[1];
+
         const m3u8Regex = /https?:\/\/[A-Za-z0-9_\-\.\/:%\?=&~+#]+\.m3u8(?:\?[A-Za-z0-9_\-\.\/:%=&~+#]*)?/gi;
         const rawM3u8 = unescaped.match(m3u8Regex) || [];
         const m3u8 = []; const seenM = new Set();
         for (const u of rawM3u8) {
-            const clean = u.replace(/['"\)\]>]+$/, '');
+            const clean = u.replace(/['"\)\]>\\\s]+$/, '');
             if (clean.includes('example.com') || clean.endsWith('/.m3u8')) continue;
             if (!seenM.has(clean)) { seenM.add(clean); m3u8.push(clean); }
         }
+
         const yt = []; const seenY = new Set();
         const ytEmbedRegex = /https?:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\/(?:embed\/|watch\?v=|live\/)([A-Za-z0-9_\-]{11})/gi;
         let m;
@@ -2087,15 +2638,34 @@
             const watchUrl = `https://www.youtube.com/watch?v=${vidId}`;
             if (!seenY.has(watchUrl)) { seenY.add(watchUrl); yt.push(watchUrl); }
         }
+
+        const dm = []; const seenD = new Set();
+        const dmRegex = /(?:dailymotion\.com\/(?:embed\/)?video\/|geo\.dailymotion\.com\/player[^"']*?[?&]video=)([a-zA-Z0-9]+)/gi;
+        while ((m = dmRegex.exec(unescaped)) !== null) {
+            const dmId = m[1];
+            if (dmId && !seenD.has(dmId)) { seenD.add(dmId); dm.push(dmId); }
+        }
+
         const iframes = [];
         const iframeRegex = /<iframe[^>]+src=["']([^"']+)["']/gi;
         while ((m = iframeRegex.exec(unescaped)) !== null) {
             let iUrl = m[1].trim();
             if (iUrl.startsWith('//')) iUrl = 'https:' + iUrl;
             else if (iUrl.startsWith('/') && sourceUrl) { try { iUrl = new URL(sourceUrl).origin + iUrl; } catch (e) {} }
-            if (/^https?:\/\//i.test(iUrl) && !/doubleclick|googlesyndication|facebook|twitter| analytics|gtm/i.test(iUrl)) iframes.push(iUrl);
+            if (/^https?:\/\//i.test(iUrl) && !/doubleclick|googlesyndication|facebook|twitter|analytics|gtm/i.test(iUrl)) iframes.push(iUrl);
         }
-        return { m3u8, yt, title, logo, iframes };
+        return { m3u8, yt, dm, title, logo, iframes };
+    }
+
+    async function resolveDailymotionM3u8(dmId) {
+        try {
+            const metaUrl = `https://www.dailymotion.com/player/metadata/video/${dmId}`;
+            const d = await fastJsonFetch(metaUrl, 4500);
+            if (d && d.qualities && d.qualities.auto && d.qualities.auto[0] && d.qualities.auto[0].url) {
+                return d.qualities.auto[0].url;
+            }
+        } catch (e) {}
+        return null;
     }
 
     async function scrapeLivePageStreams(pageUrl, defaultName = '', fallbackStreams = [], defaultLogo = '') {
@@ -2106,29 +2676,39 @@
             seen.add(url);
             results.push({ name: (pageTitle || 'Web Canlı Yayın') + (labelSuffix ? ` (${labelSuffix})` : ''), url, logo: pageLogo || defaultLogo || '', group: grp, cc: 'tr', kind: 'web' });
         };
+
+        (fallbackStreams || []).forEach((u, idx) => {
+            addStream(u, idx === 0 ? 'Doğrudan Canlı' : `Yedek #${idx + 1}`, 'Resmi Canlı CDN');
+        });
+
         try {
-            const html = await fetchHtmlViaProxy(pageUrl, 8500);
+            const html = await fetchHtmlViaProxy(pageUrl, 7500);
             const ext = extractStreamsFromHtml(html, pageUrl);
             if (!pageTitle && ext.title) pageTitle = ext.title;
             if (!pageLogo && ext.logo) pageLogo = ext.logo;
-            ext.m3u8.forEach((u, idx) => addStream(u, idx === 0 ? 'Canlı HLS' : `Alt #${idx + 1}`, 'Web Canlı (.m3u8)'));
+            ext.m3u8.forEach((u, idx) => addStream(u, idx === 0 ? 'Site HLS' : `Site HLS #${idx + 1}`, 'Web Canlı (.m3u8)'));
             ext.yt.forEach((u, idx) => addStream(u, idx === 0 ? 'YouTube Canlı' : `YT #${idx + 1}`, 'Web Canlı (YouTube)'));
-            if (results.length === 0 && ext.iframes.length > 0) {
+            if (ext.dm && ext.dm.length > 0) {
+                for (const dmId of ext.dm.slice(0, 2)) {
+                    const dmM3u8 = await resolveDailymotionM3u8(dmId);
+                    if (dmM3u8) addStream(dmM3u8, 'Player Canlı', 'Web Canlı (DM HLS)');
+                }
+            }
+            if (ext.m3u8.length === 0 && ext.iframes.length > 0) {
                 for (const ifrUrl of ext.iframes.slice(0, 3)) {
                     try {
-                        const ifrHtml = await fetchHtmlViaProxy(ifrUrl, 5500);
+                        const ifrHtml = await fetchHtmlViaProxy(ifrUrl, 5000);
                         const ifrExt = extractStreamsFromHtml(ifrHtml, ifrUrl);
                         ifrExt.m3u8.forEach((u, idx) => addStream(u, idx === 0 ? 'Player HLS' : `Player #${idx + 1}`, 'Web Canlı (.m3u8)'));
                         ifrExt.yt.forEach((u) => addStream(u, 'YouTube Canlı', 'Web Canlı (YouTube)'));
+                        for (const dmId of (ifrExt.dm || []).slice(0, 1)) {
+                            const dmM3u8 = await resolveDailymotionM3u8(dmId);
+                            if (dmM3u8) addStream(dmM3u8, 'Player Canlı', 'Web Canlı (DM HLS)');
+                        }
                     } catch (e) {}
                 }
             }
         } catch (e) {}
-        (fallbackStreams || []).forEach((u, idx) => { addStream(u, results.length === 0 && idx === 0 ? 'Resmi CDN' : `Yedek`, 'Resmi Canlı CDN'); });
-        if (results.length === 0 && /^https?:\/\//i.test(pageUrl) && !pageUrl.endsWith('.m3u8')) {
-            const dynUrl = pageUrl + (pageUrl.includes('#') ? '' : '#web_live');
-            addStream(dynUrl, 'Siteden Otomatik', 'Web Canlı (Otomatik Token)');
-        }
         return results;
     }
 
@@ -2142,36 +2722,65 @@
             const known = OFFICIAL_WEB_CHANNELS.find(c => fullUrl.includes(new URL(c.pageUrl).hostname.replace(/^www\./, '')));
             return await scrapeLivePageStreams(fullUrl, known ? known.name : hostTitle, known ? known.fallbackStreams : [], known ? known.logo : '');
         }
-        const queryTokens = qNorm.split(' ').filter(Boolean).filter(w => !['canli', 'yayin', 'izle', 'tv'].includes(w));
+        const queryTokens = qNorm.split(' ').filter(Boolean).filter(w => !['canli', 'yayin', 'izle', 'tv', 'hd', 'turkiye'].includes(w));
         let matchedSites = OFFICIAL_WEB_CHANNELS.filter(item => {
             const hay = normTxt(item.name + ' ' + item.keys.join(' '));
-            if (!queryTokens.length) return pq.country === 'tr' || qNorm.includes('tv') || qNorm.includes('canli');
+            if (!queryTokens.length) return pq.country === 'tr' || qNorm.includes('tv') || qNorm.includes('canli') || qNorm.includes('turkiye');
             return queryTokens.every(t => hay.includes(t)) || item.keys.some(k => normTxt(k) === qNorm);
         });
         if (!matchedSites.length) return [];
         const phraseQ = queryTokens.join(' ');
         if (phraseQ && matchedSites.length > 1) {
-            const exactSites = matchedSites.filter(i => normTxt(i.name).includes(phraseQ) || i.keys.some(k => normTxt(k) === phraseQ));
+            const exactSites = matchedSites.filter(i => normTxt(i.name) === phraseQ || i.keys.some(k => normTxt(k) === phraseQ));
             if (exactSites.length) matchedSites = exactSites;
         }
-        const toScrape = matchedSites.slice(0, 4);
-        const rest = matchedSites.slice(4, 25);
+        const toScrape = matchedSites.slice(0, 3);
+        const rest = matchedSites.slice(3, 35);
         const out = [];
         const scrapedLists = await Promise.all(toScrape.map(item => scrapeLivePageStreams(item.pageUrl, item.name, item.fallbackStreams, item.logo).catch(() => [])));
         scrapedLists.forEach(arr => out.push(...arr));
         rest.forEach(item => {
-            if (item.fallbackStreams && item.fallbackStreams.length > 0) {
-                out.push({ name: item.name, url: item.fallbackStreams[0], logo: item.logo || '', group: 'Resmi Canlı CDN', cc: 'tr', kind: 'web' });
-            }
-            out.push({ name: item.name + ' (Siteden Otomatik)', url: item.pageUrl + '#web_live', logo: item.logo || '', group: 'Web Canlı (Otomatik)', cc: 'tr', kind: 'web' });
+            (item.fallbackStreams || []).forEach((fbUrl, idx) => {
+                out.push({
+                    name: item.name + (idx === 0 ? '' : ` (Yedek #${idx + 1})`),
+                    url: fbUrl,
+                    logo: item.logo || '',
+                    group: 'Resmi Canlı CDN',
+                    cc: 'tr',
+                    kind: 'web'
+                });
+            });
         });
         return out;
     }
 
+    async function loadTrCommunityStreams() {
+        if (trCommunityCache) return trCommunityCache;
+        const merged = [];
+        await Promise.all(TR_COMMUNITY_M3U_URLS.map(async u => {
+            try {
+                const tx = await fetchIptv(u, false);
+                merged.push(...parseIptvText(tx, 'tr'));
+            } catch (e) {}
+        }));
+        trCommunityCache = merged;
+        return merged;
+    }
+
     async function searchTv(pq) {
-        let list = null;
-        if (pq.country) { try { list = parseIptvText(await fetchIptv(`https://iptv-org.github.io/iptv/countries/${pq.country}.m3u`, false), pq.country); } catch (e) { list = null; } }
-        if (!list) {
+        let list = [];
+        const lookTurkish = pq.country === 'tr' || (!pq.country && pq.words.some(w => OFFICIAL_WEB_CHANNELS.some(c => normTxt(c.name + ' ' + c.keys.join(' ')).includes(w))));
+        if (lookTurkish) {
+            const comm = await loadTrCommunityStreams().catch(() => []);
+            list.push(...comm);
+        }
+        if (pq.country) {
+            try {
+                const ccList = parseIptvText(await fetchIptv(`https://iptv-org.github.io/iptv/countries/${pq.country}.m3u`, false), pq.country);
+                list.push(...ccList);
+            } catch (e) {}
+        }
+        if (!list.length) {
             if (!iptvIndexCache) {
                 document.getElementById('smartStatus').innerText = 'TV listesi indiriliyor...';
                 iptvIndexCache = parseIptvText(await fetchIptv(IPTV_INDEX_URL, true), '');
@@ -2179,7 +2788,12 @@
             list = iptvIndexCache;
         }
         const seen = new Set(); const out = [];
-        for (const ch of list) { if (seen.has(ch.url)) continue; if (!tvMatches(ch, pq.words, pq.country)) continue; seen.add(ch.url); out.push(ch); }
+        for (const ch of list) {
+            if (seen.has(ch.url)) continue;
+            if (!tvMatches(ch, pq.words, pq.country)) continue;
+            seen.add(ch.url);
+            out.push(ch);
+        }
         return out;
     }
 
@@ -2202,7 +2816,7 @@
             const codec = (s.codec || '').toLowerCase(); let url = u;
             if (!s.hls) url += codec.includes('aac') ? '#audio-aac' : (codec.includes('ogg') ? '#audio-ogg' : '#audio-mp3');
             const tags = s.tags ? ' · ' + s.tags.split(',').slice(0, 2).join(', ') : '';
-            list.push({ name: (s.name || 'Radyo').trim(), url, logo: /^https?:/.test(s.favicon || '') ? s.favicon : '', group: 'Radyo' + tags, cc: (s.countrycode || '').toLowerCase(), kind: 'radio' });
+            list.push({ name: (s.name || 'Radyo').trim(), url, logo: /^https?:\/\//.test(s.favicon || '') ? s.favicon : '', group: 'Radyo' + tags, cc: (s.countrycode || '').toLowerCase(), kind: 'radio' });
         });
         return { list, note, dropped };
     }
@@ -2210,11 +2824,12 @@
     async function smartSearch() {
         const q = document.getElementById('smartQuery').value.trim(); if (!q) return;
         lockAllInputs();
+        if (isSmartTesting && smartAbort) { try { smartAbort.abort(); } catch (e) {} isSmartTesting = false; }
         const wantWebEl = document.getElementById('srcWeb');
         const wantWeb = wantWebEl ? wantWebEl.checked : true;
         const wantTv = document.getElementById('srcTv').checked, wantRadio = document.getElementById('srcRadio').checked;
         if (!wantWeb && !wantTv && !wantRadio) { showOSD('Kaynak Seçin', 'En az bir kaynak seçin'); return; }
-        const st = document.getElementById('smartStatus'); st.style.color = '#f1c40f'; st.innerText = 'Taranıyor...';
+        const st = document.getElementById('smartStatus'); st.style.color = '#f1c40f'; st.innerText = 'Kaynaklar taranıyor...';
         smartResults = []; smartSel = new Set(); renderSmart();
         const isDirectUrl = /^(https?:\/\/|www\.)/i.test(q) || (q.includes('.') && q.includes('/') && !q.includes(' '));
         const pq = parseSmartQuery(q); const notes = [], errs = []; let webList = [], tv = [], radio = [];
@@ -2225,12 +2840,19 @@
         await Promise.all(jobs);
         if (tv.length > 700) tv = tv.slice(0, 700);
         const seen = new Set(); smartResults = [];
-        webList.concat(tv).concat(radio).forEach(r => { const k = r.url; if (!seen.has(k)) { seen.add(k); smartResults.push(r); } });
+        webList.concat(tv).concat(radio).forEach(r => {
+            const k = r.url;
+            if (!seen.has(k)) { seen.add(k); smartResults.push(r); }
+        });
         smartSel = new Set(smartResults.map((_, i) => i));
         if (!smartResults.length) { st.style.color = '#e74c3c'; st.innerText = 'Sonuç bulunamadı.'; renderSmart(); return; }
         st.style.color = '#2ecc71';
-        st.innerText = `${smartResults.length} yayın bulundu (Web: ${webList.length}, IPTV: ${tv.length}, Radyo: ${radio.length}).`;
+        st.innerText = `${smartResults.length} yayın bulundu (Web: ${webList.length}, IPTV: ${tv.length}, Radyo: ${radio.length}). Çalışan yayınlar doğrulanıyor...`;
         renderSmart();
+
+        if (smartResults.length <= 30 || webList.length > 0) {
+            await smartTest(true);
+        }
     }
 
     function renderSmart(preserveFocusIdx) {
@@ -2248,14 +2870,17 @@
         const box = document.getElementById('smartResults'), act = document.getElementById('smartActions');
         if (!smartResults.length) { box.style.display = 'none'; act.style.display = 'none'; box.innerHTML = ''; return; }
         box.style.display = 'block'; act.style.display = 'block';
-        box.innerHTML = smartResults.slice(0, 200).map((r, i) =>
-            `<div class="yt-search-item" tabindex="0" data-smartidx="${i}" style="cursor:default;">
+        box.innerHTML = smartResults.slice(0, 200).map((r, i) => {
+            const statusBadge = r.verified
+                ? `<span style="color:#2ecc71; font-weight:700; font-size:0.75rem;">✓ Çalışıyor</span> · `
+                : (r.dead ? `<span style="color:#e74c3c; font-weight:700; font-size:0.75rem;">✗ Çalışmıyor</span> · ` : '');
+            return `<div class="yt-search-item" tabindex="0" data-smartidx="${i}" style="cursor:default;">
                 <input type="checkbox" tabindex="-1" style="position:static; width:18px; height:18px; margin:0; flex-shrink:0; pointer-events:none;" data-i="${i}" ${smartSel.has(i) ? 'checked' : ''}>
                 ${r.logo ? `<img loading="lazy" decoding="async" src="${esc(r.logo)}" onerror="this.style.display='none'" style="flex-shrink:0;">` : ''}
-                <span style="flex:1; min-width:0; ${r.dead ? 'opacity:.45;text-decoration:line-through;' : ''}">${r.dead ? '✗ ' : ''}${esc(r.name)}<br><small style="color:#888">${esc(r.group || '')}</small></span>
+                <span style="flex:1; min-width:0; ${r.dead ? 'opacity:.45;text-decoration:line-through;' : ''}">${esc(r.name)}<br><small style="color:#888">${statusBadge}${esc(r.group || '')}</small></span>
                 <button class="preview-mini-btn" tabindex="0" data-previewidx="${i}" onclick="event.stopPropagation(); previewSmartResult(${i})" title="Önizle (OK)"><i class="material-icons-round" style="font-size:18px;">play_arrow</i></button>
-            </div>`
-        ).join('');
+            </div>`;
+        }).join('');
         updateSmartCount(); fillSmartTargets();
 
         setTimeout(() => {
@@ -2276,7 +2901,7 @@
             }
         }, 30);
     }
-    function updateSmartCount() { const el = document.getElementById('smartCount'); if (el) el.innerText = `Seçili: ${smartSel.size} / ${smartResults.length}`; }
+    function updateSmartCount() { const el = document.getElementById('smartCount'); if (el) el.innerText = `Seçili (Çalışan): ${smartSel.size} / ${smartResults.length}`; }
     function smartToggle(i, on) { if (on) smartSel.add(i); else smartSel.delete(i); updateSmartCount(); }
     function smartSelectAll(on) { smartSel = on ? new Set(smartResults.map((r, i) => i).filter(i => !smartResults[i].dead)) : new Set(); renderSmart(); }
 
@@ -2289,7 +2914,7 @@
         const stat = document.getElementById('smartPreviewStatus');
         modalOpenedAt = Date.now();
         document.getElementById('smartPreviewTitle').innerText = r.name;
-        stat.innerText = "Yükleniyor...";
+        stat.innerText = "Yayın doğrulanıyor ve açılıyor...";
         stat.style.color = "#f1c40f";
         modal.classList.add('show');
         if (smartPreviewHls) { smartPreviewHls.destroy(); smartPreviewHls = null; }
@@ -2303,7 +2928,7 @@
             const direct = await getFastAdFreeYt(ytId, 4000);
             if (direct && direct.url) {
                 if (direct.type === 'hls' && Hls.isSupported()) {
-                    smartPreviewHls = new Hls();
+                    smartPreviewHls = createHlsForStream(direct.url, false);
                     smartPreviewHls.loadSource(direct.url);
                     smartPreviewHls.attachMedia(vid);
                     smartPreviewHls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -2328,38 +2953,49 @@
         function fallbackToIframe(id) {
             vid.style.display = 'none';
             iframeContainer.style.display = 'block';
-            iframeContainer.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${id}?autoplay=1&playsinline=1" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
-            stat.innerText = "Oynatılıyor (YouTube - reklam olabilir)";
-            stat.style.color = "#f1c40f";
+            iframeContainer.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${id}?autoplay=1&playsinline=1&start=1" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+            stat.innerText = "Oynatılıyor (YouTube)";
+            stat.style.color = "#2ecc71";
         }
 
-        let playUrl = r.url;
-        if (playUrl.includes('#web_live')) {
-            stat.innerText = "Web sitesi çözümleniyor...";
-            const cleanPageUrl = playUrl.split('#')[0];
-            const knownSite = OFFICIAL_WEB_CHANNELS.find(c => cleanPageUrl.includes(new URL(c.pageUrl).hostname.replace(/^www\./, '')));
-            const scraped = await scrapeLivePageStreams(cleanPageUrl, '', knownSite ? knownSite.fallbackStreams : []);
-            const playable = scraped.find(x => !x.url.includes('#web_live'));
-            if (playable && playable.url) playUrl = playable.url;
-            else { stat.innerText = "Yayın adresi çözümlenemedi"; stat.style.color = "#e74c3c"; return; }
+        const verified = await verifyAndResolveStream(r.url, 6000);
+        let playUrl = (verified.ok && verified.url) ? verified.url : r.url;
+        if (verified.ok && verified.url) {
+            r.url = verified.url;
+            r.verified = true;
+            r.dead = false;
+            smartSel.add(idx);
+            renderSmart(idx);
         }
 
-        if (playUrl.includes('#audio') || /\.(mp3|aac|ogg)(\?|$)/i.test(playUrl)) {
+        const cleanUrl = playUrl.split('#')[0];
+        const useProxy = playUrl.includes('#cors_proxy');
+
+        if (playUrl.includes('#audio') || /\.(mp3|aac|ogg)(\?|$)/i.test(cleanUrl)) {
             vid.removeAttribute('crossorigin');
-            vid.src = playUrl.split('#')[0];
-            vid.play().then(() => { stat.innerText = "Oynatılıyor (Ses)"; stat.style.color = "#2ecc71"; }).catch(e => { stat.innerText = "Hata: " + e.message; stat.style.color = "#e74c3c"; });
+            vid.src = cleanUrl;
+            vid.play().then(() => { stat.innerText = "Oynatılıyor (Radyo/Ses)"; stat.style.color = "#2ecc71"; }).catch(e => { stat.innerText = "Hata: " + e.message; stat.style.color = "#e74c3c"; });
             return;
         }
 
-        if (Hls.isSupported() && (playUrl.includes('.m3u') || playUrl.includes('.m3u8'))) {
-            smartPreviewHls = new Hls();
-            smartPreviewHls.loadSource(playUrl);
+        if (Hls.isSupported() && (cleanUrl.includes('.m3u') || cleanUrl.includes('playlist') || cleanUrl.includes('master'))) {
+            smartPreviewHls = createHlsForStream(cleanUrl, useProxy);
+            smartPreviewHls.loadSource(cleanUrl);
             smartPreviewHls.attachMedia(vid);
-            smartPreviewHls.on(Hls.Events.MANIFEST_PARSED, () => { vid.play().catch(()=>{}); stat.innerText = "Oynatılıyor"; stat.style.color = "#2ecc71"; });
-            smartPreviewHls.on(Hls.Events.ERROR, (e, d) => { if (d.fatal) { stat.innerText = "Yayın hatası - muhtemelen çalışmıyor"; stat.style.color = "#e74c3c"; } });
+            smartPreviewHls.on(Hls.Events.MANIFEST_PARSED, () => {
+                vid.play().catch(()=>{});
+                stat.innerText = useProxy ? "Oynatılıyor (Proxy HLS ✓)" : "Oynatılıyor (Canlı HLS ✓)";
+                stat.style.color = "#2ecc71";
+            });
+            smartPreviewHls.on(Hls.Events.ERROR, (e, d) => {
+                if (d && d.fatal) {
+                    stat.innerText = "Bu yayın kaynağı şu an yanıt vermiyor";
+                    stat.style.color = "#e74c3c";
+                }
+            });
         } else {
             vid.removeAttribute('crossorigin');
-            vid.src = playUrl;
+            vid.src = cleanUrl;
             vid.play().then(() => { stat.innerText = "Oynatılıyor"; stat.style.color = "#2ecc71"; }).catch(e => { stat.innerText = "Hata: " + e.message; stat.style.color = "#e74c3c"; });
         }
     }
@@ -2376,38 +3012,75 @@
     function fillSmartTargets() {
         const sel = document.getElementById('smartTarget'); if (!sel) return; const prev = sel.value; sel.innerHTML = '';
         const add = (v, t) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); };
-        add('__new__', '➕ Yeni liste oluştur');
-        Array.from(document.getElementById('countrySelect').options).forEach(o => add(o.value, o.textContent));
+        Array.from(document.getElementById('countrySelect').options).forEach(o => {
+            if (!o.value.startsWith('ytpl_')) add(o.value, (o.value === currentListContext ? '📌 Aktif Liste: ' : '') + o.textContent);
+        });
+        add('__new__', '➕ Yeni özel liste oluştur');
         if (prev && Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
+        else if (currentListContext && !currentListContext.startsWith('ytpl_') && Array.from(sel.options).some(o => o.value === currentListContext)) sel.value = currentListContext;
         smartTargetChanged();
     }
     function smartTargetChanged() { const sel = document.getElementById('smartTarget'), nm = document.getElementById('smartNewName'); if (sel && nm) nm.style.display = sel.value === '__new__' ? 'block' : 'none'; }
 
-    async function smartTest() {
+    async function smartTest(autoMode = false) {
         const btn = document.getElementById('smartTestBtn');
-        if (isSmartTesting) { smartAbort.abort(); return; }
-        const idxs = [...smartSel]; if (!idxs.length) return;
-        isSmartTesting = true; smartAbort = new AbortController(); const sig = smartAbort.signal; btn.innerText = 'Durdur';
+        if (isSmartTesting) { if (!autoMode && smartAbort) smartAbort.abort(); return; }
+        const allIdxs = [...smartSel];
+        const idxs = autoMode ? allIdxs.slice(0, 24) : allIdxs;
+        if (!idxs.length) return;
+        isSmartTesting = true; smartAbort = new AbortController(); const sig = smartAbort.signal;
+        if (btn) btn.innerText = 'Durdur';
         const st = document.getElementById('smartStatus'); st.style.color = '#f1c40f';
-        let fail = 0, done = 0;
+        let fail = 0, okCount = 0, done = 0;
         try {
             for (let i = 0; i < idxs.length; i += 6) {
                 if (sig.aborted) break;
-                st.innerText = `Test ediliyor: ${done}/${idxs.length} · elenen: ${fail}`;
+                st.innerText = `Yayınlar doğrulanıyor: ${done}/${idxs.length} · çalışan: ${okCount} · elenen: ${fail}`;
                 await Promise.all(idxs.slice(i, i + 6).map(async idx => {
-                    let ok = false;
-                    try { ok = await testStreamBackground(smartResults[idx].url, 6000); } catch (e) { ok = false; }
+                    const item = smartResults[idx];
+                    if (!item) return;
+                    let check = { ok: false, url: item.url };
+                    try { check = await verifyAndResolveStream(item.url, 5500); } catch (e) { check = { ok: false, url: item.url }; }
                     done++;
-                    if (!sig.aborted && !ok) { smartSel.delete(idx); smartResults[idx].dead = true; fail++; }
-                    st.innerText = `Test ediliyor: ${done}/${idxs.length} · elenen: ${fail}`;
+                    if (sig.aborted) return;
+                    if (check.ok && check.url) {
+                        item.url = check.url;
+                        item.verified = true;
+                        item.dead = false;
+                        smartSel.add(idx);
+                        okCount++;
+                    } else {
+                        smartSel.delete(idx);
+                        item.dead = true;
+                        item.verified = false;
+                        fail++;
+                    }
+                    st.innerText = `Yayınlar doğrulanıyor: ${done}/${idxs.length} · çalışan: ${okCount} · elenen: ${fail}`;
                 }));
             }
+            if (!sig.aborted) {
+                const selectedUrls = new Set([...smartSel].map(i => smartResults[i]?.url).filter(Boolean));
+                smartResults.sort((a, b) => {
+                    const aScore = a.verified ? 2 : (a.dead ? 0 : 1);
+                    const bScore = b.verified ? 2 : (b.dead ? 0 : 1);
+                    return bScore - aScore;
+                });
+                smartSel = new Set();
+                smartResults.forEach((r, idx) => {
+                    if (!r.dead && (r.verified || selectedUrls.has(r.url))) smartSel.add(idx);
+                });
+            }
         } finally {
-            isSmartTesting = false; btn.innerText = 'Test Et';
+            isSmartTesting = false;
+            if (btn) btn.innerText = 'Test Et';
             renderSmart();
-            st.style.color = fail ? '#e67e22' : '#2ecc71';
-            st.innerText = sig.aborted ? `Test durduruldu (${done}/${idxs.length})` : `Test bitti: ${done - fail} çalışıyor, ${fail} çalışmıyor (elendi)`;
-            setTimeout(() => { const b = document.getElementById('smartTestBtn'); if (b) try { b.focus({ preventScroll: true }); } catch(e) { b.focus(); } }, 60);
+            st.style.color = okCount > 0 ? '#2ecc71' : '#e67e22';
+            st.innerText = sig.aborted
+                ? `Doğrulama durduruldu (${okCount} çalışan bulundu)`
+                : `Doğrulama tamamlandı: ${okCount} çalışan yayın seçildi, ${fail} çalışmayan elendi.`;
+            if (!autoMode) {
+                setTimeout(() => { const b = document.getElementById('smartTestBtn'); if (b) try { b.focus({ preventScroll: true }); } catch(e) { b.focus(); } }, 60);
+            }
         }
     }
 
@@ -2416,7 +3089,7 @@
     function collectLocalLists() { const o = {}; personalPresets.forEach(p => { if (p && p.url && String(p.url).startsWith('local_')) o[p.url] = getLocalList(p.url); }); return o; }
     function persistLocalIfNeeded() {
         if (!String(currentListContext).startsWith('local_')) return;
-        const arr = allChannels.filter(c => !c.id.startsWith('ch_ex_')).slice().sort((a, b) => a.originalIndex - b.originalIndex).map(c => ({ name: c.name, url: c.url, logo: c.logo || '' }));
+        const arr = allChannels.filter(c => !c.id.startsWith('ch_ex_')).slice().sort((a, b) => (a.customOrder ?? a.originalIndex ?? 0) - (b.customOrder ?? b.originalIndex ?? 0)).map(c => ({ name: c.name, url: c.url, logo: c.logo || '' }));
         saveLocalList(currentListContext, arr);
     }
     function loadLocalList(id) {
@@ -2443,22 +3116,42 @@
         setTimeout(() => { el.style.display = 'none'; }, 9000);
     }
 
-    function smartAddToList() {
-        const idxs = [...smartSel].filter(i => !smartResults[i].dead).sort((a, b) => a - b);
-        if (!idxs.length) { showSmartAddStatus('Çalışan kanal seçili değil. "Test Et" ile çalışanları doğrulayın.', 'error'); return; }
+    async function smartAddToList() {
+        let idxs = [...smartSel].filter(i => smartResults[i] && !smartResults[i].dead).sort((a, b) => a - b);
+        if (!idxs.length) {
+            showSmartAddStatus('Seçili çalışan kanal yok! Lütfen listeden bir kanal seçin veya "Test Et" ile doğrulayın.', 'error');
+            return;
+        }
+        const unverifiedIdxs = idxs.filter(i => !smartResults[i].verified);
+        if (unverifiedIdxs.length > 0 && unverifiedIdxs.length <= 8) {
+            showSmartAddStatus('Seçilen yayınların çalışırlığı kontrol ediliyor...', 'warning');
+            await Promise.all(unverifiedIdxs.map(async idx => {
+                const r = smartResults[idx];
+                const check = await verifyAndResolveStream(r.url, 5000);
+                if (check.ok && check.url) { r.url = check.url; r.verified = true; r.dead = false; }
+                else { r.dead = true; smartSel.delete(idx); }
+            }));
+            renderSmart();
+            idxs = [...smartSel].filter(i => smartResults[i] && !smartResults[i].dead).sort((a, b) => a - b);
+            if (!idxs.length) {
+                showSmartAddStatus('Seçilen yayınlar şu anda yanıt vermiyor. Lütfen başka bir kaynak seçin.', 'error');
+                return;
+            }
+        }
+
         const target = document.getElementById('smartTarget').value;
         const chs = idxs.map(i => {
             const r = smartResults[i];
-            if (r.url.includes('#web_live')) {
-                const known = OFFICIAL_WEB_CHANNELS.find(c => r.url.includes(new URL(c.pageUrl).hostname.replace(/^www\./, '')));
-                if (known && known.fallbackStreams && known.fallbackStreams.length > 0) {
-                    return { name: r.name.replace(' (Siteden Otomatik)', '').replace(' (Otomatik Token)', ''), url: known.fallbackStreams[0], logo: r.logo || '' };
-                }
-            }
-            return { name: r.name, url: r.url, logo: r.logo || '' };
+            const cleanName = r.name.replace(/\s*\((Doğrudan Canlı|Site HLS|Player HLS|Resmi CDN|Siteden Otomatik|Otomatik Token)\)\s*/gi, '').trim() || r.name;
+            return { name: cleanName, url: r.url, logo: r.logo || '' };
         });
-        if (target !== '__new__') chs.forEach(c => undeleteUrl(target, c.url));
-        chs.forEach(c => undeleteUrl(currentListContext, c.url));
+
+        chs.forEach(c => {
+            brokenUrls = brokenUrls.filter(u => u !== c.url && u.split('#')[0] !== c.url.split('#')[0]);
+            if (target !== '__new__') undeleteUrl(target, c.url);
+            undeleteUrl(currentListContext, c.url);
+        });
+        localStorage.setItem('tv_broken', JSON.stringify(brokenUrls));
 
         if (target === '__new__') {
             const name = document.getElementById('smartNewName').value.trim() || document.getElementById('smartQuery').value.trim() || 'Yeni Liste';
@@ -2467,26 +3160,82 @@
             personalPresets.push({ name, url: id }); localStorage.setItem('tv_presets', JSON.stringify(personalPresets));
             document.getElementById('smartNewName').value = '';
             syncAndChangeCountry(id); fillSmartTargets();
-            showSmartAddStatus(`✅ "${name}" listesi oluşturuldu (${chs.length} kanal)`, 'success');
+            showSmartAddStatus(`✅ "${name}" listesi oluşturuldu ve ${chs.length} çalışan kanal eklendi!`, 'success');
+            showOSD('Yeni Liste Hazır', `${name} (${chs.length} kanal)`);
         } else if (target.startsWith('local_')) {
-            const cur = getLocalList(target); const have = new Set(cur.map(c => c.url)); let added = 0, dup = 0;
-            chs.forEach(c => { if (!have.has(c.url)) { cur.push(c); have.add(c.url); added++; } else dup++; });
-            if (added === 0) { showSmartAddStatus(`Hiçbir kanal eklenmedi (${dup} kanal zaten listede).`, 'warning'); return; }
+            const cur = getLocalList(target);
+            let added = 0, updated = 0;
+            chs.forEach(c => {
+                const existingIdx = cur.findIndex(x => x.url === c.url || normTxt(x.name) === normTxt(c.name));
+                if (existingIdx !== -1) {
+                    cur[existingIdx].url = c.url;
+                    if (c.logo) cur[existingIdx].logo = c.logo;
+                    updated++;
+                } else {
+                    cur.unshift(c);
+                    added++;
+                }
+            });
             if (!saveLocalList(target, cur)) { showSmartAddStatus('Liste kaydedilemedi!', 'error'); return; }
+            if (Array.isArray(customOrdersDict[target])) {
+                chs.slice().reverse().forEach(c => {
+                    customOrdersDict[target] = [c.url, ...customOrdersDict[target].filter(u => u !== c.url)];
+                });
+                localStorage.setItem('tv_custom_orders', JSON.stringify(customOrdersDict));
+            }
             if (currentListContext === target) loadLocalList(target);
-            showSmartAddStatus(`✅ ${added} kanal eklendi.${dup ? ' ' + dup + ' kanal zaten listede.' : ''}`, 'success');
+            else syncAndChangeCountry(target);
+            showSmartAddStatus(`✅ ${added} yeni kanal eklendi${updated ? `, ${updated} mevcut kanal güncellendi` : ''}!`, 'success');
+            showOSD('Listeye Eklendi', `${added + updated} çalışan kanal hazır`);
         } else {
             const arr = Array.isArray(extraChannelsDict[target]) ? extraChannelsDict[target] : (extraChannelsDict[target] = []);
-            const have = new Set(arr.map(c => c.url)); let added = 0, dup = 0;
-            chs.forEach((c, k) => { if (!have.has(c.url)) { arr.push({ id: 'ch_ex_' + Date.now() + '_' + k, name: c.name, url: c.url, logo: c.logo, isFavorite: favUrls.includes(c.url) }); have.add(c.url); added++; } else dup++; });
-            if (added === 0) { showSmartAddStatus(`Hiçbir kanal eklenmedi (${dup} kanal zaten listede).`, 'warning'); return; }
+            let added = 0, updated = 0;
+            chs.forEach((c, k) => {
+                const existing = arr.find(x => x.url === c.url || normTxt(x.name) === normTxt(c.name));
+                if (existing) {
+                    existing.url = c.url;
+                    if (c.logo) existing.logo = c.logo;
+                    existing.broken = false;
+                    updated++;
+                } else {
+                    arr.unshift({ id: 'ch_ex_' + Date.now() + '_' + k, name: c.name, url: c.url, logo: c.logo, isFavorite: true });
+                    added++;
+                }
+                if (!favUrls.includes(c.url)) favUrls.push(c.url);
+                if (currentListContext === target) {
+                    allChannels.forEach(ac => {
+                        if (normTxt(ac.name) === normTxt(c.name) && ac.url !== c.url) {
+                            undeleteUrl(target, c.url);
+                            if (!Array.isArray(deletedUrlsDict[target])) deletedUrlsDict[target] = [];
+                            if (!deletedUrlsDict[target].includes(ac.url)) deletedUrlsDict[target].push(ac.url);
+                        }
+                    });
+                }
+            });
+            localStorage.setItem('tv_favorites', JSON.stringify(favUrls));
+            localStorage.setItem('tv_deleted_urls', JSON.stringify(deletedUrlsDict));
             localStorage.setItem('tv_extras_dict', JSON.stringify(extraChannelsDict));
-            if (currentListContext === target) { injectExtraChannels(); sortAndRenderList(); }
-            showSmartAddStatus(`✅ ${added} kanal eklendi.${dup ? ' ' + dup + ' kanal zaten listede.' : ''}`, 'success');
+            if (Array.isArray(customOrdersDict[target])) {
+                chs.slice().reverse().forEach(c => {
+                    customOrdersDict[target] = [c.url, ...customOrdersDict[target].filter(u => u !== c.url)];
+                });
+                localStorage.setItem('tv_custom_orders', JSON.stringify(customOrdersDict));
+            }
+            if (currentListContext === target) {
+                injectExtraChannels();
+                sortAndRenderList();
+                const firstIdx = allChannels.findIndex(x => x.url === chs[0].url);
+                if (firstIdx !== -1) play(firstIdx, 0);
+            } else {
+                syncAndChangeCountry(target);
+            }
+            showSmartAddStatus(`✅ ${added} yeni kanal eklendi${updated ? `, ${updated} kanalın yayın adresi güncellendi` : ''} ve listenin başına alındı!`, 'success');
+            showOSD('Kanal Listeye Eklendi', `${chs[0].name} oynatılıyor`);
         }
     }
 
-    function playAudioDirect(video, url, token) {
+    
+function playAudioDirect(video, url, token) {
         video.removeAttribute('crossorigin');
         video.src = url.split('#')[0];
         video.play().then(() => { if (token === currentPlaySession) document.getElementById('pStatus').innerText = 'Radyo Çalıyor'; }).catch(e => {
