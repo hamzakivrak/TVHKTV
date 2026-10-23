@@ -2783,7 +2783,7 @@
         const box = document.getElementById('smartResults'), act = document.getElementById('smartActions');
         if (!smartResults.length) { box.style.display = 'none'; act.style.display = 'none'; box.innerHTML = ''; return; }
         box.style.display = 'block'; act.style.display = 'block';
-        box.innerHTML = smartResults.slice(0, 200).map((r, i) => `<label class="yt-search-item" tabindex="0"><input type="checkbox" style="position:static; width:18px; height:18px;" data-i="${i}" ${smartSel.has(i) ? 'checked' : ''} onchange="smartToggle(${i}, this.checked)">${r.logo ? `<img loading="lazy" decoding="async" src="${esc(r.logo)}" onerror="this.style.display='none'">` : ''}<span>${esc(r.name)}<br><small style="color:#888">${esc(r.group || '')}</small></span></label>`).join('');
+        box.innerHTML = smartResults.slice(0, 200).map((r, i) => `<label class="yt-search-item" tabindex="0"><input type="checkbox" style="position:static; width:18px; height:18px;" data-i="${i}" ${smartSel.has(i) ? 'checked' : ''} onchange="smartToggle(${i}, this.checked)">${r.logo ? `<img loading="lazy" decoding="async" src="${esc(r.logo)}" onerror="this.style.display='none'">` : ''}<span style="${r.dead ? 'opacity:.45;text-decoration:line-through;' : ''}">${r.dead ? '✗ ' : ''}${esc(r.name)}<br><small style="color:#888">${esc(r.group || '')}</small></span></label>`).join('');
         updateSmartCount(); fillSmartTargets();
     }
     function updateSmartCount() { const el = document.getElementById('smartCount'); if (el) el.innerText = `Seçili: ${smartSel.size} / ${smartResults.length}`; }
@@ -2805,16 +2805,26 @@
         if (isSmartTesting) { smartAbort.abort(); return; }
         const idxs = [...smartSel]; if (!idxs.length) return;
         isSmartTesting = true; smartAbort = new AbortController(); const sig = smartAbort.signal; btn.innerText = 'Durdur';
-        const st = document.getElementById('smartStatus'); let fail = 0;
-        for (let i = 0; i < idxs.length; i += 6) {
-            if (sig.aborted) break;
-            st.innerText = `Test ediliyor: ${Math.min(i, idxs.length)}/${idxs.length} · elenen: ${fail}`;
-            await Promise.all(idxs.slice(i, i + 6).map(async idx => {
-                const ok = await testStreamBackground(smartResults[idx].url, 6000);
-                if (!sig.aborted && !ok) { smartSel.delete(idx); smartResults[idx].dead = true; fail++; }
-            }));
+        const st = document.getElementById('smartStatus'); st.style.color = '#f1c40f';
+        let fail = 0, done = 0;
+        try {
+            for (let i = 0; i < idxs.length; i += 6) {
+                if (sig.aborted) break;
+                st.innerText = `Test ediliyor: ${done}/${idxs.length} · elenen: ${fail}`;
+                await Promise.all(idxs.slice(i, i + 6).map(async idx => {
+                    let ok = false;
+                    try { ok = await testStreamBackground(smartResults[idx].url, 6000); } catch (e) { ok = false; }
+                    done++;
+                    if (!sig.aborted && !ok) { smartSel.delete(idx); smartResults[idx].dead = true; fail++; }
+                    st.innerText = `Test ediliyor: ${done}/${idxs.length} · elenen: ${fail}`;
+                }));
+            }
+        } finally {
+            isSmartTesting = false; btn.innerText = 'Test Et';
+            renderSmart();
+            st.style.color = fail ? '#e67e22' : '#2ecc71';
+            st.innerText = sig.aborted ? `Test durduruldu (${done}/${idxs.length})` : `Test bitti: ${done - fail} çalışıyor, ${fail} çalışmıyor (elendi)`;
         }
-        isSmartTesting = false; btn.innerText = 'Test Et'; renderSmart();
     }
 
     function getLocalList(id) { try { return JSON.parse(localStorage.getItem('tvl_' + id)) || []; } catch (e) { return []; } }
