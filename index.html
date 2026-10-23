@@ -143,8 +143,11 @@
         #smartPreviewIframe { display:none; width:100%; aspect-ratio:16/9; background:#000; border-radius:8px; overflow:hidden; }
         #smartPreviewIframe iframe { width:100%; height:100%; border:none; }
         #smartAddStatus { margin-top:10px; padding:10px 12px; border-radius:8px; font-size:0.85rem; display:none; text-align:center; font-weight:500; line-height:1.4; }
-        .preview-mini-btn { min-height:34px; padding:0 8px; flex-shrink:0; background:rgba(0,206,201,0.18); border:1.5px solid var(--accent2); color:var(--accent2); border-radius:6px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-        .preview-mini-btn:hover, .preview-mini-btn:focus { background:rgba(0,206,201,0.35); outline:none !important; }
+        .preview-mini-btn { min-height:44px; min-width:44px; padding:0 8px; flex-shrink:0; background:rgba(0,206,201,0.18); border:2px solid var(--accent2); color:var(--accent2); border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; touch-action:manipulation; }
+        .preview-mini-btn:hover, .preview-mini-btn:focus { background:rgba(0,206,201,0.4); }
+        .smart-chk-btn { min-height:44px; min-width:44px; padding:0; flex-shrink:0; background:rgba(255,255,255,0.05); border:2px solid var(--border); color:#9aa0b4; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; touch-action:manipulation; }
+        .smart-chk-btn.on { border-color:var(--accent2); color:var(--accent2); background:rgba(0,206,201,0.16); }
+        .smart-chk-btn:hover, .smart-chk-btn:focus { background:rgba(0,206,201,0.32); }
         .subtle-count-strip { font-size:0.74rem; color:#8e92a4; padding:4px 28px 0; display:flex; justify-content:space-between; align-items:center; pointer-events:none; }
         @media (max-width: 680px) {
             .drawer-header { padding:10px 12px; gap:8px; }
@@ -256,8 +259,10 @@
                             <optgroup label="Kişisel Listelerim (Radyo / Özel)" id="personalPresets"></optgroup>
                             <optgroup label="YouTube Listeleri" id="ytPlaylistsGroup"></optgroup>
                         </select>
-                        <button id="removePresetBtn" class="btn" style="width:100%; margin-top:10px; background:rgba(231,76,60,0.2); color:var(--red); border-color:var(--red); display:none;" onclick="removeCurrentPreset()">Bu Özel Listeyi Sil</button>
                         <div id="status" style="font-size:0.82rem; text-align:center; margin-top:10px; color:#2ecc71;">Liste Bekleniyor...</div>
+                        <button class="btn" id="listToolsToggleBtn" aria-expanded="false" style="width:100%; margin-top:10px; gap:8px; background:rgba(108,92,231,0.22); border-color:var(--primary);" onclick="toggleListTools()"><i class="material-icons-round" style="font-size:20px;">tune</i> <span>Liste Araçları</span> <i class="material-icons-round" id="listToolsArrow" style="font-size:24px;">expand_more</i></button>
+                        <div id="listToolsGroup" style="display:none;">
+                        <button id="removePresetBtn" class="btn" style="width:100%; margin-top:12px; background:rgba(231,76,60,0.2); color:var(--red); border-color:var(--red); display:none;" onclick="removeCurrentPreset()">Bu Özel Listeyi Sil</button>
                         <div class="btn-group" style="margin-top:10px;">
                             <button class="btn" id="scanBtn" style="background:rgba(241,196,15,0.2); color:var(--fav); border-color:var(--fav);" onclick="scanAllChannels()"><i class="material-icons-round" style="font-size:18px; margin-right:4px;">radar</i> Hepsini Test Et</button>
                             <button class="btn" style="background:rgba(0,206,201,0.18); color:var(--accent2); border-color:var(--accent2);" onclick="openBulkOrderFromSettings()"><i class="material-icons-round" style="font-size:18px; margin-right:4px;">format_list_numbered</i> Toplu Sırala</button>
@@ -268,6 +273,7 @@
                         </div>
                         <div class="btn-group" style="margin-top:8px;">
                             <button class="btn" style="background:rgba(231,76,60,0.2); color:var(--red); border-color:var(--red);" onclick="resetToDefault()"><i class="material-icons-round" style="font-size:18px; margin-right:4px;">delete_sweep</i> Tümünü Sıfırla</button>
+                        </div>
                         </div>
                     </div>
                 </div>
@@ -602,7 +608,16 @@
         if (val) { suppressClicksUntil = Date.now() + 900; ignoreKeySafetyTimer = setTimeout(() => { ignoreKeyUntilRelease = false; }, maxHoldMs); }
     }
     function onBackdropClick(e) { e.stopPropagation(); if (Date.now() - lastDrawerActionTime < 800) return; closeAllDrawers(); }
+    function toggleListTools(force) {
+        const g = document.getElementById('listToolsGroup'); if (!g) return;
+        const open = (typeof force === 'boolean') ? force : (g.style.display === 'none');
+        g.style.display = open ? 'block' : 'none';
+        const ar = document.getElementById('listToolsArrow'); if (ar) ar.innerText = open ? 'expand_less' : 'expand_more';
+        const tb = document.getElementById('listToolsToggleBtn'); if (tb) tb.setAttribute('aria-expanded', String(open));
+        invalidateLeftNav();
+    }
     function requestSettingsOpen() {
+        toggleListTools(false);
         invalidateLeftNav();
         lastDrawerActionTime = Date.now();
         pushDrawerHistoryState();
@@ -2469,6 +2484,70 @@ async function resetQuarantine() {
         hideControlsNow();
     }
 
+    let ytIframeOnlyId = null;
+    async function playYtAdFree(ytId, video, ytContainer, token) {
+        if (ytIframeOnlyId === ytId) return false;
+        const pStatus = document.getElementById('pStatus');
+        const spinner = document.getElementById('bufSpinner');
+        ytContainer.style.display = 'none';
+        try { if (isYtApiReady && ytPlayer && typeof ytPlayer.pauseVideo === 'function') ytPlayer.pauseVideo(); } catch (e) {}
+        video.style.display = 'block';
+        video.onended = null;
+        video.pause(); video.removeAttribute('src'); try { video.load(); } catch (e) {}
+        pStatus.innerText = "YouTube reklamsız akış aranıyor...";
+        spinner.style.display = 'block';
+        let direct = null;
+        try { direct = await getDirectYtMp4(ytId); } catch (e) {}
+        if (token !== currentPlaySession) return true;
+        if (!direct || !direct.url) { spinner.style.display = 'none'; return false; }
+        return await new Promise((resolve) => {
+            let done = false, timer = null;
+            const cleanup = () => {
+                if (hls) { try { hls.destroy(); } catch (e) {} hls = null; }
+                video.onerror = null; video.onended = null;
+                video.pause(); video.removeAttribute('src'); try { video.load(); } catch (e) {}
+            };
+            const finish = (ok) => { if (done) return; done = true; clearTimeout(timer); resolve(ok); };
+            const onFail = () => {
+                if (token !== currentPlaySession) { finish(true); return; }
+                if (!done) { cleanup(); spinner.style.display = 'none'; finish(false); }
+                else { ytIframeOnlyId = ytId; playLocally('https://www.youtube.com/watch?v=' + ytId, token); }
+            };
+            const onStart = () => {
+                if (token !== currentPlaySession) { finish(true); return; }
+                spinner.style.display = 'none';
+                pStatus.innerText = "Cihazda İzleniyor (YT · Reklamsız)";
+                if (allChannels[curIdx]) markChannelHealthy(allChannels[curIdx]);
+                video.onended = () => { if (token === currentPlaySession && direct.type !== 'hls') nextCh(); };
+                finish(true);
+            };
+            timer = setTimeout(() => { if (!done) { cleanup(); spinner.style.display = 'none'; finish(false); } }, 10000);
+            video.onerror = onFail;
+            video.addEventListener('playing', onStart, { once: true });
+            const startPlay = () => {
+                const pr = video.play();
+                if (pr && pr.catch) pr.catch((e) => {
+                    if (e && e.name === 'NotAllowedError') {
+                        video.muted = true; document.getElementById('muteIcon').innerText = 'volume_off';
+                        video.play().catch(() => {});
+                        showOSD("Ses kapalı başlatıldı", "Açmak için ses düğmesine dokunun");
+                    }
+                });
+            };
+            video.removeAttribute('crossorigin');
+            if (direct.type === 'hls' && Hls.isSupported()) {
+                hls = createHlsForStream(direct.url, false);
+                hls.on(Hls.Events.ERROR, (ev, d) => { if (d && d.fatal) onFail(); });
+                hls.on(Hls.Events.MANIFEST_PARSED, startPlay);
+                hls.loadSource(direct.url);
+                hls.attachMedia(video);
+            } else {
+                video.src = direct.url;
+                startPlay();
+            }
+        });
+    }
+
     async function playLocally(url, sessionToken, isRetryAfterHeal = false) {
         const video = document.getElementById('localPlayer');
         const ytContainer = document.getElementById('ytContainer');
@@ -2498,7 +2577,11 @@ async function resetQuarantine() {
 
         const ytId = extractYTId(url);
         if (ytId) {
-            // index.html-8.txt'deki birebir YouTube oynatma mantığı:
+            const adFreeOk = await playYtAdFree(ytId, video, ytContainer, sessionToken);
+            if (sessionToken !== currentPlaySession) return;
+            if (adFreeOk) return;
+            // Doğrudan akış bulunamadı: YouTube iframe oynatıcıya düş (reklam çıkabilir)
+            showOSD("Reklamsız akış bulunamadı", "YouTube oynatıcısına geçildi");
             video.style.display = 'none';
             video.pause();
             video.removeAttribute('src');
@@ -3156,7 +3239,11 @@ async function resetQuarantine() {
         const ae = document.activeElement;
         let savedFocusInfo = null;
         if (ae) {
-            if (ae.classList && ae.classList.contains('yt-search-item') && ae.dataset.smartidx) {
+            if (ae.classList && ae.classList.contains('smart-chk-btn') && ae.dataset.i) {
+                savedFocusInfo = { type: 'chk', idx: parseInt(ae.dataset.i, 10) };
+            } else if (ae.classList && ae.classList.contains('preview-mini-btn') && ae.dataset.previewidx) {
+                savedFocusInfo = { type: 'prev', idx: parseInt(ae.dataset.previewidx, 10) };
+            } else if (ae.classList && ae.classList.contains('yt-search-item') && ae.dataset.smartidx) {
                 savedFocusInfo = { type: 'item', idx: parseInt(ae.dataset.smartidx, 10) };
             } else if (ae.id) {
                 savedFocusInfo = { type: 'id', id: ae.id };
@@ -3171,11 +3258,12 @@ async function resetQuarantine() {
             const statusBadge = r.verified
                 ? `<span style="color:#2ecc71; font-weight:700; font-size:0.75rem;">✓ Çalışıyor</span> · `
                 : (r.dead ? `<span style="color:#e74c3c; font-weight:700; font-size:0.75rem;">✗ Çalışmıyor</span> · ` : '');
-            return `<div class="yt-search-item" tabindex="0" data-smartidx="${i}" style="cursor:default;">
-                <input type="checkbox" tabindex="-1" style="position:static; width:18px; height:18px; margin:0; flex-shrink:0; pointer-events:none;" data-i="${i}" ${smartSel.has(i) ? 'checked' : ''}>
+            const isOn = smartSel.has(i);
+            return `<div class="yt-search-item" data-smartidx="${i}" style="cursor:default;">
+                <button type="button" class="smart-chk-btn ${isOn ? 'on' : ''}" data-i="${i}" role="checkbox" aria-checked="${isOn}" onclick="event.stopPropagation(); smartToggleBtn(${i}, this)" title="Seç / Bırak (OK)"><i class="material-icons-round" style="font-size:24px;">${isOn ? 'check_box' : 'check_box_outline_blank'}</i></button>
                 ${r.logo ? `<img loading="lazy" decoding="async" src="${esc(r.logo)}" onerror="this.style.display='none'" style="flex-shrink:0;">` : ''}
                 <span style="flex:1; min-width:0; ${r.dead ? 'opacity:.45;text-decoration:line-through;' : ''}">${esc(r.name)}<br><small style="color:#888">${statusBadge}${esc(r.group || '')}</small></span>
-                <button class="preview-mini-btn" tabindex="0" data-previewidx="${i}" onclick="event.stopPropagation(); previewSmartResult(${i})" title="Önizle (OK)"><i class="material-icons-round" style="font-size:18px;">play_arrow</i></button>
+                <button type="button" class="preview-mini-btn" data-previewidx="${i}" onclick="event.stopPropagation(); previewSmartResult(${i})" title="Önizle (OK)"><i class="material-icons-round" style="font-size:24px;">play_arrow</i></button>
             </div>`;
         }).join('');
         updateSmartCount(); fillSmartTargets();
@@ -3183,10 +3271,14 @@ async function resetQuarantine() {
         setTimeout(() => {
             let target = null;
             if (typeof preserveFocusIdx === 'number') {
-                target = box.querySelector(`.yt-search-item[data-smartidx="${preserveFocusIdx}"]`);
+                target = box.querySelector(`.preview-mini-btn[data-previewidx="${preserveFocusIdx}"]`);
             } else if (savedFocusInfo) {
-                if (savedFocusInfo.type === 'item') {
-                    target = box.querySelector(`.yt-search-item[data-smartidx="${savedFocusInfo.idx}"]`);
+                if (savedFocusInfo.type === 'chk') {
+                    target = box.querySelector(`.smart-chk-btn[data-i="${savedFocusInfo.idx}"]`);
+                } else if (savedFocusInfo.type === 'prev') {
+                    target = box.querySelector(`.preview-mini-btn[data-previewidx="${savedFocusInfo.idx}"]`);
+                } else if (savedFocusInfo.type === 'item') {
+                    target = box.querySelector(`.smart-chk-btn[data-i="${savedFocusInfo.idx}"]`);
                 } else if (savedFocusInfo.type === 'id') {
                     const e = document.getElementById(savedFocusInfo.id);
                     if (e && document.body.contains(e)) target = e;
@@ -3200,6 +3292,15 @@ async function resetQuarantine() {
     }
     function updateSmartCount() { const el = document.getElementById('smartCount'); if (el) el.innerText = `Seçili (Çalışan): ${smartSel.size} / ${smartResults.length}`; }
     function smartToggle(i, on) { if (on) smartSel.add(i); else smartSel.delete(i); updateSmartCount(); }
+    function smartToggleBtn(i, btn) {
+        const on = !smartSel.has(i);
+        smartToggle(i, on);
+        if (btn) {
+            btn.classList.toggle('on', on);
+            btn.setAttribute('aria-checked', String(on));
+            const ic = btn.querySelector('i'); if (ic) ic.innerText = on ? 'check_box' : 'check_box_outline_blank';
+        }
+    }
     function smartSelectAll(on) { smartSel = on ? new Set(smartResults.map((r, i) => i).filter(i => !smartResults[i].dead)) : new Set(); renderSmart(); }
 
     let smartPreviewHls = null;
@@ -3811,7 +3912,7 @@ function playAudioDirect(video, url, token) {
                 if (el.offsetParent === null) return false;
                 if (el.getAttribute('tabindex') === '-1') return false;
                 const inSearchItem = el.closest && el.closest('.yt-search-item');
-                if (inSearchItem && !el.classList.contains('yt-search-item') && !el.classList.contains('preview-mini-btn')) return false;
+                if (inSearchItem && !el.classList.contains('yt-search-item') && !el.classList.contains('preview-mini-btn') && !el.classList.contains('smart-chk-btn')) return false;
                 return true;
             });
         leftNavCacheAt = now;
@@ -4150,6 +4251,24 @@ function playAudioDirect(video, url, token) {
             if (document.getElementById('pinLockBox').style.display !== 'none' && /^[0-9]$/.test(k)) {
                 e.preventDefault(); e.stopImmediatePropagation();
                 if (!e.repeat) pinAdd(k);
+                return;
+            }
+            if ((k === 'ArrowDown' || k === 'ArrowUp') && ae && ae.classList && (ae.classList.contains('smart-chk-btn') || ae.classList.contains('preview-mini-btn'))) {
+                e.preventDefault(); e.stopImmediatePropagation();
+                const nowS = performance.now();
+                if (e.repeat && nowS - lastLeftMoveTime < 40) return;
+                lastLeftMoveTime = nowS;
+                const isChk = ae.classList.contains('smart-chk-btn');
+                const row = ae.closest('.yt-search-item');
+                const sib = row ? (k === 'ArrowDown' ? row.nextElementSibling : row.previousElementSibling) : null;
+                let tgt = sib && sib.querySelector ? sib.querySelector(isChk ? '.smart-chk-btn' : '.preview-mini-btn') : null;
+                if (!tgt) {
+                    const navList = getLeftNavList();
+                    const box = document.getElementById('smartResults');
+                    if (k === 'ArrowDown') { const all = box.querySelectorAll('.preview-mini-btn'); tgt = navList[navList.indexOf(all[all.length - 1]) + 1]; }
+                    else { tgt = navList[navList.indexOf(box.querySelector('.smart-chk-btn')) - 1]; }
+                }
+                if (tgt) { try { tgt.focus({ preventScroll: true }); } catch (err) { tgt.focus(); } fastScrollIntoView(tgt); }
                 return;
             }
             if (['ArrowDown', 'ArrowRight', 'ArrowUp', 'ArrowLeft', 'ChannelUp', 'ChannelDown', 'PageUp', 'PageDown'].includes(k)) {
