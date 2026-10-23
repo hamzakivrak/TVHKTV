@@ -145,6 +145,15 @@
         #smartAddStatus { margin-top:10px; padding:10px 12px; border-radius:8px; font-size:0.85rem; display:none; text-align:center; font-weight:500; line-height:1.4; }
         .preview-mini-btn { min-height:34px; padding:0 8px; flex-shrink:0; background:rgba(0,206,201,0.18); border:1.5px solid var(--accent2); color:var(--accent2); border-radius:6px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
         .preview-mini-btn:hover, .preview-mini-btn:focus { background:rgba(0,206,201,0.35); outline:none !important; }
+        .subtle-count-strip { font-size:0.74rem; color:#8e92a4; padding:4px 28px 0; display:flex; justify-content:space-between; align-items:center; pointer-events:none; }
+        @media (max-width: 680px) {
+            .drawer-header { padding:10px 12px; gap:8px; }
+            .channel-list { padding:12px 12px 32px; gap:10px; }
+            .subtle-count-strip { padding:4px 14px 0; }
+            .hide-mobile-txt { display:none; }
+            .search-box-wrap { min-width:110px; }
+            #rightCountrySelect { min-width:120px !important; max-width:190px !important; font-size:0.86rem !important; padding:6px 8px !important; }
+        }
     </style>
     <script>
         let remotePlayer, remoteController;
@@ -250,8 +259,15 @@
                         <button id="removePresetBtn" class="btn" style="width:100%; margin-top:10px; background:rgba(231,76,60,0.2); color:var(--red); border-color:var(--red); display:none;" onclick="removeCurrentPreset()">Bu Özel Listeyi Sil</button>
                         <div id="status" style="font-size:0.82rem; text-align:center; margin-top:10px; color:#2ecc71;">Liste Bekleniyor...</div>
                         <div class="btn-group" style="margin-top:10px;">
-                            <button class="btn" id="scanBtn" style="background:rgba(241,196,15,0.2); color:var(--fav); border-color:var(--fav);" onclick="scanAllChannels()">Hepsini Tara</button>
-                            <button class="btn" style="background:rgba(231,76,60,0.2); color:var(--red); border-color:var(--red);" onclick="resetToDefault()">Sıfırla</button>
+                            <button class="btn" id="scanBtn" style="background:rgba(241,196,15,0.2); color:var(--fav); border-color:var(--fav);" onclick="scanAllChannels()"><i class="material-icons-round" style="font-size:18px; margin-right:4px;">radar</i> Hepsini Test Et</button>
+                            <button class="btn" style="background:rgba(0,206,201,0.18); color:var(--accent2); border-color:var(--accent2);" onclick="openBulkOrderFromSettings()"><i class="material-icons-round" style="font-size:18px; margin-right:4px;">format_list_numbered</i> Toplu Sırala</button>
+                        </div>
+                        <div class="btn-group" style="margin-top:8px;">
+                            <button class="btn" id="retestQuarSettingsBtn" style="background:rgba(52,152,219,0.2); color:#5dade2; border-color:#3498db;" onclick="retestQuarantineFromSettings()"><i class="material-icons-round" style="font-size:18px; margin-right:4px;">refresh</i> Karantinayı Test Et</button>
+                            <button class="btn" style="background:rgba(155,89,182,0.2); color:#c39bd3; border-color:#8e44ad;" onclick="resetQuarantine()"><i class="material-icons-round" style="font-size:18px; margin-right:4px;">restore</i> Karantinayı Temizle</button>
+                        </div>
+                        <div class="btn-group" style="margin-top:8px;">
+                            <button class="btn" style="background:rgba(231,76,60,0.2); color:var(--red); border-color:var(--red);" onclick="resetToDefault()"><i class="material-icons-round" style="font-size:18px; margin-right:4px;">delete_sweep</i> Tümünü Sıfırla</button>
                         </div>
                     </div>
                 </div>
@@ -347,15 +363,15 @@
 
 <div id="rightSidebar" class="drawer" onclick="event.stopPropagation()">
     <div class="drawer-header">
-        <span style="color:white; font-weight:700; font-size:1.15rem; white-space:nowrap;" id="listCountTitle">Kanallar</span>
-        <div style="display:flex; gap:8px; flex:1; max-width:1080px; align-items:center;">
+        <div style="display:flex; gap:8px; flex:1; width:100%; align-items:center;">
             <div class="search-box-wrap">
-                <input type="text" id="filterInput" readonly placeholder="Kanal ara... (OK: Yaz)" oninput="performSearch()" onkeyup="performSearch()" style="flex:1; min-width:140px; padding:10px 12px; font-size:0.95rem; margin:0;">
+                <input type="text" id="filterInput" readonly placeholder="Kanal ara..." oninput="performSearch()" onkeyup="performSearch()" style="flex:1; min-width:110px; padding:10px 12px; font-size:0.95rem; margin:0;">
                 <button class="btn-sweep" id="clearFilterBtn" onclick="clearSearchFilter()" title="Aramayı Temizle">
                     <i class="material-icons-round" style="font-size:22px;">cleaning_services</i>
                 </button>
             </div>
-            <select id="rightCountrySelect" onchange="syncAndChangeCountry(this.value)" style="flex:0.95; max-width:280px; min-width:155px; min-height:44px; padding:8px 12px; font-size:0.95rem; font-weight:600; border-color:rgba(108,92,231,0.55); background:#1a1c24; margin:0; cursor:pointer;">
+            <select id="rightCountrySelect" onchange="syncAndChangeCountry(this.value)" style="flex:1; max-width:340px; min-width:140px; min-height:44px; padding:8px 12px; font-size:0.95rem; font-weight:600; border-color:rgba(108,92,231,0.55); background:#1a1c24; margin:0; cursor:pointer;">
+                <optgroup label="Filtre (Seçili Liste)" id="favFilterGroupRight"></optgroup>
                 <optgroup label="Varsayılan Listeler">
                     <option value="tr" selected>🇹🇷 Türkiye</option>
                     <option value="us">🇺🇸 ABD</option>
@@ -365,23 +381,14 @@
                 <optgroup label="Kişisel Listelerim" id="personalPresetsRight"></optgroup>
                 <optgroup label="YouTube Listeleri" id="ytPlaylistsGroupRight"></optgroup>
             </select>
-            <button id="favFilterBtn" onclick="toggleFavFilterMode()" title="Sadece Favorileri Göster">
-                <i class="material-icons-round" id="favFilterIcon" style="font-size:22px;">star_border</i>
-                <span id="favFilterLabel">Favoriler</span>
-            </button>
-            <button class="btn-icon" id="bulkOrderBtn" onclick="requestBulkOrderMode()" title="Toplu Kanal Sıralama (Şifre: 1111)" style="background:#262936; border-color:var(--fav); color:var(--fav); white-space:nowrap;">
-                <i class="material-icons-round" style="font-size:20px;">format_list_numbered</i> Toplu Sırala
-            </button>
-            <button class="btn-icon" id="rightSettingsBtn" onclick="requestSettingsOpen()" title="Ayarlar" style="background:var(--primary); border-color:var(--primary); white-space:nowrap;">
-                <i class="material-icons-round" style="font-size:20px;">settings</i> Ayarlar
-            </button>
-            <button class="btn-icon" id="quarCleanBtn" onclick="resetQuarantine()" title="Karantinayı Temizle" style="background:#3d3e46;">
-                <i class="material-icons-round" style="font-size:20px;">restore</i>
+            <button class="btn-icon" id="rightSettingsBtn" onclick="requestSettingsOpen()" title="Ayarlar" style="background:var(--primary); border-color:var(--primary); white-space:nowrap; padding:0 14px;">
+                <i class="material-icons-round" style="font-size:20px;">settings</i> <span class="hide-mobile-txt">Ayarlar</span>
             </button>
         </div>
-        <button class="btn-icon" id="rightCloseBtn" onclick="closeAllDrawers()" style="background:rgba(231,76,60,0.2); border-color:var(--red); color:var(--red);">
-            <i class="material-icons-round">close</i>
-        </button>
+    </div>
+    <div class="subtle-count-strip">
+        <span id="listCountTitle">Kanallar</span>
+        <span id="activeFilterHint" style="color:var(--fav); font-weight:600;"></span>
     </div>
     <div id="moveModeBanner">
         <span id="moveModeText">✨ Kanal Taşıma Modu: Yön tuşlarıyla taşıyıp <b>OK</b>'a basın</span>
@@ -598,6 +605,7 @@
     function requestSettingsOpen() {
         invalidateLeftNav();
         lastDrawerActionTime = Date.now();
+        pushDrawerHistoryState();
         lockAllInputs();
         document.getElementById('rightSidebar').classList.remove('open');
         document.getElementById('leftSidebar').classList.add('open');
@@ -949,9 +957,35 @@
     }
 
     function openLeftSidebar() { requestSettingsOpen(); }
+    function pushDrawerHistoryState() {
+        try {
+            if (!history.state || !history.state.tvDrawerOpen) {
+                history.pushState({ tvDrawerOpen: true }, '');
+            }
+        } catch (e) {}
+    }
+
+    window.addEventListener('popstate', () => {
+        if (tvPick) { tvClosePicker(); pushDrawerHistoryState(); return; }
+        const confirmModal = document.getElementById('tvConfirmModal');
+        if (confirmModal && confirmModal.classList.contains('show')) { resolveTvConfirm(false); pushDrawerHistoryState(); return; }
+        const bulkNumModal = document.getElementById('bulkNumModal');
+        if (bulkNumModal && bulkNumModal.classList.contains('show')) { closeBulkNumModal(); pushDrawerHistoryState(); return; }
+        const camModal = document.getElementById('channelActionModal');
+        if (camModal && camModal.classList.contains('show')) { closeChannelActionModal(); pushDrawerHistoryState(); return; }
+        const previewModal = document.getElementById('smartPreviewModal');
+        if (previewModal && previewModal.classList.contains('show')) { closeSmartPreview(); pushDrawerHistoryState(); return; }
+        const leftOpen = document.getElementById('leftSidebar').classList.contains('open');
+        const rightOpen = document.getElementById('rightSidebar').classList.contains('open');
+        if (leftOpen || rightOpen) {
+            closeAllDrawers();
+        }
+    });
+
     function openRightSidebar() {
         if (Date.now() - lastDrawerActionTime < 250) return;
         lastDrawerActionTime = Date.now();
+        pushDrawerHistoryState();
         setIgnoreKeyUntilRelease(false);
         okPressContext = null; okLongPressFired = false; clearOkTimers();
         lockAllInputs();
@@ -1047,16 +1081,28 @@
         localStorage.setItem('tv_favorites', JSON.stringify(favUrls)); sortAndRenderList();
     }
 
+    function getActiveListDisplayName() {
+        const selL = document.getElementById('countrySelect');
+        if (selL) {
+            const match = Array.from(selL.options).find(o => o.value === currentListContext);
+            if (match) return match.textContent.replace(/^[⭐📺🌐🇹🇷🇺🇸🇬🇧🇩🇪]+\s*/, '').replace(/\s*\(Varsayılan\)/, '').trim();
+        }
+        return 'Aktif Liste';
+    }
+
     function updatePresetDropdown() {
         document.querySelectorAll('.tmp-opt').forEach(o => o.remove());
         const selectElementL = document.getElementById('countrySelect');
         const selectElementR = document.getElementById('rightCountrySelect');
         const grpLeft = document.getElementById('personalPresets'); const ytGrpLeft = document.getElementById('ytPlaylistsGroup');
         const grpRight = document.getElementById('personalPresetsRight'); const ytGrpRight = document.getElementById('ytPlaylistsGroupRight');
+        const favGrpRight = document.getElementById('favFilterGroupRight');
         grpLeft.innerHTML = ''; ytGrpLeft.innerHTML = ''; grpRight.innerHTML = ''; ytGrpRight.innerHTML = '';
+        if (favGrpRight) favGrpRight.innerHTML = '';
+
         personalPresets.forEach((p) => {
-            const optL = document.createElement('option'); optL.value = p.url; optL.innerText = "⭐ " + p.name; grpLeft.appendChild(optL);
-            const optR = document.createElement('option'); optR.value = p.url; optR.innerText = "⭐ " + p.name; grpRight.appendChild(optR);
+            const optL = document.createElement('option'); optL.value = p.url; optL.innerText = "📁 " + p.name; grpLeft.appendChild(optL);
+            const optR = document.createElement('option'); optR.value = p.url; optR.innerText = "📁 " + p.name; grpRight.appendChild(optR);
         });
         ytPlaylistsData.forEach((p) => {
             const cleanId = String(p.id).replace(/^ytpl_/, '');
@@ -1072,7 +1118,22 @@
                 selectElementR.appendChild(tempOpt.cloneNode(true));
             }
             selectElementL.value = currentListContext;
-            selectElementR.value = currentListContext;
+        }
+        const activeName = getActiveListDisplayName();
+        if (favGrpRight) {
+            const optFav = document.createElement('option');
+            optFav.value = '__fav_only__';
+            optFav.innerText = `⭐ Favoriler (${activeName})`;
+            favGrpRight.appendChild(optFav);
+            if (favFilterOnly) {
+                const optAll = document.createElement('option');
+                optAll.value = '__all_channels__';
+                optAll.innerText = `📋 Tüm Kanallar (${activeName})`;
+                favGrpRight.appendChild(optAll);
+            }
+        }
+        if (selectElementR) {
+            selectElementR.value = favFilterOnly ? '__fav_only__' : currentListContext;
         }
         checkSelectedPreset();
     }
@@ -1081,7 +1142,32 @@
         const isPersonal = personalPresets.find(p => p.url === val) || val.startsWith('ytpl_');
         document.getElementById('removePresetBtn').style.display = isPersonal ? 'block' : 'none';
     }
-    function syncAndChangeCountry(val) { currentListContext = val; updatePresetDropdown(); changeCountry(val); }
+    function syncAndChangeCountry(val) {
+        if (val === '__fav_only__') {
+            favFilterOnly = true;
+            updatePresetDropdown();
+            performSearch();
+            showOSD("Favori Kanallar ⭐", getActiveListDisplayName() + " favorileri gösteriliyor");
+            return;
+        }
+        if (val === '__all_channels__') {
+            favFilterOnly = false;
+            updatePresetDropdown();
+            performSearch();
+            showOSD("Tüm Kanallar 📋", getActiveListDisplayName() + " tüm kanallar gösteriliyor");
+            return;
+        }
+        const sameContext = (val === currentListContext);
+        favFilterOnly = false;
+        currentListContext = val;
+        updatePresetDropdown();
+        if (sameContext && allChannels.length > 0) {
+            performSearch();
+            showOSD("Tüm Kanallar 📋", getActiveListDisplayName());
+        } else {
+            changeCountry(val);
+        }
+    }
 
     async function removeCurrentPreset() {
         const ok = await showTvConfirm("Özel Listeyi Sil", "Bu özel listeyi tamamen silmek istediğinize emin misiniz?");
@@ -1388,12 +1474,9 @@
 
     function toggleFavFilterMode() {
         favFilterOnly = !favFilterOnly;
-        const btn = document.getElementById('favFilterBtn');
-        const icon = document.getElementById('favFilterIcon');
-        const lbl = document.getElementById('favFilterLabel');
-        if (favFilterOnly) { btn.classList.add('active'); icon.innerText = 'star'; lbl.innerText = 'Favoriler'; showOSD("Favori Kanallar"); }
-        else { btn.classList.remove('active'); icon.innerText = 'star_border'; lbl.innerText = 'Tümü / Fav'; showOSD("Tüm Kanallar"); }
+        updatePresetDropdown();
         performSearch();
+        showOSD(favFilterOnly ? "Favori Kanallar ⭐" : "Tüm Kanallar 📋");
     }
 
     function performSearch() {
@@ -1411,11 +1494,12 @@
             item.style.display = show ? 'flex' : 'none';
             if (show) visibleCount++;
         });
+        const countTxt = (favFilterOnly || term) ? `${visibleCount} / ${allChannels.length} Kanal` : `${allChannels.length} Kanal`;
         const titleEl = document.getElementById('listCountTitle');
-        if (titleEl) {
-            if (favFilterOnly || term) titleEl.innerText = `${visibleCount} / ${allChannels.length} Kanal`;
-            else titleEl.innerText = `${allChannels.length} Kanal`;
-        }
+        if (titleEl) titleEl.innerText = `${getActiveListDisplayName()} · ${countTxt}`;
+        const hintEl = document.getElementById('activeFilterHint');
+        if (hintEl) hintEl.innerText = favFilterOnly ? '⭐ Sadece Favoriler Açık' : '';
+        if (inp) inp.placeholder = `Kanal ara... (${countTxt})`;
     }
 
         let isBulkOrderMode = false;
@@ -1445,6 +1529,26 @@
             return;
         }
         closeAllDrawers(); play(idx, 0);
+    }
+
+    function openBulkOrderFromSettings() {
+        document.getElementById('leftSidebar').classList.remove('open');
+        document.getElementById('rightSidebar').classList.add('open');
+        document.getElementById('overlayBackdrop').classList.add('show');
+        startBulkOrderModeAfterPin();
+    }
+
+    async function retestQuarantineFromSettings() {
+        const list = allChannels.filter(c => c.broken);
+        if (!list.length) {
+            showOSD("Karantina Boş", "Aktif listede karantinada kanal bulunmuyor");
+            return;
+        }
+        const stat = document.getElementById('status');
+        if (stat) stat.innerText = `Karantina test ediliyor (${list.length} kanal)...`;
+        showOSD("Karantina Testi Başladı", `${list.length} kanal kontrol ediliyor...`);
+        await runQuarTest(list);
+        if (stat) stat.innerText = "Karantina testi tamamlandı!";
     }
 
     function requestBulkOrderMode() {
@@ -1819,11 +1923,7 @@
         const brokenCount = allChannels.filter(c => c.broken).length;
         if (brokenCount > 0) {
             quarBar.style.display = 'block';
-            quarBar.innerHTML = `<div class="broken-divider" style="padding:10px 28px 4px;"><span>Yayın Alınamayan Kanallar (${brokenCount})</span></div>
-                <div class="quar-bar">
-                    <button class="btn" onclick="retestQuarantine(false)">Hepsini Yeniden Test Et</button>
-                    <button class="btn" onclick="resetQuarantine()">Karantinayı Temizle</button>
-                </div>`;
+            quarBar.innerHTML = `<div class="broken-divider" style="padding:6px 28px 2px;"><span>Karantinadaki Kanallar (${brokenCount}) · Ayarlar'dan test edebilir veya temizleyebilirsiniz</span></div>`;
         } else {
             quarBar.style.display = 'none';
             quarBar.innerHTML = '';
@@ -3929,11 +4029,11 @@ function playAudioDirect(video, url, token) {
 
             if (absY >= absX * 1.15) {
                 touchGestureState.bottomNavigatedBySwipe = false;
-                if (dy > 0) {
-                    // Dokunup Aşağı Kaydırma -> Yukarı Ok (ArrowUp)
+                if (dy < 0) {
+                    // Dokunup Yukarı Kaydırma -> Yukarı Ok (ArrowUp)
                     dispatchVirtualRemoteKey('ArrowUp', 38);
                 } else {
-                    // Dokunup Yukarı Kaydırma -> Aşağı Ok (ArrowDown)
+                    // Dokunup Aşağı Kaydırma -> Aşağı Ok (ArrowDown)
                     dispatchVirtualRemoteKey('ArrowDown', 40);
                 }
             } else if (absX > absY * 1.15) {
@@ -4013,7 +4113,7 @@ function playAudioDirect(video, url, token) {
         const dt = Date.now() - rightMoveTouch.t;
         if (Math.max(absX, absY) >= 38 && dt < 800) {
             if (absY >= absX * 1.15) {
-                dispatchVirtualRemoteKey(dy > 0 ? 'ArrowUp' : 'ArrowDown', dy > 0 ? 38 : 40);
+                dispatchVirtualRemoteKey(dy < 0 ? 'ArrowUp' : 'ArrowDown', dy < 0 ? 38 : 40);
             } else {
                 dispatchVirtualRemoteKey(dx > 0 ? 'ArrowRight' : 'ArrowLeft', dx > 0 ? 39 : 37);
             }
@@ -4065,7 +4165,8 @@ function playAudioDirect(video, url, token) {
     function tvClosePicker() { if (!tvPick) return; tvPick.box.remove(); tvPick = null; }
     function tvPickChoose(i) {
         const p = tvPick; if (!p || i < 0) return; const v = p.items[i].dataset.v; tvClosePicker();
-        if (p.sel.value !== v) { p.sel.value = v; p.sel.dispatchEvent(new Event('change', { bubbles: true })); }
+        p.sel.value = v;
+        p.sel.dispatchEvent(new Event('change', { bubbles: true }));
         p.sel.focus();
     }
 
@@ -4296,11 +4397,7 @@ function playAudioDirect(video, url, token) {
                 document.getElementById('filterInput'),
                 document.getElementById('clearFilterBtn'),
                 document.getElementById('rightCountrySelect'),
-                document.getElementById('favFilterBtn'),
-                document.getElementById('bulkOrderBtn'),
-                document.getElementById('rightSettingsBtn'),
-                document.getElementById('quarCleanBtn'),
-                document.getElementById('rightCloseBtn')
+                document.getElementById('rightSettingsBtn')
             ].filter(Boolean);
             const bulkControls = isBulkOrderMode ? [
                 document.getElementById('bulkModeSwitchBtn'),
@@ -4384,7 +4481,7 @@ function playAudioDirect(video, url, token) {
                     e.preventDefault(); e.stopImmediatePropagation();
                     if (curPos < cols) {
                         if (isBulkOrderMode) document.getElementById('bulkSaveBtn').focus();
-                        else if ((curPos % cols) >= Math.ceil(cols / 2)) document.getElementById('bulkOrderBtn').focus();
+                        else if ((curPos % cols) >= Math.ceil(cols / 2)) document.getElementById('rightCountrySelect').focus();
                         else document.getElementById('filterInput').focus();
                     } else focusGridElement(items[curPos - cols]);
                     return;
