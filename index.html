@@ -799,6 +799,20 @@
         return keyToSave;
     }
 
+    async function diagnoseWorker(url) {
+        try { await fetch(url, { mode: 'no-cors' }); return 'Sunucuya ulaşılıyor ama tarayıcı izin vermiyor (CORS). Bu sayfanın adresi: ' + location.origin; }
+        catch (e) { let h = url; try { h = new URL(url).host; } catch (e2) {} return 'Sunucuya hiç ulaşılamıyor (ağ, DNS veya engel): ' + h; }
+    }
+    // Önce doğrudan dener; olmazsa aynı isteği ücretsiz bir CORS aktarıcısı üzerinden dener; ikisi de olmazsa nedenini söyler
+    async function workerFetch(url, opts) {
+        const tryOne = async (u) => { const c = new AbortController(); const t = setTimeout(() => c.abort(), 12000); try { return await fetch(u, Object.assign({}, opts || {}, { signal: c.signal })); } finally { clearTimeout(t); } };
+        try { return await tryOne(url); }
+        catch (e1) {
+            try { return await tryOne('https://corsproxy.io/?' + encodeURIComponent(url)); }
+            catch (e2) { throw new Error(await diagnoseWorker(url)); }
+        }
+    }
+
     async function syncDataToCloud(silent = false) {
         const userId = document.getElementById('syncUserId').value.trim();
         if (!userId) { if (!silent) showOSD("Kimlik (ID) Gerekli"); return; }
@@ -819,11 +833,26 @@
             localLists: collectLocalLists(),
             apiKey: keyToSave
         };
+        // Kademeli deneme: tam paket -> yinelenenler ve büyük liste çıkarılmış hafif paket -> en küçük paket (çalışan eski örnekteki gibi)
+        const slimExtras = Object.assign({}, extraChannelsDict); delete slimExtras['__local_lists__'];
+        const tiers = [
+            ['tam', payload],
+            ['hafif', Object.assign({}, payload, { custom: customChannelsData, extras: slimExtras })],
+            ['mini', { favorites: favUrls, broken: brokenUrls, custom: customChannelsData, presets: personalPresets, extras: slimExtras, ytPlaylists: ytPlaylistsData, lastContext: currentListContext, localLists: payload.localLists, customOrders: customOrdersDict, deletedUrls: deletedUrlsDict }]
+        ];
         try {
             const workerBaseUrl = MY_CLOUD_PROXY.split('?url=')[0];
-            const response = await fetch(`${workerBaseUrl}sync/${userId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-            if(!response.ok) throw new Error("Sunucu reddetti (HTTP " + response.status + ")");
-            stat.innerText = `Buluta Yedeklendi! (Sıralama + ${brokenUrls.length} karantina + ${favUrls.length} favori)`;
+            let lastErr = null, usedTier = '', usedKB = 0;
+            for (const [tierName, body] of tiers) {
+                const json = JSON.stringify(body);
+                try {
+                    const response = await workerFetch(`${workerBaseUrl}sync/${encodeURIComponent(userId)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json });
+                    if (!response.ok) throw new Error("Sunucu reddetti (HTTP " + response.status + ", " + Math.round(json.length / 1024) + " KB)");
+                    usedTier = tierName; usedKB = Math.round(json.length / 1024); lastErr = null; break;
+                } catch (e) { lastErr = new Error(((e && e.message) || String(e)) + ` [${tierName} paket ${Math.round(json.length / 1024)} KB]`); }
+            }
+            if (lastErr) throw lastErr;
+            stat.innerText = `Buluta Yedeklendi! (${usedKB} KB · ${usedTier} paket · ${favUrls.length} favori)`;
             stat.style.color = "#2ecc71";
             if (!silent) showOSD("Yedekleme Başarılı", "Sıralamalar ve karantina durumu kaydedildi");
         } catch (e) { stat.innerText = "Yedekleme Hatası: " + ((e && e.message) || e); stat.style.color = "#e74c3c"; }
@@ -934,7 +963,7 @@
         const stat = document.getElementById('syncStatus'); stat.innerText = "Buluttan Çekiliyor..."; stat.style.color = "#f1c40f";
         try {
             const workerBaseUrl = MY_CLOUD_PROXY.split('?url=')[0];
-            const response = await fetch(`${workerBaseUrl}sync/${userId}`);
+            const response = await workerFetch(`${workerBaseUrl}sync/${encodeURIComponent(userId)}`);
             if(!response.ok) throw new Error("Bu ID için yedek bulunamadı (HTTP " + response.status + ")");
             const data = await response.json();
             const r = applyImportedData(data);
