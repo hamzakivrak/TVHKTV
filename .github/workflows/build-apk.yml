@@ -71,8 +71,8 @@ jobs:
                   applicationId "com.tvcast.player"
                   minSdk 21
                   targetSdk 34
-                  versionCode 2
-                  versionName "1.1"
+                  versionCode 3
+                  versionName "1.2"
               }
 
               buildTypes {
@@ -93,6 +93,10 @@ jobs:
 
               <uses-permission android:name="android.permission.INTERNET" />
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
 
               <uses-feature android:name="android.software.leanback" android:required="false" />
               <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -117,6 +121,10 @@ jobs:
                           <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
                       </intent-filter>
                   </activity>
+                  <service
+                      android:name=".PlaybackService"
+                      android:exported="false"
+                      android:foregroundServiceType="mediaPlayback" />
               </application>
           </manifest>
           TVCAST_EOF
@@ -124,7 +132,21 @@ jobs:
           cat > app/src/main/java/com/tvcast/player/MainActivity.java <<'TVCAST_EOF'
           package com.tvcast.player;
 
+          import android.Manifest;
           import android.app.Activity;
+          import android.content.BroadcastReceiver;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.content.IntentFilter;
+          import android.content.pm.PackageManager;
+          import android.net.ConnectivityManager;
+          import android.net.Network;
+          import android.net.NetworkCapabilities;
+          import android.net.NetworkInfo;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.WebResourceResponse;
           import android.graphics.Bitmap;
           import android.os.Bundle;
           import android.view.View;
@@ -142,6 +164,12 @@ jobs:
 
           import java.io.ByteArrayOutputStream;
           import java.io.InputStream;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
+          import java.util.HashMap;
+          import java.util.List;
+          import java.util.Locale;
+          import java.util.Map;
 
           public class MainActivity extends Activity {
 
@@ -152,6 +180,9 @@ jobs:
               private WebChromeClient.CustomViewCallback customCb;
               private long lastBack = 0;
               private boolean fellBack = false;
+              private final AdRules rules = new AdRules();
+              private BroadcastReceiver cmdReceiver;
+              private boolean serviceUp = false;
 
               @Override
               protected void onCreate(Bundle b) {
@@ -162,7 +193,10 @@ jobs:
                   web = new WebView(this);
                   root.addView(web, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
                   setContentView(root);
+                  rules.load(this);
                   setupWebView();
+                  registerCommandReceiver();
+                  askNotificationPermission();
                   immersive();
                   load();
               }
@@ -186,7 +220,26 @@ jobs:
                   web.setFocusableInTouchMode(true);
                   web.requestFocus();
 
+                  web.addJavascriptInterface(new Bridge(), "Android");
                   web.setWebViewClient(new WebViewClient() {
+                      @Override
+                      public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
+                          try {
+                              if (!rules.enabled) return null;
+                              Uri u = r.getUrl();
+                              if (rules.shouldBlock(u)) {
+                                  return new WebResourceResponse("text/plain", "utf-8", 204, "No Content", new HashMap<String, String>(), new java.io.ByteArrayInputStream(new byte[0]));
+                              }
+                              if (!r.isForMainFrame() && "GET".equalsIgnoreCase(r.getMethod()) && rules.shouldInject(u)) {
+                                  WebResourceResponse x = injectIntoEmbed(r);
+                                  if (x != null) return x;
+                              }
+                          } catch (Throwable t) {
+                              // Hata olursa normal yukleme devam eder
+                          }
+                          return null;
+                      }
+
                       @Override
                       public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) {
                           if (r.isForMainFrame() && !fellBack) {
@@ -256,6 +309,130 @@ jobs:
                   }
               }
 
+              /** JS -> Java kopru (window.Android) */
+              private class Bridge {
+                  @JavascriptInterface
+                  public boolean isCellular() {
+                      try {
+                          ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+                          if (cm == null) return false;
+                          if (Build.VERSION.SDK_INT >= 23) {
+                              Network n = cm.getActiveNetwork();
+                              if (n == null) return false;
+                              NetworkCapabilities c = cm.getNetworkCapabilities(n);
+                              return c != null && c.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) && !c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) && !c.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET);
+                          }
+                          NetworkInfo ni = cm.getActiveNetworkInfo();
+                          return ni != null && ni.getType() == ConnectivityManager.TYPE_MOBILE;
+                      } catch (Exception e) {
+                          return false;
+                      }
+                  }
+
+                  @JavascriptInterface
+                  public void nowPlaying(String title, boolean playing) {
+                      startPlayback(title, playing);
+                  }
+
+                  @JavascriptInterface
+                  public void saveRules(String text) {
+                      if (text != null && text.length() > 20 && text.length() < 200000) rules.save(MainActivity.this, text);
+                  }
+
+                  @JavascriptInterface
+                  public void setAdBlock(boolean on) {
+                      rules.setEnabled(MainActivity.this, on);
+                  }
+              }
+
+              private void startPlayback(String title, boolean playing) {
+                  try {
+                      Intent i = new Intent(this, PlaybackService.class);
+                      i.putExtra("title", title);
+                      i.putExtra("playing", playing);
+                      if (!serviceUp && Build.VERSION.SDK_INT >= 26) startForegroundService(i); else startService(i);
+                      serviceUp = true;
+                  } catch (Exception ignored) {
+                  }
+              }
+
+              private void registerCommandReceiver() {
+                  cmdReceiver = new BroadcastReceiver() {
+                      @Override
+                      public void onReceive(Context c, Intent i) {
+                          String cmd = i.getStringExtra("cmd");
+                          String js = "next".equals(cmd) ? "nextCh()" : ("prev".equals(cmd) ? "prevCh()" : "togglePlayPause()");
+                          web.evaluateJavascript("try{" + js + "}catch(e){}", null);
+                      }
+                  };
+                  IntentFilter f = new IntentFilter(PlaybackService.ACTION_CMD);
+                  if (Build.VERSION.SDK_INT >= 33) registerReceiver(cmdReceiver, f, Context.RECEIVER_NOT_EXPORTED);
+                  else registerReceiver(cmdReceiver, f);
+              }
+
+              private void askNotificationPermission() {
+                  try {
+                      if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                          requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 77);
+                      }
+                  } catch (Exception ignored) {
+                  }
+              }
+
+              /** YouTube gomulu oynatici sayfasina reklam engelleyici betigini enjekte eder. */
+              private WebResourceResponse injectIntoEmbed(WebResourceRequest r) {
+                  HttpURLConnection c = null;
+                  try {
+                      String url = r.getUrl().toString();
+                      c = (HttpURLConnection) new URL(url).openConnection();
+                      c.setConnectTimeout(8000);
+                      c.setReadTimeout(10000);
+                      c.setInstanceFollowRedirects(true);
+                      for (Map.Entry<String, String> e : r.getRequestHeaders().entrySet()) {
+                          if (e.getKey().equalsIgnoreCase("Accept-Encoding")) continue;
+                          c.setRequestProperty(e.getKey(), e.getValue());
+                      }
+                      c.setRequestProperty("Accept-Encoding", "identity");
+                      String ck = CookieManager.getInstance().getCookie(url);
+                      if (ck != null) c.setRequestProperty("Cookie", ck);
+                      int code = c.getResponseCode();
+                      String ct = c.getContentType();
+                      if (code != 200 || ct == null || !ct.toLowerCase(Locale.ROOT).contains("text/html")) {
+                          c.disconnect();
+                          return null;
+                      }
+                      InputStream in = c.getInputStream();
+                      ByteArrayOutputStream out = new ByteArrayOutputStream();
+                      byte[] buf = new byte[16384];
+                      int n;
+                      while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                      in.close();
+                      String html = out.toString("UTF-8");
+                      String tag = "<script>" + rules.script + "</script>";
+                      int hi = html.toLowerCase(Locale.ROOT).indexOf("<head>");
+                      html = (hi >= 0) ? html.substring(0, hi + 6) + tag + html.substring(hi + 6) : tag + html;
+                      Map<String, String> headers = new HashMap<>();
+                      for (Map.Entry<String, List<String>> e : c.getHeaderFields().entrySet()) {
+                          String k = e.getKey();
+                          if (k == null) continue;
+                          String lk = k.toLowerCase(Locale.ROOT);
+                          if (lk.equals("set-cookie")) {
+                              for (String sc : e.getValue()) CookieManager.getInstance().setCookie(url, sc);
+                              continue;
+                          }
+                          if (lk.equals("content-encoding") || lk.equals("content-length") || lk.equals("transfer-encoding") || lk.startsWith("content-security-policy")) continue;
+                          StringBuilder sb = new StringBuilder();
+                          for (String v : e.getValue()) { if (sb.length() > 0) sb.append(", "); sb.append(v); }
+                          headers.put(k, sb.toString());
+                      }
+                      c.disconnect();
+                      return new WebResourceResponse("text/html", "UTF-8", 200, "OK", headers, new java.io.ByteArrayInputStream(html.getBytes("UTF-8")));
+                  } catch (Throwable t) {
+                      try { if (c != null) c.disconnect(); } catch (Throwable ignored) { }
+                      return null;
+                  }
+              }
+
               private void immersive() {
                   getWindow().getDecorView().setSystemUiVisibility(
                           View.SYSTEM_UI_FLAG_LAYOUT_STABLE
@@ -291,14 +468,251 @@ jobs:
 
               @Override
               protected void onPause() {
+                  // Bilerek web.onPause() cagrilmiyor: uygulama kucultulunce ses calmaya devam etsin
                   super.onPause();
               }
 
               @Override
               protected void onDestroy() {
+                  try { if (cmdReceiver != null) unregisterReceiver(cmdReceiver); } catch (Exception ignored) { }
+                  try { stopService(new Intent(this, PlaybackService.class)); } catch (Exception ignored) { }
                   if (web != null) { web.loadUrl("about:blank"); web.destroy(); }
                   super.onDestroy();
               }
+          }
+          TVCAST_EOF
+          cat > app/src/main/java/com/tvcast/player/AdRules.java <<'TVCAST_EOF'
+          package com.tvcast.player;
+
+          import android.content.Context;
+          import android.content.SharedPreferences;
+          import android.net.Uri;
+
+          import java.io.ByteArrayOutputStream;
+          import java.io.InputStream;
+          import java.util.ArrayList;
+          import java.util.List;
+          import java.util.Locale;
+
+          /** rules.txt kurallarini tutar: [scope] [block] [allow] [inject] [script] bolumleri. */
+          public class AdRules {
+              private static final String PREF = "tvcast_rules";
+              public volatile boolean enabled = true;
+              public volatile String script = "";
+              private volatile List<String> scope = new ArrayList<>();
+              private volatile List<String> block = new ArrayList<>();
+              private volatile List<String> allow = new ArrayList<>();
+              private volatile List<String> inject = new ArrayList<>();
+
+              public void load(Context c) {
+                  SharedPreferences p = c.getSharedPreferences(PREF, Context.MODE_PRIVATE);
+                  enabled = p.getBoolean("enabled", true);
+                  String t = p.getString("rules", null);
+                  if (t == null) t = readAsset(c, "rules.txt");
+                  if (t != null) parse(t);
+              }
+
+              public void save(Context c, String text) {
+                  c.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit().putString("rules", text).apply();
+                  parse(text);
+              }
+
+              public void setEnabled(Context c, boolean on) {
+                  enabled = on;
+                  c.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit().putBoolean("enabled", on).apply();
+              }
+
+              private String readAsset(Context c, String name) {
+                  try {
+                      InputStream in = c.getAssets().open(name);
+                      ByteArrayOutputStream out = new ByteArrayOutputStream();
+                      byte[] buf = new byte[8192];
+                      int n;
+                      while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                      in.close();
+                      return out.toString("UTF-8");
+                  } catch (Exception e) {
+                      return null;
+                  }
+              }
+
+              private void parse(String text) {
+                  List<String> sc = new ArrayList<>(), bl = new ArrayList<>(), al = new ArrayList<>(), ij = new ArrayList<>();
+                  StringBuilder js = new StringBuilder();
+                  String section = "";
+                  for (String raw : text.split("\r?\n")) {
+                      String line = raw.trim();
+                      if (line.startsWith("[") && line.endsWith("]")) {
+                          section = line.substring(1, line.length() - 1).toLowerCase(Locale.ROOT);
+                          continue;
+                      }
+                      if (section.equals("script")) {
+                          js.append(raw).append('\n');
+                          continue;
+                      }
+                      if (line.isEmpty() || line.startsWith("#") || line.startsWith("!")) continue;
+                      if (section.equals("scope")) sc.add(line.toLowerCase(Locale.ROOT));
+                      else if (section.equals("block")) bl.add(line);
+                      else if (section.equals("allow")) al.add(line);
+                      else if (section.equals("inject")) ij.add(line);
+                  }
+                  scope = sc; block = bl; allow = al; inject = ij; script = js.toString().trim();
+              }
+
+              private boolean inScope(Uri u) {
+                  String h = u.getHost();
+                  if (h == null) return false;
+                  h = h.toLowerCase(Locale.ROOT);
+                  for (String s : scope) {
+                      if (h.equals(s) || h.endsWith("." + s)) return true;
+                  }
+                  return false;
+              }
+
+              public boolean shouldBlock(Uri u) {
+                  if (!enabled || !inScope(u)) return false;
+                  String url = u.toString();
+                  for (String a : allow) if (url.contains(a)) return false;
+                  for (String b : block) if (url.contains(b)) return true;
+                  return false;
+              }
+
+              public boolean shouldInject(Uri u) {
+                  if (!enabled || script.isEmpty()) return false;
+                  String url = u.toString();
+                  for (String i : inject) if (url.contains(i)) return true;
+                  return false;
+              }
+          }
+          TVCAST_EOF
+          cat > app/src/main/java/com/tvcast/player/PlaybackService.java <<'TVCAST_EOF'
+          package com.tvcast.player;
+
+          import android.app.Notification;
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.app.PendingIntent;
+          import android.app.Service;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.content.pm.ServiceInfo;
+          import android.media.session.MediaSession;
+          import android.media.session.PlaybackState;
+          import android.os.Build;
+          import android.os.IBinder;
+          import android.os.PowerManager;
+
+          /** Arka planda calmayi surduren on plan servisi + bildirimde onceki / oynat-durdur / sonraki dugmeleri. */
+          public class PlaybackService extends Service {
+              public static final String ACTION_CMD = "com.tvcast.player.CMD";
+              private static final String CHANNEL = "tvcast_playback";
+              private static final int NOTIF_ID = 4711;
+              private MediaSession session;
+              private PowerManager.WakeLock wake;
+              private String title = "TV Cast";
+              private boolean playing = true;
+
+              @Override
+              public void onCreate() {
+                  super.onCreate();
+                  if (Build.VERSION.SDK_INT >= 26) {
+                      NotificationChannel ch = new NotificationChannel(CHANNEL, "Oynatma", NotificationManager.IMPORTANCE_LOW);
+                      ch.setShowBadge(false);
+                      NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                      if (nm != null) nm.createNotificationChannel(ch);
+                  }
+                  session = new MediaSession(this, "TVCast");
+                  session.setCallback(new MediaSession.Callback() {
+                      @Override public void onPlay() { send("toggle"); }
+                      @Override public void onPause() { send("toggle"); }
+                      @Override public void onSkipToNext() { send("next"); }
+                      @Override public void onSkipToPrevious() { send("prev"); }
+                  });
+                  session.setActive(true);
+                  try {
+                      PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                      wake = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "tvcast:playback");
+                      wake.setReferenceCounted(false);
+                  } catch (Exception ignored) { }
+              }
+
+              private void send(String cmd) {
+                  Intent i = new Intent(ACTION_CMD);
+                  i.setPackage(getPackageName());
+                  i.putExtra("cmd", cmd);
+                  sendBroadcast(i);
+              }
+
+              private PendingIntent pi(String cmd, int code) {
+                  Intent i = new Intent(ACTION_CMD);
+                  i.setPackage(getPackageName());
+                  i.putExtra("cmd", cmd);
+                  int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+                  if (Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
+                  return PendingIntent.getBroadcast(this, code, i, flags);
+              }
+
+              private Notification build() {
+                  Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL) : new Notification.Builder(this);
+                  b.setSmallIcon(android.R.drawable.ic_media_play)
+                          .setContentTitle(title)
+                          .setContentText(playing ? "Oynatılıyor" : "Duraklatıldı")
+                          .setOngoing(true)
+                          .setShowWhen(false)
+                          .setVisibility(Notification.VISIBILITY_PUBLIC);
+                  Intent open = new Intent(this, MainActivity.class);
+                  open.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                  int f = PendingIntent.FLAG_UPDATE_CURRENT;
+                  if (Build.VERSION.SDK_INT >= 23) f |= PendingIntent.FLAG_IMMUTABLE;
+                  b.setContentIntent(PendingIntent.getActivity(this, 0, open, f));
+                  b.addAction(new Notification.Action.Builder(android.R.drawable.ic_media_previous, "Önceki", pi("prev", 1)).build());
+                  b.addAction(new Notification.Action.Builder(playing ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play, playing ? "Durdur" : "Oynat", pi("toggle", 2)).build());
+                  b.addAction(new Notification.Action.Builder(android.R.drawable.ic_media_next, "Sonraki", pi("next", 3)).build());
+                  b.setStyle(new Notification.MediaStyle().setMediaSession(session.getSessionToken()).setShowActionsInCompactView(0, 1, 2));
+                  return b.build();
+              }
+
+              @Override
+              public int onStartCommand(Intent intent, int flags, int startId) {
+                  if (intent != null) {
+                      String t = intent.getStringExtra("title");
+                      if (t != null && !t.isEmpty()) title = t;
+                      playing = intent.getBooleanExtra("playing", true);
+                  }
+                  try {
+                      PlaybackState st = new PlaybackState.Builder()
+                              .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE
+                                      | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS)
+                              .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f)
+                              .build();
+                      session.setPlaybackState(st);
+                  } catch (Exception ignored) { }
+                  Notification n = build();
+                  try {
+                      if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
+                      else startForeground(NOTIF_ID, n);
+                  } catch (Exception e) {
+                      stopSelf();
+                      return START_NOT_STICKY;
+                  }
+                  try {
+                      if (wake != null) {
+                          if (playing && !wake.isHeld()) wake.acquire(6 * 60 * 60 * 1000L);
+                          else if (!playing && wake.isHeld()) wake.release();
+                      }
+                  } catch (Exception ignored) { }
+                  return START_NOT_STICKY;
+              }
+
+              @Override
+              public void onDestroy() {
+                  try { if (wake != null && wake.isHeld()) wake.release(); } catch (Exception ignored) { }
+                  try { if (session != null) { session.setActive(false); session.release(); } } catch (Exception ignored) { }
+                  super.onDestroy();
+              }
+
+              @Override
+              public IBinder onBind(Intent intent) { return null; }
           }
           TVCAST_EOF
           mkdir -p app/src/main/res/values
@@ -338,6 +752,7 @@ jobs:
           TVCAST_EOF
           python3 -m pip install pillow -q --break-system-packages || pip install pillow -q
           python3 make_icons.py
+          if [ -f rules.txt ]; then cp rules.txt app/src/main/assets/rules.txt; fi
           if [ -f tvcast.html ]; then cp tvcast.html app/src/main/assets/tvcast.html
           elif [ -f index.html ]; then cp index.html app/src/main/assets/tvcast.html
           else echo "HATA: depoda tvcast.html veya index.html bulunamadi"; exit 1; fi
