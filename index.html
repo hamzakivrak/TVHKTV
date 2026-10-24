@@ -2453,6 +2453,8 @@ async function resetQuarantine() {
     const ytCache = new Map();
     let ytInstLoading = false, ytInstLoaded = false;
     window.ytCurrentSource = null;
+    // Reklamsız kaynak denemesi kapalı (yavaşlatıyordu). Tekrar denemek için true yapın.
+    const YT_ADFREE = false;
 
     function ytHealthSave() { try { localStorage.setItem(YT_HEALTH_KEY, JSON.stringify(ytHealth)); } catch (e) {} }
     function ytHostOf(u) { try { return new URL(u).host; } catch (e) { return String(u); } }
@@ -2599,6 +2601,7 @@ async function resetQuarantine() {
     }
 
     async function getDirectYtMp4(id) {
+        if (!YT_ADFREE) return null;
         const cached = ytCacheGet(id);
         if (cached) return cached;
         const r = createYtResolver(id);
@@ -2758,6 +2761,7 @@ async function resetQuarantine() {
     }
 
     async function playYtAdFree(ytId, video, ytContainer, token) {
+        if (!YT_ADFREE) return false;
         if (ytIframeOnlyId === ytId) return false;
         if (ytActiveResolver) { ytActiveResolver.stop(); ytActiveResolver = null; }
         const pStatus = document.getElementById('pStatus');
@@ -2825,7 +2829,7 @@ async function resetQuarantine() {
             if (sessionToken !== currentPlaySession) return;
             if (adFreeOk) return;
             // Doğrudan akış bulunamadı: YouTube iframe oynatıcıya düş (reklam çıkabilir)
-            showOSD("Reklamsız akış bulunamadı", "YouTube oynatıcısına geçildi");
+            if (YT_ADFREE) showOSD("Reklamsız akış bulunamadı", "YouTube oynatıcısına geçildi");
             video.style.display = 'none';
             video.pause();
             video.removeAttribute('src');
