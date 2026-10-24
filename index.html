@@ -822,11 +822,11 @@
         try {
             const workerBaseUrl = MY_CLOUD_PROXY.split('?url=')[0];
             const response = await fetch(`${workerBaseUrl}sync/${userId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-            if(!response.ok) throw new Error("Sunucu reddetti");
+            if(!response.ok) throw new Error("Sunucu reddetti (HTTP " + response.status + ")");
             stat.innerText = `Buluta Yedeklendi! (Sıralama + ${brokenUrls.length} karantina + ${favUrls.length} favori)`;
             stat.style.color = "#2ecc71";
             if (!silent) showOSD("Yedekleme Başarılı", "Sıralamalar ve karantina durumu kaydedildi");
-        } catch (e) { stat.innerText = "Yedekleme Hatası!"; stat.style.color = "#e74c3c"; }
+        } catch (e) { stat.innerText = "Yedekleme Hatası: " + ((e && e.message) || e); stat.style.color = "#e74c3c"; }
     }
 
     function applyImportedData(d) {
@@ -935,7 +935,7 @@
         try {
             const workerBaseUrl = MY_CLOUD_PROXY.split('?url=')[0];
             const response = await fetch(`${workerBaseUrl}sync/${userId}`);
-            if(!response.ok) throw new Error("Bu ID için yedek bulunamadı");
+            if(!response.ok) throw new Error("Bu ID için yedek bulunamadı (HTTP " + response.status + ")");
             const data = await response.json();
             const r = applyImportedData(data);
             stat.innerText = `Eşitlendi: ${r.orders} sıralı liste, ${r.broken} karantina, ${r.fav} favori`;
