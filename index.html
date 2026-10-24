@@ -21,6 +21,25 @@
         video::cue { background-color:rgba(0,0,0,0.85); color:white; font-size:1.2rem; }
         #ytContainer { position:absolute; top:0; left:0; width:100%; height:100%; z-index:2; background:#000; display:none; pointer-events:none; }
         #ytContainer iframe { width:100%; height:100%; border:none; }
+        #ytContainer.yt-wait { visibility:hidden; }
+        /* WebView'in videonun ortasına çizdiği takılı oynat/durdur simgesini tamamen gizle */
+        #localPlayer::-webkit-media-controls, #localPlayer::-webkit-media-controls-panel, #localPlayer::-webkit-media-controls-overlay-play-button,
+        #localPlayer::-webkit-media-controls-start-playback-button, #localPlayer::-webkit-media-controls-play-button,
+        #localPlayer::-webkit-media-controls-overlay-enclosure { display:none !important; opacity:0 !important; -webkit-appearance:none; pointer-events:none !important; }
+        .info-card { width:min(580px,94vw); max-height:90vh; overflow-y:auto; text-align:left; padding:18px; overscroll-behavior:contain; }
+        .info-head { display:flex; gap:12px; align-items:center; margin-bottom:12px; }
+        .info-head img { width:96px; height:54px; object-fit:cover; border-radius:8px; flex-shrink:0; background:#000; }
+        .info-head .tv-modal-title { font-size:1.08rem; line-height:1.3; word-break:break-word; }
+        .info-head .tv-modal-sub { margin:0; }
+        .info-head .tv-modal-title, .info-head .tv-modal-sub { text-align:left; }
+        .info-row { display:flex; justify-content:space-between; gap:14px; padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.07); font-size:0.9rem; }
+        .info-row b { color:#9aa0b4; font-weight:600; flex-shrink:0; }
+        .info-row span { text-align:right; word-break:break-word; min-width:0; }
+        .info-desc { margin-top:12px; font-size:0.82rem; color:#bbb; line-height:1.45; max-height:110px; overflow:auto; white-space:pre-wrap; word-break:break-word; background:#12131a; border-radius:8px; padding:10px; }
+        .info-q-title { margin-top:14px; font-size:0.8rem; text-transform:uppercase; font-weight:700; color:#bbb; }
+        .info-q-btns { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+        .info-q-btn { min-height:40px !important; padding:6px 12px !important; font-size:0.85rem !important; }
+        .info-q-btn.on { border-color:var(--accent2); background:rgba(0,206,201,0.2); }
         #castOnlyScreen { position:absolute; top:0; left:0; width:100%; height:100%; background:radial-gradient(circle at 50% 40%, rgba(108,92,231,.35), #05050a 70%); z-index:3; display:none; flex-direction:column; align-items:center; justify-content:center; color:#aaa; pointer-events:none; }
         #castOnlyScreen i { font-size:64px; color:var(--primary); margin-bottom:15px; opacity:0.8; }
         #castOnlyTitle { color:#fff; margin:0 0 10px 0; font-weight:500; font-size:1.5rem; text-align:center; padding:0 20px; }
@@ -202,9 +221,8 @@
             <button class="ctrl-btn main" id="playPauseBtn" onclick="togglePlayPause()" title="Oynat / Duraklat"><i class="material-icons-round" id="playIcon">play_arrow</i></button>
             <button class="ctrl-btn" id="forwardBtn" onclick="triggerSingleSeek(1)" title="10 Saniye İleri Sar"><i class="material-icons-round">forward_10</i></button>
             <button class="ctrl-btn small" id="muteBtn" onclick="toggleMute()" title="Sesi Kapat / Aç"><i class="material-icons-round" id="muteIcon">volume_up</i></button>
-            <button class="ctrl-btn small" id="fsBtn" onclick="toggleFullscreen()" title="Tam Ekran"><i class="material-icons-round" id="fsIcon">fullscreen</i></button>
             <button class="ctrl-btn small fav-btn" id="mainFavBtn" onclick="toggleMainFavorite()" title="Favorilere Ekle / Çıkar"><i class="material-icons-round" id="mainFavIcon">star_border</i></button>
-            <button class="ctrl-btn small" id="openListCtrlBtn" onclick="openRightSidebar()" title="Kanal Listesi"><i class="material-icons-round">grid_view</i></button>
+            <button class="ctrl-btn small" id="infoBtn" onclick="openInfoModal()" title="Bilgi"><i class="material-icons-round">info</i></button>
         </div>
         <div class="seek-bar-wrap" id="seekBarWrap">
             <span class="seek-time" id="seekCurTime">00:00</span>
@@ -314,6 +332,30 @@
                     <span class="sub-module-title" style="color:#e84118;">YouTube Playlist Ekle</span>
                     <input type="text" id="ytPlaylistUrl" readonly placeholder="Liste Linki">
                     <button class="btn" style="width:100%; background:#e84118; color:#fff; border-color:#e84118;" onclick="addYTPlaylist()">Listeyi Kaydet</button>
+                </div>
+                <div class="sub-module">
+                    <span class="sub-module-title" style="color:#e84118;">YouTube Oynatma Listesi Ara</span>
+                    <div style="display:flex; gap:5px; margin-bottom:8px;">
+                        <input type="text" id="ytplQuery" readonly placeholder="Aranacak kelime (örn: dizi müzikleri)" style="margin:0;">
+                        <button class="btn" style="flex:0.4; background:#e84118; border-color:#e84118; margin:0;" onclick="searchYtPlaylists()"><i class="material-icons-round">search</i></button>
+                    </div>
+                    <div id="ytplStatus" style="font-size:0.75rem; color:#aaa; text-align:center; margin-bottom:8px;">Kelimeyi içeren oynatma listeleri listelenir; seçip istediğiniz adla kaydedin.</div>
+                    <div id="ytplResults" class="yt-search-results" style="max-height:300px;"></div>
+                    <div id="ytplActions" style="display:none;">
+                        <div id="ytplCount" style="font-size:0.75rem; color:#aaa; text-align:center; margin-bottom:8px;"></div>
+                        <div class="btn-group" style="margin-bottom:10px;">
+                            <button class="btn" onclick="ytplSelectAll(true)">Tümünü Seç</button>
+                            <button class="btn" onclick="ytplSelectAll(false)">Hiçbiri</button>
+                        </div>
+                        <select id="ytplTarget" onchange="ytplTargetChanged()"></select>
+                        <select id="ytplMode" style="display:none;">
+                            <option value="replace">Üzerine yaz (eskisinin yerine geçsin)</option>
+                            <option value="append">Mevcut listeye ekle (sonuna eklensin)</option>
+                        </select>
+                        <input type="text" id="ytplNewName" readonly placeholder="Yeni liste adı">
+                        <button class="btn" style="width:100%; background:#2ecc71; border-color:#2ecc71; font-weight:bold; color:#000;" onclick="ytplSave()">Seçilenleri Kaydet</button>
+                        <div id="ytplSaveStatus" style="display:none; margin-top:8px; padding:8px; border-radius:8px; font-size:0.8rem; text-align:center;"></div>
+                    </div>
                 </div>
                 <div class="sub-module">
                     <span class="sub-module-title" style="color:#00cec9;">Akıllı Kanal Ara (TV / Radyo / Web Canlı Site)</span>
@@ -491,6 +533,24 @@
         <video id="smartPreviewVideo" playsinline controls></video>
         <div id="smartPreviewIframe"></div>
         <div id="smartPreviewStatus" style="font-size:0.85rem; color:#aaa; margin-top:10px; text-align:center; padding:8px;">Hazır</div>
+    </div>
+</div>
+
+<div id="infoModal" class="tv-modal-backdrop" onclick="if(Date.now()-modalOpenedAt>400) closeInfoModal()">
+    <div class="tv-modal-card info-card" onclick="event.stopPropagation()">
+        <div class="info-head">
+            <img id="infoThumb" alt="" style="display:none;">
+            <div style="min-width:0; flex:1;">
+                <p class="tv-modal-title" id="infoTitle">Bilgi</p>
+                <p class="tv-modal-sub" id="infoSub"></p>
+            </div>
+        </div>
+        <div id="infoBody"></div>
+        <div id="infoDesc"></div>
+        <div id="infoQuality"></div>
+        <div class="btn-group" style="margin-top:16px;">
+            <button class="btn" id="infoCloseBtn" onclick="closeInfoModal()" style="background:#1c1e26;"><i class="material-icons-round" style="margin-right:6px;">close</i> Kapat</button>
+        </div>
     </div>
 </div>
 
@@ -891,6 +951,9 @@
     }
 
     function onYtPlayerStateChange(event) {
+        const ytc = document.getElementById('ytContainer');
+        if (!ytc || ytc.style.display !== 'block') return;
+        if (event.data === YT.PlayerState.PLAYING) { ytc.classList.remove('yt-wait'); window.ytCurrentSource = null; }
         if (event.data === YT.PlayerState.PLAYING) {
             document.getElementById('playIcon').innerText = 'pause';
             document.getElementById('pStatus').innerText = "Cihazda İzleniyor (YT)";
@@ -952,6 +1015,8 @@
         if (bulkNumModal && bulkNumModal.classList.contains('show')) { closeBulkNumModal(); pushDrawerHistoryState(); return; }
         const camModal = document.getElementById('channelActionModal');
         if (camModal && camModal.classList.contains('show')) { closeChannelActionModal(); pushDrawerHistoryState(); return; }
+        const infoModalH = document.getElementById('infoModal');
+        if (infoModalH && infoModalH.classList.contains('show')) { closeInfoModal(); pushDrawerHistoryState(); return; }
         const previewModal = document.getElementById('smartPreviewModal');
         if (previewModal && previewModal.classList.contains('show')) { closeSmartPreview(); pushDrawerHistoryState(); return; }
         const leftOpen = document.getElementById('leftSidebar').classList.contains('open');
@@ -1115,6 +1180,7 @@
             selectElementR.value = favFilterOnly ? '__fav_only__' : currentListContext;
         }
         checkSelectedPreset();
+        try { fillYtplTargets(); } catch (e) {}
     }
     function checkSelectedPreset() {
         const val = document.getElementById('countrySelect').value;
@@ -1316,49 +1382,56 @@
             showOSD("API Anahtarı Yok!", "Ayarlara (1111) girip API anahtarınızı kaydedin");
             return;
         }
+        const loadSession = ++ytplLoadSession;
         const stat = document.getElementById('status'); stat.innerText = "Yükleniyor...";
         curIdx = -1; allChannels = []; sortAndRenderList();
-        let cleanListId = String(listId).replace(/^ytpl_/, '').trim();
-        if (cleanListId.includes('list=')) cleanListId = new URLSearchParams(cleanListId.substring(cleanListId.indexOf('?'))).get('list') || cleanListId;
+        const ids = String(listId).replace(/^ytpl_/, '').split(',').map(x => x.trim()).filter(Boolean).map(x => x.includes('list=') ? (new URLSearchParams(x.substring(x.indexOf('?'))).get('list') || x) : x);
+        const MAX_PAGES = 20;
+        let allNew = [], startIndex = 0, started = false, lastErr = null;
+        const seenUrls = new Set();
         try {
-            const firstPage = await fetchYTPage(cleanListId, key, '', 0);
-            if (firstPage.items.length === 0) throw new Error("Liste boş veya gizli");
-            allChannels = firstPage.items;
-            injectExtraChannels();
-            localStorage.setItem('tv_custom', JSON.stringify(allChannels));
-            sortAndRenderList();
-            stat.innerText = firstPage.nextPageToken ? `Yüklendi (${allChannels.length}, devam ediyor...)` : "Yüklendi!";
-            showOSD("YouTube Listesi Yüklendi", allChannels.length + " video");
-            if (allChannels.length > 0) play(0, 1);
-            let nextPageToken = firstPage.nextPageToken;
-            let fetchCount = 1;
-            let startIndex = firstPage.items.length;
-            let allNewChannels = firstPage.items.slice();
-            const MAX_PAGES = 20;
-            while (nextPageToken && fetchCount < MAX_PAGES) {
-                try {
-                    const nextPage = await fetchYTPage(cleanListId, key, nextPageToken, startIndex);
-                    allNewChannels = allNewChannels.concat(nextPage.items);
-                    startIndex += nextPage.items.length;
-                    nextPageToken = nextPage.nextPageToken;
-                    fetchCount++;
+            for (let li = 0; li < ids.length; li++) {
+                let token = '', pages = 0;
+                do {
+                    let page;
+                    try { page = await fetchYTPage(ids[li], key, token, startIndex); }
+                    catch (e) { lastErr = e; break; }
+                    if (loadSession !== ytplLoadSession) return;
+                    const items = page.items.filter(x => !seenUrls.has(x.url));
+                    items.forEach(x => seenUrls.add(x.url));
+                    startIndex += items.length; pages++;
+                    token = page.nextPageToken || '';
+                    if (!items.length && !started && !token) break;
+                    allNew = allNew.concat(items);
                     const playingId = (curIdx >= 0 && allChannels[curIdx]) ? allChannels[curIdx].id : null;
-                    allChannels = allNewChannels.slice();
+                    allChannels = allNew.slice();
                     injectExtraChannels();
                     if (playingId) curIdx = allChannels.findIndex(c => c.id === playingId);
-                    sortAndRenderList(true);
-                    stat.innerText = `Yüklendi (${allChannels.length} video, devam ediyor...)`;
-                } catch (e) { break; }
-                if (!nextPageToken) break;
+                    if (!started && allChannels.length) {
+                        started = true;
+                        localStorage.setItem('tv_custom', JSON.stringify(allChannels));
+                        sortAndRenderList();
+                        stat.innerText = token ? `Yüklendi (${allChannels.length}, devam ediyor...)` : "Yüklendi!";
+                        showOSD("YouTube Listesi Yüklendi", allChannels.length + " video");
+                        play(0, 1);
+                    } else if (started) {
+                        sortAndRenderList(true);
+                        stat.innerText = `Yüklendi (${allChannels.length} video, devam ediyor...)`;
+                    }
+                } while (token && pages < MAX_PAGES);
             }
+            if (loadSession !== ytplLoadSession) return;
+            if (!started) throw (lastErr || new Error("Liste boş veya gizli"));
             stat.innerText = "Yüklendi! (" + allChannels.length + " video)";
-        } catch(e) {
+        } catch (e) {
+            if (loadSession !== ytplLoadSession) return;
             stat.innerText = "Hata: " + e.message;
             showOSD("YT Listesi Açılamadı", String(e.message || e).slice(0, 95));
         }
     }
 
     function changeCountry(v) {
+        ytplLoadSession++;
         const val = (typeof v === 'string') ? v : document.getElementById('countrySelect').value;
         currentListContext = val;
         localStorage.setItem('tv_last_context', currentListContext);
@@ -2367,38 +2440,173 @@ async function resetQuarantine() {
         }, waitTime);
     }
 
-    /* ===== YOUTUBE & STREAM ENGINE (index.html-8.txt MANTIĞI) ===== */
-    let PIPED = ['https://pipedapi.kavin.rocks','https://pipedapi.adminforge.de','https://api.piped.private.coffee','https://pipedapi.r4fo.com'];
-    let INVID = ['https://inv.nadeko.net','https://yewtu.be','https://invidious.nerdvpn.de'];
+    /* ===== YOUTUBE & STREAM ENGINE: çok kaynaklı, nazik (rate-limit dostu) reklamsız akış çözücü =====
+       Kaynaklar: Piped API · Invidious API · (ikisi de CORS/bölge engeline karşı kendi Cloudflare worker'ınız üzerinden) · Invidious /latest_version yönlendirmesi.
+       Aynı anda en fazla 3 istek, her biri farklı sunucuya; ilk çalışan kaynak bulununca kalanlar hiç denenmez.
+       Sunucu sağlığı hatırlanır: hata veren sunucu bir süre dinlendirilir, çalışanlar öne alınır. */
+    let PIPED = ['https://pipedapi.kavin.rocks','https://pipedapi.adminforge.de','https://api.piped.private.coffee','https://pipedapi.r4fo.com','https://pipedapi.leptons.xyz','https://pipedapi.nosebs.ru','https://piped-api.privacy.com.de','https://pipedapi.darkness.services','https://pipedapi.orangenet.cc','https://pipedapi.drgns.space','https://pipedapi.owo.si','https://pipedapi.ducks.party'];
+    let INVID = ['https://inv.nadeko.net','https://yewtu.be','https://invidious.nerdvpn.de','https://invidious.privacyredirect.com','https://invidious.f5.si','https://iv.melmac.space','https://invidious.protokolla.fi','https://yt.artemislena.eu','https://invidious.jing.rocks','https://inv.tux.pizza'];
+    const YT_HEALTH_KEY = 'tv_yt_health';
+    let ytHealth = {};
+    try { ytHealth = JSON.parse(localStorage.getItem(YT_HEALTH_KEY) || '{}') || {}; } catch (e) { ytHealth = {}; }
+    const ytMetaCache = {};
+    const ytCache = new Map();
+    let ytInstLoading = false, ytInstLoaded = false;
+    window.ytCurrentSource = null;
+
+    function ytHealthSave() { try { localStorage.setItem(YT_HEALTH_KEY, JSON.stringify(ytHealth)); } catch (e) {} }
+    function ytHostOf(u) { try { return new URL(u).host; } catch (e) { return String(u); } }
+    function ytMarkOk(h) { if (!h) return; const x = ytHealth[h] || (ytHealth[h] = { f: 0, o: 0, t: 0 }); x.o++; x.f = 0; x.t = 0; ytHealthSave(); }
+    function ytMarkFail(h) { if (!h) return; const x = ytHealth[h] || (ytHealth[h] = { f: 0, o: 0, t: 0 }); x.f++; x.t = Date.now(); ytHealthSave(); }
+    function ytCooling(h) { const x = ytHealth[h]; if (!x || !x.f) return false; return Date.now() - x.t < Math.min(x.f, 5) * 4 * 60e3; }
+    function ytSortHosts(list) {
+        const sc = a => { const h = ytHostOf(a); const x = ytHealth[h] || { f: 0, o: 0 }; return (ytCooling(h) ? 1000 : 0) + x.f * 10 - Math.min(x.o, 20) + Math.random() * 0.9; };
+        return list.map(a => [a, sc(a)]).sort((p, q) => p[1] - q[1]).map(p => p[0]);
+    }
+    function ytCacheGet(id) { const e = ytCache.get(id); if (e && Date.now() - e.t < 20 * 60e3) return e.c; ytCache.delete(id); return null; }
+    function ytCacheSet(id, c) { ytCache.set(id, { c, t: Date.now() }); if (ytCache.size > 40) ytCache.delete(ytCache.keys().next().value); }
+    function ytCacheDel(id) { ytCache.delete(id); }
+
     async function jf(u) { const r = await fetchTO(u, 6000); if (!r.ok) throw 0; return await r.json(); }
     async function fastJsonFetch(u, ms = 4500) { const r = await fetchTO(u, ms); if (!r.ok) throw 0; return await r.json(); }
-    async function loadInstances() {
-        try { const c = JSON.parse(localStorage.getItem('tv_yt_inst') || 'null'); if (c && Date.now() - c.t < 6 * 3600e3) { PIPED = c.p; INVID = c.i; return; } } catch (e) {}
+    async function ytFetchJson(u, signal, ms) {
+        const c = new AbortController();
+        const onAbort = () => c.abort();
+        if (signal) { if (signal.aborted) throw new Error('abort'); signal.addEventListener('abort', onAbort); }
+        const t = setTimeout(() => c.abort(), ms || 5000);
         try {
-            const [p, i] = await Promise.all([
-                fetchTO('https://piped-instances.kavin.rocks/', 5000).then(r => r.json()).catch(() => []),
-                fetchTO('https://api.invidious.io/instances.json?sort_by=health', 5000).then(r => r.json()).catch(() => [])
-            ]);
-            const np = (p || []).map(x => x.api_url).filter(Boolean).slice(0, 8);
-            const ni = (i || []).filter(x => x[1] && x[1].api && x[1].type === 'https').map(x => x[1].uri).slice(0, 8);
-            if (np.length || ni.length) { PIPED = [...new Set([...np, ...PIPED])].slice(0, 10); INVID = [...new Set([...ni, ...INVID])].slice(0, 10); localStorage.setItem('tv_yt_inst', JSON.stringify({ t: Date.now(), p: PIPED, i: INVID })); }
-        } catch (e) {}
+            const r = await fetch(u, { signal: c.signal });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return await r.json();
+        } finally { clearTimeout(t); if (signal) signal.removeEventListener('abort', onAbort); }
     }
+
+    // Güncel örnek listesini arka planda yenile (ilk oynatmayı BEKLETMEZ; hazır liste hemen kullanılır)
+    function loadInstances() {
+        if (ytInstLoaded) return;
+        try {
+            const c = JSON.parse(localStorage.getItem('tv_yt_inst') || 'null');
+            if (c && Array.isArray(c.p) && Array.isArray(c.i)) {
+                PIPED = [...new Set([...c.p, ...PIPED])].slice(0, 16);
+                INVID = [...new Set([...c.i, ...INVID])].slice(0, 14);
+                if (Date.now() - c.t < 6 * 3600e3) { ytInstLoaded = true; return; }
+            }
+        } catch (e) {}
+        if (ytInstLoading) return;
+        ytInstLoading = true;
+        (async () => {
+            try {
+                const [p, i] = await Promise.all([
+                    fetchTO('https://piped-instances.kavin.rocks/', 5000).then(r => r.json()).catch(() => []),
+                    fetchTO('https://api.invidious.io/instances.json?sort_by=health', 5000).then(r => r.json()).catch(() => [])
+                ]);
+                const np = (p || []).map(x => x.api_url).filter(Boolean).slice(0, 8);
+                const ni = (i || []).filter(x => x[1] && x[1].api && x[1].type === 'https' && x[1].cors !== false).map(x => x[1].uri).slice(0, 8);
+                if (np.length || ni.length) {
+                    PIPED = [...new Set([...np, ...PIPED])].slice(0, 16);
+                    INVID = [...new Set([...ni, ...INVID])].slice(0, 14);
+                    localStorage.setItem('tv_yt_inst', JSON.stringify({ t: Date.now(), p: PIPED, i: INVID }));
+                }
+            } catch (e) {}
+            ytInstLoaded = true; ytInstLoading = false;
+        })();
+    }
+
+    function ytStrip(s) {
+        return String(s || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    }
+    function ytAbs(a, u) { return /^https?:/i.test(u) ? u : a + u; }
+    function ytRememberMeta(id, meta) { ytMetaCache[id] = Object.assign(ytMetaCache[id] || {}, meta); }
+
+    function ytPipedTask(a, id, viaProxy) {
+        const hostName = ytHostOf(a), host = hostName + (viaProxy ? '~p' : '');
+        return { host, run: async (sig) => {
+            const u = `${a}/streams/${id}`;
+            const d = await ytFetchJson(viaProxy ? MY_CLOUD_PROXY + encodeURIComponent(u) : u, sig, viaProxy ? 7000 : 5000);
+            if (!d || d.error) throw new Error('piped');
+            const meta = { title: d.title, channel: d.uploader, date: d.uploadDate || '', views: d.views, likes: d.likes, duration: d.duration, live: !!d.livestream, desc: ytStrip(d.description), thumb: d.thumbnailUrl };
+            ytRememberMeta(id, meta);
+            let c = null;
+            if (d.livestream && d.hls) c = { url: d.hls, mime: 'application/x-mpegurl', type: 'hls' };
+            else {
+                const v = (d.videoStreams || []).filter(x => !x.videoOnly && /mp4/.test(x.mimeType || '') && x.url).sort((x, y) => (y.height || 0) - (x.height || 0))[0];
+                if (v) c = { url: v.url, mime: 'video/mp4', type: 'mp4', height: v.height || 0 };
+                else if (d.hls) c = { url: d.hls, mime: 'application/x-mpegurl', type: 'hls' };
+            }
+            if (!c) throw new Error('piped: akış yok');
+            c.src = 'Piped' + (viaProxy ? ' (worker)' : ''); c.host = host; c.hostName = hostName; c.meta = meta;
+            return c;
+        } };
+    }
+    function ytInvTask(a, id, viaProxy) {
+        const hostName = ytHostOf(a), host = hostName + (viaProxy ? '~p' : '');
+        return { host, run: async (sig) => {
+            const u = `${a}/api/v1/videos/${id}?local=true`;
+            const d = await ytFetchJson(viaProxy ? MY_CLOUD_PROXY + encodeURIComponent(u) : u, sig, viaProxy ? 7000 : 5000);
+            if (!d || d.error) throw new Error('invidious');
+            const meta = { title: d.title, channel: d.author, date: d.published ? new Date(d.published * 1000).toISOString() : '', views: d.viewCount, likes: d.likeCount, duration: d.lengthSeconds, live: !!d.liveNow, desc: d.description || '', thumb: '' };
+            ytRememberMeta(id, meta);
+            let c = null;
+            if (d.liveNow && d.hlsUrl) c = { url: ytAbs(a, d.hlsUrl), mime: 'application/x-mpegurl', type: 'hls' };
+            else {
+                const v = (d.formatStreams || []).filter(x => /mp4/.test(x.type || '') && x.url).sort((x, y) => (parseInt(y.resolution || y.qualityLabel || '0', 10) || 0) - (parseInt(x.resolution || x.qualityLabel || '0', 10) || 0))[0];
+                if (v) c = { url: ytAbs(a, v.url), mime: 'video/mp4', type: 'mp4', height: parseInt(v.resolution || v.qualityLabel || '0', 10) || 0 };
+            }
+            if (!c) throw new Error('invidious: akış yok');
+            c.src = 'Invidious' + (viaProxy ? ' (worker)' : ''); c.host = host; c.hostName = hostName; c.meta = meta;
+            return c;
+        } };
+    }
+    // İstek atmadan doğrudan <video src> ile denenen son çare (CORS gerektirmez)
+    function ytInvRedirectTask(a, id) {
+        const hostName = ytHostOf(a), host = hostName + '~r';
+        return { host, instant: true, run: async () => ({ url: `${a}/latest_version?id=${id}&itag=18&local=true`, mime: 'video/mp4', type: 'mp4', src: 'Invidious (yönlendirme)', host, hostName, unverified: true }) };
+    }
+
+    function createYtResolver(id) {
+        loadInstances();
+        const P = ytSortHosts(PIPED), I = ytSortHosts(INVID);
+        const tasks = [];
+        const n = Math.max(P.length, I.length);
+        for (let i = 0; i < n; i++) { if (P[i]) tasks.push(ytPipedTask(P[i], id, false)); if (I[i]) tasks.push(ytInvTask(I[i], id, false)); }
+        const extra = [];
+        P.slice(0, 2).forEach(a => extra.push(ytPipedTask(a, id, true)));
+        I.slice(0, 2).forEach(a => extra.push(ytInvTask(a, id, true)));
+        I.slice(0, 2).forEach(a => extra.push(ytInvRedirectTask(a, id)));
+        tasks.splice(Math.min(6, tasks.length), 0, ...extra);
+        if (tasks.length > 28) tasks.length = 28;
+        let ti = 0, running = 0, stopped = false;
+        const found = [], waiters = [], ctrl = new AbortController();
+        function settle() {
+            while (waiters.length && found.length) waiters.shift()(found.shift());
+            if (!found.length && running === 0 && ti >= tasks.length) while (waiters.length) waiters.shift()(null);
+        }
+        function launch() {
+            if (stopped) return;
+            while (waiters.length && !found.length && running < 3 && ti < tasks.length) {
+                const t = tasks[ti++]; running++;
+                Promise.resolve().then(() => t.run(ctrl.signal)).then(
+                    c => { if (c) found.push(c); },
+                    () => { if (!ctrl.signal.aborted && !t.instant) ytMarkFail(t.host); }
+                ).then(() => { running--; settle(); if (!stopped) setTimeout(launch, 120 + Math.random() * 220); });
+            }
+            settle();
+        }
+        return {
+            next() { if (stopped) return Promise.resolve(null); return new Promise(res => { waiters.push(res); launch(); }); },
+            stop() { stopped = true; try { ctrl.abort(); } catch (e) {} while (waiters.length) waiters.shift()(null); }
+        };
+    }
+
     async function getDirectYtMp4(id) {
-        await loadInstances();
-        const jobs = [
-            ...PIPED.map(a => jf(`${a}/streams/${id}`).then(d => {
-                if (d.livestream && d.hls) return { url: d.hls, mime: 'application/x-mpegurl', type: 'hls' };
-                const v = (d.videoStreams || []).filter(x => !x.videoOnly && (x.mimeType || '').includes('mp4')).sort((a, b) => (b.height || 0) - (a.height || 0))[0];
-                if (!v || !v.url) throw 0; return { url: v.url, mime: 'video/mp4', type: 'mp4' };
-            })),
-            ...INVID.map(a => jf(`${a}/api/v1/videos/${id}?local=true`).then(d => {
-                if (d.liveNow && d.hlsUrl) return { url: d.hlsUrl.startsWith('http') ? d.hlsUrl : a + d.hlsUrl, mime: 'application/x-mpegurl', type: 'hls' };
-                const v = (d.formatStreams || []).find(x => (x.type || '').includes('mp4'));
-                if (!v || !v.url) throw 0; return { url: v.url.startsWith('http') ? v.url : a + v.url, mime: 'video/mp4', type: 'mp4' };
-            }))
-        ];
-        try { return await Promise.any(jobs); } catch (e) { return null; }
+        const cached = ytCacheGet(id);
+        if (cached) return cached;
+        const r = createYtResolver(id);
+        let cand = null;
+        try { cand = await r.next(); } catch (e) {}
+        r.stop();
+        if (cand && !cand.unverified) ytCacheSet(id, cand);
+        return cand;
     }
     async function getFastAdFreeYt(id) { return await getDirectYtMp4(id); }
 
@@ -2464,6 +2672,7 @@ async function resetQuarantine() {
     async function play(idx, dir = 0) {
         if (idx < 0 || idx >= allChannels.length) return;
         currentPlaySession++; let mySession = currentPlaySession; curIdx = idx; let ch = allChannels[curIdx];
+        ytRetry = {}; window.ytCurrentSource = null;
         try { localStorage.setItem('tv_last_channel', ch.url); } catch(e) {}
         autoPlayDirection = dir || 1;
         if (dir === 0 && ch.broken) {
@@ -2485,45 +2694,45 @@ async function resetQuarantine() {
     }
 
     let ytIframeOnlyId = null;
-    async function playYtAdFree(ytId, video, ytContainer, token) {
-        if (ytIframeOnlyId === ytId) return false;
-        const pStatus = document.getElementById('pStatus');
-        const spinner = document.getElementById('bufSpinner');
-        ytContainer.style.display = 'none';
-        try { if (isYtApiReady && ytPlayer && typeof ytPlayer.pauseVideo === 'function') ytPlayer.pauseVideo(); } catch (e) {}
-        video.style.display = 'block';
-        video.onended = null;
-        video.pause(); video.removeAttribute('src'); try { video.load(); } catch (e) {}
-        pStatus.innerText = "YouTube reklamsız akış aranıyor...";
-        spinner.style.display = 'block';
-        let direct = null;
-        try { direct = await getDirectYtMp4(ytId); } catch (e) {}
-        if (token !== currentPlaySession) return true;
-        if (!direct || !direct.url) { spinner.style.display = 'none'; return false; }
-        return await new Promise((resolve) => {
-            let done = false, timer = null;
+    let ytActiveResolver = null;
+    let ytRetry = {};
+    function ytAttemptCandidate(direct, ytId, video, spinner, pStatus, token) {
+        return new Promise((resolve) => {
+            let done = false, started = false, timer = null, localHls = null;
             const cleanup = () => {
-                if (hls) { try { hls.destroy(); } catch (e) {} hls = null; }
+                clearTimeout(timer);
+                video.removeEventListener('playing', onPlaying);
                 video.onerror = null; video.onended = null;
+                if (localHls) { try { localHls.destroy(); } catch (e) {} if (hls === localHls) hls = null; localHls = null; }
                 video.pause(); video.removeAttribute('src'); try { video.load(); } catch (e) {}
             };
-            const finish = (ok) => { if (done) return; done = true; clearTimeout(timer); resolve(ok); };
-            const onFail = () => {
+            const finish = (ok) => { if (done) return; done = true; resolve(ok); };
+            const failEarly = () => {
+                if (done) return;
                 if (token !== currentPlaySession) { finish(true); return; }
-                if (!done) { cleanup(); spinner.style.display = 'none'; finish(false); }
-                else { ytIframeOnlyId = ytId; playLocally('https://www.youtube.com/watch?v=' + ytId, token); }
+                cleanup(); finish(false);
             };
-            const onStart = () => {
+            const midFail = () => {
+                if (token !== currentPlaySession) return;
+                ytCacheDel(ytId); ytMarkFail(direct.host);
+                ytRetry[ytId] = (ytRetry[ytId] || 0) + 1;
+                if (ytRetry[ytId] > 1) ytIframeOnlyId = ytId;
+                playLocally('https://www.youtube.com/watch?v=' + ytId, token);
+            };
+            function onPlaying() {
                 if (token !== currentPlaySession) { finish(true); return; }
+                started = true; clearTimeout(timer);
                 spinner.style.display = 'none';
                 pStatus.innerText = "Cihazda İzleniyor (YT · Reklamsız)";
+                window.ytCurrentSource = { id: ytId, src: direct.src, hostName: direct.hostName, type: direct.type, height: direct.height || 0 };
                 if (allChannels[curIdx]) markChannelHealthy(allChannels[curIdx]);
+                video.onerror = midFail;
                 video.onended = () => { if (token === currentPlaySession && direct.type !== 'hls') nextCh(); };
                 finish(true);
-            };
-            timer = setTimeout(() => { if (!done) { cleanup(); spinner.style.display = 'none'; finish(false); } }, 10000);
-            video.onerror = onFail;
-            video.addEventListener('playing', onStart, { once: true });
+            }
+            timer = setTimeout(failEarly, direct.unverified ? 7000 : 10000);
+            video.onerror = () => { if (started) midFail(); else failEarly(); };
+            video.addEventListener('playing', onPlaying);
             const startPlay = () => {
                 const pr = video.play();
                 if (pr && pr.catch) pr.catch((e) => {
@@ -2536,16 +2745,51 @@ async function resetQuarantine() {
             };
             video.removeAttribute('crossorigin');
             if (direct.type === 'hls' && Hls.isSupported()) {
-                hls = createHlsForStream(direct.url, false);
-                hls.on(Hls.Events.ERROR, (ev, d) => { if (d && d.fatal) onFail(); });
-                hls.on(Hls.Events.MANIFEST_PARSED, startPlay);
-                hls.loadSource(direct.url);
-                hls.attachMedia(video);
+                localHls = hls = createHlsForStream(direct.url, false);
+                localHls.on(Hls.Events.ERROR, (ev, d) => { if (d && d.fatal) { if (started) midFail(); else failEarly(); } });
+                localHls.on(Hls.Events.MANIFEST_PARSED, startPlay);
+                localHls.loadSource(direct.url);
+                localHls.attachMedia(video);
             } else {
                 video.src = direct.url;
                 startPlay();
             }
         });
+    }
+
+    async function playYtAdFree(ytId, video, ytContainer, token) {
+        if (ytIframeOnlyId === ytId) return false;
+        if (ytActiveResolver) { ytActiveResolver.stop(); ytActiveResolver = null; }
+        const pStatus = document.getElementById('pStatus');
+        const spinner = document.getElementById('bufSpinner');
+        ytContainer.style.display = 'none'; ytContainer.classList.remove('yt-wait');
+        try { if (isYtApiReady && ytPlayer && typeof ytPlayer.stopVideo === 'function') ytPlayer.stopVideo(); } catch (e) {}
+        video.style.display = 'block';
+        video.onended = null;
+        video.pause(); video.removeAttribute('src'); try { video.load(); } catch (e) {}
+        pStatus.innerText = "YouTube reklamsız akış aranıyor...";
+        spinner.style.display = 'block';
+        const resolver = createYtResolver(ytId);
+        ytActiveResolver = resolver;
+        const finishUp = () => { try { resolver.stop(); } catch (e) {} if (ytActiveResolver === resolver) ytActiveResolver = null; };
+        let tried = 0;
+        try {
+            let cand = ytCacheGet(ytId);
+            if (!cand) cand = await resolver.next();
+            while (cand && tried < 4) {
+                if (token !== currentPlaySession) { finishUp(); return true; }
+                tried++;
+                pStatus.innerText = tried === 1 ? "YouTube reklamsız akış deneniyor..." : `Başka kaynak deneniyor (${tried})...`;
+                const ok = await ytAttemptCandidate(cand, ytId, video, spinner, pStatus, token);
+                if (token !== currentPlaySession) { finishUp(); return true; }
+                if (ok) { ytMarkOk(cand.host); if (!cand.unverified) ytCacheSet(ytId, cand); finishUp(); return true; }
+                ytCacheDel(ytId); ytMarkFail(cand.host);
+                cand = await resolver.next();
+            }
+        } catch (e) {}
+        finishUp();
+        if (token === currentPlaySession) spinner.style.display = 'none';
+        return token !== currentPlaySession;
     }
 
     async function playLocally(url, sessionToken, isRetryAfterHeal = false) {
@@ -2585,7 +2829,9 @@ async function resetQuarantine() {
             video.style.display = 'none';
             video.pause();
             video.removeAttribute('src');
+            ytContainer.classList.add('yt-wait');
             ytContainer.style.display = 'block';
+            setTimeout(() => ytContainer.classList.remove('yt-wait'), 9000);
             document.getElementById('bufSpinner').style.display = 'none';
             if (isYtApiReady && ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
                 ytPlayer.loadVideoById(ytId);
@@ -2612,7 +2858,9 @@ async function resetQuarantine() {
 
         video.onended = null;
         ytContainer.style.display = 'none';
-        if (isYtApiReady && ytPlayer && typeof ytPlayer.pauseVideo === 'function') { try { ytPlayer.pauseVideo(); } catch (e) {} }
+        if (isYtApiReady && ytPlayer && typeof ytPlayer.stopVideo === 'function') { try { ytPlayer.stopVideo(); } catch (e) {} }
+        ytContainer.classList.remove('yt-wait');
+        window.ytCurrentSource = null;
         video.style.display = 'block';
         if (url.includes('#audio') || /\.(mp3|aac|ogg)(\?|$)/i.test(url)) {
             playAudioDirect(video, url, sessionToken);
@@ -3482,6 +3730,333 @@ async function resetQuarantine() {
         }
     }
 
+    /* ===== BİLGİ PANELİ (info butonu) ===== */
+    let infoSeq = 0;
+    const fmtNum = n => { const v = Number(n); return (n === undefined || n === null || n === '' || !isFinite(v) || v < 0) ? '' : v.toLocaleString('tr-TR'); };
+    function fmtDateTr(d) {
+        if (!d) return '';
+        const t = new Date(d); if (isNaN(t.getTime())) return String(d);
+        return t.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+    }
+    function infoRow(label, val) {
+        if (val === undefined || val === null || val === '') return '';
+        return `<div class="info-row"><b>${esc(label)}</b><span>${esc(val)}</span></div>`;
+    }
+    function infoChannelType(url) {
+        const u = String(url || '');
+        if (u.includes('#audio') || /\.(mp3|aac|ogg)(\?|$)/i.test(u)) return 'Radyo';
+        if (u.includes('#web_live') || u.includes('#web_src=')) return 'Web Canlı Yayın';
+        if (/\.m3u8(\?|$|#)/i.test(u)) return 'IPTV (HLS)';
+        return 'Canlı / Doğrudan Akış';
+    }
+    function infoOpen(html, thumb, title, sub) {
+        document.getElementById('infoTitle').innerText = title || 'Bilgi';
+        document.getElementById('infoSub').innerText = sub || '';
+        const th = document.getElementById('infoThumb');
+        if (thumb) { th.src = thumb; th.style.display = 'block'; } else { th.removeAttribute('src'); th.style.display = 'none'; }
+        document.getElementById('infoBody').innerHTML = html;
+    }
+    async function openInfoModal() {
+        const ch = allChannels[curIdx];
+        if (curIdx < 0 || !ch) { showOSD("Önce bir kanal seçin"); return; }
+        const my = ++infoSeq;
+        modalOpenedAt = Date.now();
+        hideControlsNow();
+        const modal = document.getElementById('infoModal');
+        document.getElementById('infoQuality').innerHTML = '';
+        document.getElementById('infoDesc').innerHTML = '';
+        infoOpen('<div class="info-row"><span style="text-align:left">Bilgiler alınıyor...</span></div>', ch.logo, ch.name, '');
+        modal.classList.add('show');
+        setTimeout(() => { const b = document.getElementById('infoCloseBtn'); if (b) try { b.focus({ preventScroll: true }); } catch (e) { b.focus(); } }, 40);
+        const ytId = extractYTId(ch.url);
+        try {
+            if (ytId) await renderYtInfo(ch, ytId, my); else renderTvInfo(ch);
+        } catch (e) {
+            if (my === infoSeq) infoOpen(infoRow('Kanal', ch.name) + infoRow('Hata', 'Bilgi alınamadı'), ch.logo, ch.name, '');
+        }
+    }
+    function closeInfoModal() {
+        infoSeq++;
+        const modal = document.getElementById('infoModal');
+        if (modal) modal.classList.remove('show');
+        const pw = document.getElementById('playerWrapper'); if (pw) { try { pw.focus({ preventScroll: true }); } catch (e) { pw.focus(); } }
+    }
+    async function renderYtInfo(ch, ytId, my) {
+        let info = null;
+        const key = getActiveApiKey();
+        if (key) {
+            try {
+                const r = await fetchTO(`https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails,liveStreamingDetails&id=${encodeURIComponent(ytId)}&key=${encodeURIComponent(key)}`, 6000);
+                const d = await r.json(); const it = d && d.items && d.items[0];
+                if (it) {
+                    const sn = it.snippet || {}, st = it.statistics || {}, lv = it.liveStreamingDetails || {};
+                    info = {
+                        title: sn.title, channel: sn.channelTitle, date: lv.actualStartTime || sn.publishedAt,
+                        views: st.viewCount, likes: st.likeCount, comments: st.commentCount,
+                        duration: parseIso8601Duration((it.contentDetails || {}).duration), desc: sn.description,
+                        live: sn.liveBroadcastContent === 'live', upcoming: sn.liveBroadcastContent === 'upcoming',
+                        viewers: lv.concurrentViewers, thumb: (sn.thumbnails && (sn.thumbnails.medium || sn.thumbnails.default) || {}).url
+                    };
+                }
+            } catch (e) {}
+        }
+        if (!info && ytMetaCache[ytId]) info = Object.assign({}, ytMetaCache[ytId]);
+        if (!info) {
+            try {
+                const r = await fetchTO(`https://www.youtube.com/oembed?url=${encodeURIComponent('https://www.youtube.com/watch?v=' + ytId)}&format=json`, 5000);
+                const d = await r.json();
+                info = { title: d.title, channel: d.author_name, thumb: d.thumbnail_url };
+            } catch (e) {}
+        }
+        if (my !== infoSeq) return;
+        info = info || {};
+        const src = window.ytCurrentSource && window.ytCurrentSource.id === ytId ? window.ytCurrentSource : null;
+        const adTxt = src ? `Reklamsız · ${src.src}${src.hostName ? ' (' + src.hostName + ')' : ''}${src.height ? ' · ' + src.height + 'p' : ''}` : 'YouTube oynatıcısı (reklam çıkabilir)';
+        const rows =
+            infoRow('Kanal', info.channel) +
+            infoRow(info.live ? 'Yayın başlangıcı' : 'Yayın tarihi', fmtDateTr(info.date)) +
+            (info.live ? infoRow('Durum', '🔴 Canlı yayın') : (info.upcoming ? infoRow('Durum', 'Yakında başlayacak') : '')) +
+            infoRow('İzlenme', fmtNum(info.views)) +
+            infoRow('Beğeni', fmtNum(info.likes)) +
+            infoRow('Yorum', fmtNum(info.comments)) +
+            infoRow('Anlık izleyici', fmtNum(info.viewers)) +
+            (info.duration && !info.live ? infoRow('Süre', formatMediaTime(Number(info.duration))) : '') +
+            infoRow('Listedeki yeri', `${curIdx + 1} / ${allChannels.length} · ${getActiveListDisplayName()}`) +
+            infoRow('Oynatma', adTxt) +
+            infoRow('Bağlantı', 'youtu.be/' + ytId);
+        infoOpen(rows, info.thumb || ch.logo || `https://i.ytimg.com/vi/${ytId}/mqdefault.jpg`, info.title || ch.name, info.channel || 'YouTube');
+        const d = String(info.desc || '').trim();
+        document.getElementById('infoDesc').innerHTML = d ? `<div class="info-desc">${esc(d.length > 600 ? d.slice(0, 600) + '…' : d)}</div>` : '';
+        renderQualityButtons();
+        if (!info.title && !info.channel) document.getElementById('infoBody').insertAdjacentHTML('afterbegin', infoRow('Not', 'Ayrıntılar alınamadı (internet / API anahtarı)'));
+    }
+    function renderTvInfo(ch) {
+        const vid = document.getElementById('localPlayer');
+        let host = ''; try { host = new URL(String(ch.url).split('#')[0]).host; } catch (e) {}
+        const status = document.getElementById('pStatus').innerText;
+        const res = (vid && vid.videoWidth) ? `${vid.videoWidth}×${vid.videoHeight}` : '';
+        const type = infoChannelType(ch.url);
+        const rows =
+            infoRow('Kanal adı', ch.name) +
+            infoRow('Tür', type) +
+            infoRow('Kanal no', `${curIdx + 1} / ${allChannels.length}`) +
+            infoRow('Liste', getActiveListDisplayName()) +
+            infoRow('Yayın sunucusu', host) +
+            infoRow('Durum', status) +
+            infoRow('Çözünürlük', type === 'Radyo' ? '' : res) +
+            infoRow('Favori', ch.isFavorite ? '⭐ Evet' : 'Hayır') +
+            (ch.broken ? infoRow('Not', 'Bu kanal karantinada işaretli') : '');
+        infoOpen(rows, ch.logo, ch.name, type);
+        renderQualityButtons();
+    }
+    function renderQualityButtons() {
+        const box = document.getElementById('infoQuality');
+        if (!box) return;
+        const levels = (typeof hls !== 'undefined' && hls && Array.isArray(hls.levels)) ? hls.levels : [];
+        if (levels.length < 2) { box.innerHTML = ''; return; }
+        const cur = hls.autoLevelEnabled ? -1 : hls.currentLevel;
+        const label = (l) => `${l.height ? l.height + 'p' : 'Seviye'}${l.bitrate ? ' · ' + (l.bitrate >= 1e6 ? (l.bitrate / 1e6).toFixed(1) + ' Mbps' : Math.round(l.bitrate / 1000) + ' kbps') : ''}`;
+        let h = '<div class="info-q-title">Yayın akış seçenekleri</div><div class="info-q-btns">';
+        h += `<button type="button" class="tv-modal-btn info-q-btn ${cur === -1 ? 'on' : ''}" onclick="setInfoQuality(-1)">Otomatik</button>`;
+        levels.map((l, i) => ({ l, i })).sort((a, b) => (b.l.height || 0) - (a.l.height || 0) || (b.l.bitrate || 0) - (a.l.bitrate || 0)).forEach(o => {
+            h += `<button type="button" class="tv-modal-btn info-q-btn ${cur === o.i ? 'on' : ''}" onclick="setInfoQuality(${o.i})">${esc(label(o.l))}</button>`;
+        });
+        box.innerHTML = h + '</div>';
+    }
+    function setInfoQuality(i) {
+        try { if (hls) { hls.currentLevel = i; } } catch (e) {}
+        showOSD(i === -1 ? 'Kalite: Otomatik' : 'Kalite sabitlendi', i === -1 ? '' : (hls && hls.levels && hls.levels[i] && hls.levels[i].height ? hls.levels[i].height + 'p' : ''));
+        renderQualityButtons();
+        setTimeout(() => { const b = document.querySelector('#infoQuality .info-q-btn.on'); if (b) try { b.focus({ preventScroll: true }); } catch (e) {} }, 30);
+    }
+
+    /* ===== YOUTUBE OYNATMA LİSTESİ ARA & KAYDET ===== */
+    let ytplResults = [], ytplSel = new Set(), ytplLoadSession = 0;
+
+    async function ytplSearchApi(q, key) {
+        const r = await fetchTO(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=playlist&q=${encodeURIComponent(q)}&maxResults=25&key=${encodeURIComponent(key)}`, 9000);
+        const d = await r.json();
+        if (d.error) throw new Error(d.error.message || 'API hatası');
+        const items = (d.items || []).filter(x => x.id && x.id.playlistId).map(x => ({
+            id: x.id.playlistId, title: x.snippet.title, channel: x.snippet.channelTitle,
+            thumb: (x.snippet.thumbnails && (x.snippet.thumbnails.medium || x.snippet.thumbnails.default) || {}).url || '', count: null
+        }));
+        if (items.length) {
+            try {
+                const r2 = await fetchTO(`https://www.googleapis.com/youtube/v3/playlists?part=contentDetails&id=${items.map(i => i.id).join(',')}&key=${encodeURIComponent(key)}`, 7000);
+                const d2 = await r2.json();
+                (d2.items || []).forEach(p => { const it = items.find(i => i.id === p.id); if (it && p.contentDetails) it.count = p.contentDetails.itemCount; });
+            } catch (e) {}
+        }
+        return items;
+    }
+    // Anahtarsız yedek: Piped / Invidious arama (en fazla 2 eşzamanlı istek)
+    async function ytplSearchFree(q) {
+        loadInstances();
+        const P = ytSortHosts(PIPED).slice(0, 5), I = ytSortHosts(INVID).slice(0, 5);
+        const fns = [];
+        for (let i = 0; i < 5; i++) {
+            if (P[i]) fns.push({ host: ytHostOf(P[i]), run: async () => {
+                const d = await ytFetchJson(`${P[i]}/search?q=${encodeURIComponent(q)}&filter=playlists`, null, 6000);
+                const out = (d.items || []).map(x => {
+                    const m = String(x.url || '').match(/[?&]list=([\w-]+)/);
+                    return m ? { id: m[1], title: x.name, channel: x.uploaderName, thumb: x.thumbnail || '', count: x.videos >= 0 ? x.videos : null } : null;
+                }).filter(Boolean);
+                if (!out.length) throw new Error('boş');
+                return out;
+            } });
+            if (I[i]) fns.push({ host: ytHostOf(I[i]), run: async () => {
+                const d = await ytFetchJson(`${I[i]}/api/v1/search?q=${encodeURIComponent(q)}&type=playlist`, null, 6000);
+                const out = (Array.isArray(d) ? d : []).filter(x => x.type === 'playlist' && x.playlistId).map(x => ({
+                    id: x.playlistId, title: x.title, channel: x.author, count: x.videoCount, thumb: (x.playlistThumbnail || (x.videos && x.videos[0] && x.videos[0].videoThumbnails && x.videos[0].videoThumbnails[0] && x.videos[0].videoThumbnails[0].url)) || ''
+                }));
+                if (!out.length) throw new Error('boş');
+                return out;
+            } });
+        }
+        let idx = 0;
+        return await new Promise((resolve, reject) => {
+            let running = 0, done = false;
+            const next = () => {
+                if (done) return;
+                if (idx >= fns.length && running === 0) { done = true; reject(new Error('Hiçbir arama kaynağı yanıt vermedi')); return; }
+                while (running < 2 && idx < fns.length) {
+                    const f = fns[idx++]; running++;
+                    f.run().then(r => { if (!done) { done = true; resolve(r); } }, () => ytMarkFail(f.host)).then(() => { running--; setTimeout(next, 150); });
+                }
+            };
+            next();
+        });
+    }
+
+    async function searchYtPlaylists() {
+        const q = document.getElementById('ytplQuery').value.trim();
+        if (!q) return;
+        lockAllInputs();
+        const st = document.getElementById('ytplStatus'), box = document.getElementById('ytplResults');
+        ytplResults = []; ytplSel = new Set(); renderYtpl();
+        st.style.color = '#f1c40f'; st.innerText = 'Oynatma listeleri aranıyor...';
+        let list = []; const errs = [];
+        const key = getActiveApiKey();
+        if (key) { try { list = await ytplSearchApi(q, key); } catch (e) { errs.push(e.message || String(e)); } }
+        if (!list.length) { try { list = await ytplSearchFree(q); } catch (e) { errs.push(e.message || String(e)); } }
+        const seen = new Set();
+        ytplResults = list.filter(x => x && x.id && !seen.has(x.id) && seen.add(x.id));
+        if (!ytplResults.length) {
+            st.style.color = '#e74c3c';
+            st.innerText = errs.length ? 'Sonuç alınamadı: ' + errs[0] : 'Sonuç bulunamadı.';
+            renderYtpl(); return;
+        }
+        ytplSel = new Set(ytplResults.map((_, i) => i).slice(0, 1));
+        st.style.color = '#2ecc71';
+        st.innerText = `${ytplResults.length} oynatma listesi bulundu${key ? '' : ' (anahtarsız arama)'}. Kaydetmek istediklerinizi seçin.`;
+        renderYtpl();
+    }
+    function renderYtpl() {
+        invalidateLeftNav();
+        const box = document.getElementById('ytplResults'), act = document.getElementById('ytplActions');
+        if (!ytplResults.length) { box.style.display = 'none'; act.style.display = 'none'; box.innerHTML = ''; return; }
+        box.style.display = 'block'; act.style.display = 'block';
+        box.innerHTML = ytplResults.map((r, i) => {
+            const on = ytplSel.has(i);
+            return `<div class="yt-search-item" style="cursor:default;">
+                <button type="button" class="smart-chk-btn ${on ? 'on' : ''}" data-i="${i}" role="checkbox" aria-checked="${on}" onclick="event.stopPropagation(); ytplToggle(${i}, this)" title="Seç / Bırak (OK)"><i class="material-icons-round" style="font-size:24px;">${on ? 'check_box' : 'check_box_outline_blank'}</i></button>
+                ${r.thumb ? `<img loading="lazy" decoding="async" src="${esc(r.thumb)}" onerror="this.style.display='none'" style="flex-shrink:0;">` : ''}
+                <span style="flex:1; min-width:0;">${esc(r.title)}<br><small style="color:#888">${esc(r.channel || '')}${r.count !== null && r.count !== undefined && r.count !== '' ? ' · ' + esc(String(r.count)) + ' video' : ''}</small></span>
+                <button type="button" class="preview-mini-btn" onclick="event.stopPropagation(); ytplPreview(${i})" title="Önizle (OK)"><i class="material-icons-round" style="font-size:24px;">play_arrow</i></button>
+            </div>`;
+        }).join('');
+        updateYtplCount(); fillYtplTargets();
+    }
+    function updateYtplCount() { const el = document.getElementById('ytplCount'); if (el) el.innerText = `Seçili: ${ytplSel.size} / ${ytplResults.length}`; }
+    function ytplToggle(i, btn) {
+        const on = !ytplSel.has(i);
+        if (on) ytplSel.add(i); else ytplSel.delete(i);
+        if (btn) { btn.classList.toggle('on', on); btn.setAttribute('aria-checked', String(on)); const ic = btn.querySelector('i'); if (ic) ic.innerText = on ? 'check_box' : 'check_box_outline_blank'; }
+        updateYtplCount();
+    }
+    function ytplSelectAll(on) { ytplSel = on ? new Set(ytplResults.map((_, i) => i)) : new Set(); renderYtpl(); }
+    function ytplPreview(i) {
+        const r = ytplResults[i]; if (!r) return;
+        const modal = document.getElementById('smartPreviewModal');
+        const vid = document.getElementById('smartPreviewVideo');
+        const fr = document.getElementById('smartPreviewIframe');
+        modalOpenedAt = Date.now();
+        document.getElementById('smartPreviewTitle').innerText = r.title;
+        const stat = document.getElementById('smartPreviewStatus'); stat.innerText = 'Önizleme (YouTube oynatıcısı — reklam çıkabilir)'; stat.style.color = '#aaa';
+        modal.classList.add('show');
+        if (smartPreviewHls) { smartPreviewHls.destroy(); smartPreviewHls = null; }
+        vid.pause(); vid.removeAttribute('src'); vid.load(); vid.style.display = 'none';
+        fr.style.display = 'block';
+        fr.innerHTML = `<iframe src="https://www.youtube.com/embed/videoseries?list=${encodeURIComponent(r.id)}&autoplay=1&playsinline=1" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+    }
+    function fillYtplTargets() {
+        const sel = document.getElementById('ytplTarget'); if (!sel) return;
+        const prev = sel.value; sel.innerHTML = '';
+        const add = (v, t) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); };
+        add('__new__', '➕ Yeni oynatma listesi oluştur');
+        ytPlaylistsData.forEach(p => add(String(p.id).replace(/^ytpl_/, ''), '📺 ' + p.name));
+        if (prev && Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
+        ytplTargetChanged();
+    }
+    function ytplTargetChanged() {
+        const sel = document.getElementById('ytplTarget'), md = document.getElementById('ytplMode'), nm = document.getElementById('ytplNewName');
+        if (!sel || !md || !nm) return;
+        const isNew = sel.value === '__new__';
+        md.style.display = isNew ? 'none' : 'block';
+        nm.placeholder = isNew ? 'Yeni liste adı (boşsa aranan kelime)' : 'Yeni ad (boş bırakırsanız ad aynı kalır)';
+        invalidateLeftNav();
+    }
+    function showYtplStatus(msg, type = 'success') {
+        const el = document.getElementById('ytplSaveStatus'); if (!el) return;
+        el.style.display = 'block';
+        const c = type === 'success' ? ['rgba(46,204,113,0.15)', '#2ecc71'] : (type === 'error' ? ['rgba(231,76,60,0.15)', '#e74c3c'] : ['rgba(241,196,15,0.15)', '#f1c40f']);
+        el.style.background = c[0]; el.style.border = '1px solid ' + c[1]; el.style.color = c[1];
+        el.innerText = msg;
+        setTimeout(() => { el.style.display = 'none'; }, 9000);
+    }
+    function migrateListContext(oldCtx, newCtx, keepOrders) {
+        if (oldCtx === newCtx) return;
+        if (extraChannelsDict[oldCtx] !== undefined) { extraChannelsDict[newCtx] = extraChannelsDict[oldCtx]; delete extraChannelsDict[oldCtx]; localStorage.setItem('tv_extras_dict', JSON.stringify(extraChannelsDict)); }
+        if (customOrdersDict[oldCtx] !== undefined) { if (keepOrders) customOrdersDict[newCtx] = customOrdersDict[oldCtx]; delete customOrdersDict[oldCtx]; localStorage.setItem('tv_custom_orders', JSON.stringify(customOrdersDict)); }
+        if (deletedUrlsDict[oldCtx] !== undefined) { if (keepOrders) deletedUrlsDict[newCtx] = deletedUrlsDict[oldCtx]; delete deletedUrlsDict[oldCtx]; localStorage.setItem('tv_deleted_urls', JSON.stringify(deletedUrlsDict)); }
+    }
+    function ytplSave() {
+        const picked = [...ytplSel].sort((a, b) => a - b).map(i => ytplResults[i]).filter(Boolean);
+        if (!picked.length) { showYtplStatus('Önce listeden en az bir oynatma listesi seçin.', 'error'); return; }
+        const ids = [...new Set(picked.map(r => r.id))];
+        const target = document.getElementById('ytplTarget').value;
+        const typed = document.getElementById('ytplNewName').value.trim();
+        let name, newId, msg;
+        if (target === '__new__') {
+            name = typed || (picked.length === 1 ? picked[0].title : document.getElementById('ytplQuery').value.trim()) || 'YouTube Playlist';
+            newId = ids.join(',');
+            const same = ytPlaylistsData.find(p => String(p.id).replace(/^ytpl_/, '') === newId);
+            if (same) { same.name = name; } else { ytPlaylistsData.push({ id: newId, name }); }
+            msg = `✅ "${name}" kaydedildi (${ids.length} oynatma listesi).`;
+        } else {
+            const p = ytPlaylistsData.find(x => String(x.id).replace(/^ytpl_/, '') === target);
+            if (!p) { showYtplStatus('Hedef liste bulunamadı.', 'error'); return; }
+            const mode = document.getElementById('ytplMode').value;
+            const oldId = String(p.id).replace(/^ytpl_/, '');
+            const merged = mode === 'append' ? [...new Set([...oldId.split(','), ...ids])] : ids;
+            newId = merged.join(',');
+            if (newId !== oldId && ytPlaylistsData.some(x => x !== p && String(x.id).replace(/^ytpl_/, '') === newId)) { showYtplStatus('Aynı içerikte başka bir liste zaten var.', 'error'); return; }
+            if (typed) p.name = typed;
+            name = p.name;
+            migrateListContext('ytpl_' + oldId, 'ytpl_' + newId, mode === 'append');
+            p.id = newId;
+            msg = mode === 'append' ? `✅ "${name}" listesine ${ids.length} oynatma listesi eklendi.` : `✅ "${name}" listesinin üzerine yazıldı.`;
+        }
+        localStorage.setItem('tv_yt_playlists', JSON.stringify(ytPlaylistsData));
+        document.getElementById('ytplNewName').value = '';
+        updatePresetDropdown(); fillYtplTargets();
+        currentListContext = ''; // seçili bağlamı sıfırla, listeyi yeniden yükle
+        syncAndChangeCountry('ytpl_' + newId);
+        showYtplStatus(msg, 'success');
+        showOSD('Oynatma Listesi Kaydedildi', name);
+    }
+
     function getLocalList(id) { try { return JSON.parse(localStorage.getItem('tvl_' + id)) || []; } catch (e) { return []; } }
     function saveLocalList(id, arr) { try { localStorage.setItem('tvl_' + id, JSON.stringify(arr)); return true; } catch (e) { showOSD('Kaydedilemedi'); return false; } }
     function collectLocalLists() { const o = {}; personalPresets.forEach(p => { if (p && p.url && String(p.url).startsWith('local_')) o[p.url] = getLocalList(p.url); }); return o; }
@@ -4073,6 +4648,19 @@ function playAudioDirect(video, url, token) {
             return;
         }
 
+        const infoModalEl = document.getElementById('infoModal');
+        if (infoModalEl && infoModalEl.classList.contains('show')) {
+            e.preventDefault(); e.stopImmediatePropagation();
+            if (['Escape', 'BrowserBack', 'GoBack'].includes(k) || kc === 4 || kc === 27) { if (!e.repeat) closeInfoModal(); return; }
+            const infoBtns = Array.from(infoModalEl.querySelectorAll('button')).filter(el => el.getClientRects().length > 0 && !el.disabled);
+            let ii = infoBtns.indexOf(ae); if (ii < 0) ii = infoBtns.length - 1;
+            const card = infoModalEl.querySelector('.info-card');
+            if (k === 'ArrowDown' || k === 'ArrowRight') { if (infoBtns.length > 1) infoBtns[Math.min(infoBtns.length - 1, ii + 1)].focus(); else if (card) card.scrollTop += 90; }
+            else if (k === 'ArrowUp' || k === 'ArrowLeft') { if (infoBtns.length > 1) infoBtns[Math.max(0, ii - 1)].focus(); else if (card) card.scrollTop -= 90; }
+            else if (!e.repeat && (Date.now() - modalOpenedAt > 350) && (k === 'Enter' || k === ' ' || kc === 23 || kc === 13 || kc === 66)) { if (infoBtns[ii]) infoBtns[ii].click(); }
+            return;
+        }
+
         const previewModal = document.getElementById('smartPreviewModal');
         if (previewModal && previewModal.classList.contains('show')) {
             e.preventDefault(); e.stopImmediatePropagation();
@@ -4264,7 +4852,7 @@ function playAudioDirect(video, url, token) {
                 let tgt = sib && sib.querySelector ? sib.querySelector(isChk ? '.smart-chk-btn' : '.preview-mini-btn') : null;
                 if (!tgt) {
                     const navList = getLeftNavList();
-                    const box = document.getElementById('smartResults');
+                    const box = row ? row.parentElement : document.getElementById('smartResults');
                     if (k === 'ArrowDown') { const all = box.querySelectorAll('.preview-mini-btn'); tgt = navList[navList.indexOf(all[all.length - 1]) + 1]; }
                     else { tgt = navList[navList.indexOf(box.querySelector('.smart-chk-btn')) - 1]; }
                 }
@@ -4298,8 +4886,8 @@ function playAudioDirect(video, url, token) {
         const ctrlVisible = !ctrlOverlay.classList.contains('hide');
         const bottomBtns = [
             document.getElementById('ccBtn'), document.getElementById('rewindBtn'), document.getElementById('playPauseBtn'),
-            document.getElementById('forwardBtn'), document.getElementById('muteBtn'), document.getElementById('fsBtn'),
-            document.getElementById('mainFavBtn'), document.getElementById('openListCtrlBtn')
+            document.getElementById('forwardBtn'), document.getElementById('muteBtn'),
+            document.getElementById('mainFavBtn'), document.getElementById('infoBtn')
         ].filter(Boolean);
         const inBottomIdx = bottomBtns.indexOf(ae);
 
