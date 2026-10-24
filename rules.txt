@@ -1,0 +1,91 @@
+# TVCAST-RULES
+# Bu dosya GitHub'a (index.html ile ayni yere) yuklenir. Uygulamada Ayarlar > "Kurallari Guncelle" ile indirilir.
+# YouTube bir sey degistirip engelleme bozulursa yalniz bu dosya guncellenir; APK'yi yeniden derlemek gerekmez.
+version: 1
+
+# Kurallarin gecerli olacagi alan adlari (baska sitelere/IPTV adreslerine dokunulmaz)
+[scope]
+youtube.com
+youtube-nocookie.com
+doubleclick.net
+googlesyndication.com
+googleadservices.com
+googleads.g.doubleclick.net
+
+# Adres icinde bu parcalar gecen istekler bos cevapla engellenir
+[block]
+/pagead/
+/api/stats/ads
+/ptracking
+/get_midroll_
+googleads.g.doubleclick.net
+doubleclick.net/pagead
+googlesyndication.com
+googleadservices.com
+
+# Asla engellenmeyecek parcalar
+[allow]
+/api/stats/playback
+/api/stats/watchtime
+
+# Bu adreslere giden YouTube oynatici sayfalarina asagidaki betik eklenir
+[inject]
+youtube.com/embed/
+youtube-nocookie.com/embed/
+
+[script]
+(function () {
+  if (window.__tvcAd) return; window.__tvcAd = 1;
+  var KEYS = ['adPlacements', 'playerAds', 'adSlots', 'adBreakHeartbeatParams', 'adBreakParams'];
+  function prune(o, d) {
+    try {
+      if (!o || typeof o !== 'object' || (d || 0) > 4) return;
+      for (var i = 0; i < KEYS.length; i++) {
+        if (KEYS[i] in o) { try { delete o[KEYS[i]]; } catch (e) { o[KEYS[i]] = undefined; } }
+      }
+      if (o.playerResponse) prune(o.playerResponse, (d || 0) + 1);
+      if (o.response) prune(o.response, (d || 0) + 1);
+    } catch (e) {}
+  }
+  var oParse = JSON.parse;
+  JSON.parse = function () {
+    var r = oParse.apply(this, arguments);
+    try { if (r && typeof r === 'object') prune(r, 0); } catch (e) {}
+    return r;
+  };
+  var oFetch = window.fetch;
+  if (oFetch) {
+    window.fetch = function () {
+      var a = arguments, p = oFetch.apply(this, a);
+      try {
+        var u = String((a[0] && a[0].url) || a[0] || '');
+        if (u.indexOf('/youtubei/v1/player') < 0 && u.indexOf('/youtubei/v1/next') < 0) return p;
+        return p.then(function (res) {
+          return res.clone().text().then(function (t) {
+            try {
+              var j = oParse(t); prune(j, 0);
+              return new Response(JSON.stringify(j), { status: res.status, statusText: res.statusText, headers: res.headers });
+            } catch (e) { return res; }
+          }, function () { return res; });
+        });
+      } catch (e) { return p; }
+    };
+  }
+  // Yedek: reklam yine de baslarsa sessize al, hizlandir, atla dugmesine bas
+  function tick() {
+    try {
+      var pl = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+      var v = document.querySelector('video');
+      if (pl && v && (pl.classList.contains('ad-showing') || pl.classList.contains('ad-interrupting'))) {
+        v.muted = true; v.playbackRate = 16;
+        if (isFinite(v.duration) && v.duration > 0) { try { v.currentTime = v.duration; } catch (e) {} }
+        var b = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button');
+        if (b) b.click();
+        window.__tvcWasAd = 1;
+      } else if (window.__tvcWasAd && v) {
+        window.__tvcWasAd = 0; v.playbackRate = 1; v.muted = false;
+      }
+    } catch (e) {}
+  }
+  setInterval(tick, 300);
+})();
