@@ -22,6 +22,8 @@
         #ytContainer { position:absolute; top:0; left:0; width:100%; height:100%; z-index:2; background:#000; display:none; pointer-events:none; }
         #ytContainer iframe { width:100%; height:100%; border:none; }
         #ytContainer.yt-wait { visibility:hidden; }
+        .channel-item.multi-picked { border:3px solid var(--accent2) !important; background:rgba(0,206,201,0.22) !important; box-shadow:0 0 16px rgba(0,206,201,0.4); }
+        .channel-item.multi-picked::after { content:"\2713"; position:absolute; top:6px; right:8px; width:24px; height:24px; border-radius:50%; background:var(--accent2); color:#000; font-weight:900; display:flex; align-items:center; justify-content:center; font-size:16px; z-index:3; }
         /* WebView'in videonun ortasına çizdiği takılı oynat/durdur simgesini tamamen gizle */
         #localPlayer::-webkit-media-controls, #localPlayer::-webkit-media-controls-panel, #localPlayer::-webkit-media-controls-overlay-play-button,
         #localPlayer::-webkit-media-controls-start-playback-button, #localPlayer::-webkit-media-controls-play-button,
@@ -320,6 +322,17 @@
                     <input type="file" id="importFile" accept=".json,application/json" style="display:none" onchange="importBackup(this)">
                 </div>
                 <div class="sub-module">
+                    <span class="sub-module-title" style="color:#74b9ff;">Ağ & Yedekleme</span>
+                    <label style="display:flex; align-items:center; gap:10px; font-size:0.9rem; margin-bottom:10px;"><input type="checkbox" style="position:static; width:22px; height:22px;" id="cellLowChk" onchange="setCellLow(this.checked)"> Mobil veri kullanılıyorsa en düşük kaliteyi seç</label>
+                    <label style="display:flex; align-items:center; gap:10px; font-size:0.9rem;"><input type="checkbox" style="position:static; width:22px; height:22px;" id="autoBackupChk" onchange="setAutoBackup(this.checked)"> Değişiklikleri otomatik buluta yedekle (Kimlik ID girilmişse)</label>
+                </div>
+                <div class="sub-module">
+                    <span class="sub-module-title" style="color:#fd79a8;">Reklam Engelleme (yalnızca APK)</span>
+                    <label style="display:flex; align-items:center; gap:10px; font-size:0.9rem; margin-bottom:10px;"><input type="checkbox" style="position:static; width:22px; height:22px;" id="adBlockChk" onchange="setAdBlock(this.checked)"> Reklam engelleme açık</label>
+                    <button class="btn" style="width:100%; background:#fd79a8; border-color:#fd79a8; color:#000; font-weight:bold;" onclick="updateAdRules(true)"><i class="material-icons-round" style="font-size:18px; margin-right:6px;">system_update_alt</i> Kuralları Güncelle</button>
+                    <div id="adRulesInfo" style="font-size:0.75rem; color:#aaa; margin-top:8px; text-align:center; line-height:1.4;"></div>
+                </div>
+                <div class="sub-module">
                     <span class="sub-module-title" style="color:#2ecc71;">YouTube API Anahtarı</span>
                     <input type="text" id="userApiKey" readonly placeholder="Google API Key (39 karakter)" style="font-family:monospace; font-size:0.92rem; letter-spacing:0.5px;">
                     <div class="btn-group">
@@ -429,6 +442,9 @@
                 <optgroup label="Kişisel Listelerim" id="personalPresetsRight"></optgroup>
                 <optgroup label="YouTube Listeleri" id="ytPlaylistsGroupRight"></optgroup>
             </select>
+            <button class="btn-icon" id="multiBtn" onclick="toggleMultiSel()" title="Çoklu seçim (toplu favori / sil)" style="white-space:nowrap; padding:0 12px;">
+                <i class="material-icons-round" style="font-size:20px;">checklist</i> <span class="hide-mobile-txt">Seç</span>
+            </button>
             <button class="btn-icon" id="rightSettingsBtn" onclick="requestSettingsOpen()" title="Ayarlar" style="background:var(--primary); border-color:var(--primary); white-space:nowrap; padding:0 14px;">
                 <i class="material-icons-round" style="font-size:20px;">settings</i> <span class="hide-mobile-txt">Ayarlar</span>
             </button>
@@ -441,6 +457,14 @@
     <div id="moveModeBanner">
         <span id="moveModeText">✨ Kanal Taşıma Modu: Yön tuşlarıyla taşıyıp <b>OK</b>'a basın</span>
         <button class="btn-icon" onclick="finishChannelMove(true)" style="min-height:36px; padding:0 14px; background:var(--fav); color:#000; border-color:var(--fav);">Buraya Bırak (OK)</button>
+    </div>
+    <div id="multiBar" style="display:none; flex-wrap:wrap; gap:8px; align-items:center; padding:8px 14px; background:rgba(0,206,201,0.10); border-bottom:1px solid var(--accent2);">
+        <span id="multiCount" style="font-weight:700; color:var(--accent2); margin-right:auto;">0 seçili</span>
+        <button class="bulk-btn" id="multiAllBtn" onclick="multiSelectAll()"><i class="material-icons-round" style="font-size:18px;">select_all</i> Tümü / Hiçbiri</button>
+        <button class="bulk-btn" id="multiFavBtn" onclick="multiSetFav(true)" style="border-color:var(--fav); color:var(--fav);"><i class="material-icons-round" style="font-size:18px;">star</i> Favori Yap</button>
+        <button class="bulk-btn" id="multiUnfavBtn" onclick="multiSetFav(false)"><i class="material-icons-round" style="font-size:18px;">star_border</i> Favoriden Çıkar</button>
+        <button class="bulk-btn" id="multiDelBtn" onclick="multiDelete()" style="background:rgba(231,76,60,0.25); border-color:var(--red); color:#ff7675;"><i class="material-icons-round" style="font-size:18px;">delete</i> Sil</button>
+        <button class="bulk-btn" id="multiExitBtn" onclick="toggleMultiSel(false)"><i class="material-icons-round" style="font-size:18px;">close</i> Çık</button>
     </div>
     <div id="bulkOrderBanner">
         <span id="bulkOrderText">🔢 <b>Toplu Sıralama (Tıkla-Diz):</b> Sıraya koymak istediğiniz kanalların üzerine gelip <b>OK</b>'a basın (1, 2, 3... diye dizilir).</span>
@@ -775,9 +799,9 @@
         return keyToSave;
     }
 
-    async function syncDataToCloud() {
+    async function syncDataToCloud(silent = false) {
         const userId = document.getElementById('syncUserId').value.trim();
-        if (!userId) { showOSD("Kimlik (ID) Gerekli"); return; }
+        if (!userId) { if (!silent) showOSD("Kimlik (ID) Gerekli"); return; }
         localStorage.setItem('tv_sync_id', userId);
         const stat = document.getElementById('syncStatus'); stat.innerText = "Yedekleniyor..."; stat.style.color = "#f1c40f";
         const keyToSave = reconcileStateBeforeSync();
@@ -801,7 +825,7 @@
             if(!response.ok) throw new Error("Sunucu reddetti");
             stat.innerText = `Buluta Yedeklendi! (Sıralama + ${brokenUrls.length} karantina + ${favUrls.length} favori)`;
             stat.style.color = "#2ecc71";
-            showOSD("Yedekleme Başarılı", "Sıralamalar ve karantina durumu kaydedildi");
+            if (!silent) showOSD("Yedekleme Başarılı", "Sıralamalar ve karantina durumu kaydedildi");
         } catch (e) { stat.innerText = "Yedekleme Hatası!"; stat.style.color = "#e74c3c"; }
     }
 
@@ -992,12 +1016,14 @@
         if (!ytc || ytc.style.display !== 'block') return;
         if (event.data === YT.PlayerState.PLAYING) { ytc.classList.remove('yt-wait'); window.ytCurrentSource = null; }
         if (event.data === YT.PlayerState.PLAYING) {
+            try { if (useLowQuality()) ytPlayer.setPlaybackQuality('small'); } catch (e) {}
             document.getElementById('playIcon').innerText = 'pause';
             document.getElementById('pStatus').innerText = "Cihazda İzleniyor (YT)";
             document.getElementById('bufSpinner').style.display = 'none';
             if (curIdx >= 0 && allChannels[curIdx]) markChannelHealthy(allChannels[curIdx]);
         } else if (event.data === YT.PlayerState.PAUSED) {
             document.getElementById('playIcon').innerText = 'play_arrow';
+            try { refreshNowPlaying(); } catch (e) {}
             document.getElementById('bufSpinner').style.display = 'none';
         } else if (event.data === YT.PlayerState.ENDED) {
             nextCh(); // Video bitince sonrakine geçer
@@ -1090,6 +1116,7 @@
         okPressContext = null; okLongPressFired = false; clearOkTimers();
         if (movingChannelId) finishChannelMove(false);
         if (typeof isBulkOrderMode !== 'undefined' && isBulkOrderMode) finishBulkOrderMode(true);
+        if (isMultiSel) toggleMultiSel(false);
         closeChannelActionModal();
         closeSmartPreview();
         lockAllInputs();
@@ -1607,6 +1634,11 @@
             finishChannelMove(true);
             return;
         }
+        if (isMultiSel) {
+            const mch = allChannels[idx];
+            if (mch) multiToggle(mch.id);
+            return;
+        }
         if (isBulkOrderMode) {
             const ch = allChannels[idx];
             if (!ch) return;
@@ -2027,7 +2059,7 @@
         allChannels.slice(0, 2000).forEach((ch, i) => {
             const pickedRank = bulkRankMap.get(ch.id);
             const item = document.createElement('div');
-            item.className = `channel-item ${i===curIdx ? 'active' : ''} ${ch.broken ? 'broken' : ''} ${ch.id===movingChannelId ? 'moving' : ''} ${pickedRank ? 'bulk-picked' : ''}`;
+            item.className = `channel-item ${i===curIdx ? 'active' : ''} ${ch.broken ? 'broken' : ''} ${ch.id===movingChannelId ? 'moving' : ''} ${pickedRank ? 'bulk-picked' : ''} ${multiSel.has(ch.id) ? 'multi-picked' : ''}`;
             item.id = `c-${i}`;
             item.dataset.idx = i;
             item.dataset.chid = ch.id;
@@ -2141,7 +2173,7 @@
             fragLoadingTimeOut: 6500,
             fragLoadingMaxRetry: 1
         }, extraConfig);
-        if (isDataSaver) {
+        if (useLowQuality()) {
             baseCfg.autoLevelCapping = 0;
             baseCfg.startLevel = 0;
             baseCfg.capLevelToPlayerSize = true;
@@ -2729,6 +2761,7 @@ async function resetQuarantine() {
         document.getElementById('previewTitle').innerText = ch.name; updateMainFavBtn(); updateChannelMeta();
         document.getElementById('pStatus').innerText = "Bağlanıyor...";
         showOSD((curIdx + 1) + ". " + ch.name);
+        try { refreshNowPlaying(); } catch (e) {}
         playLocally(ch.url, mySession);
         hideControlsNow();
     }
@@ -4100,6 +4133,197 @@ async function resetQuarantine() {
         showOSD('Oynatma Listesi Kaydedildi', name);
     }
 
+    /* ===== ÇOKLU SEÇİM: toplu favori / toplu silme ===== */
+    var isMultiSel = false, multiSel = new Set();
+    function updateMultiCount() { const el = document.getElementById('multiCount'); if (el) el.innerText = `${multiSel.size} seçili`; }
+    function toggleMultiSel(on) {
+        const want = (on === undefined) ? !isMultiSel : !!on;
+        if (want && typeof isBulkOrderMode !== 'undefined' && isBulkOrderMode) finishBulkOrderMode(true);
+        isMultiSel = want; multiSel = new Set();
+        const bar = document.getElementById('multiBar'); if (bar) bar.style.display = want ? 'flex' : 'none';
+        const b = document.getElementById('multiBtn'); if (b) { b.style.background = want ? 'var(--accent2)' : ''; b.style.color = want ? '#000' : ''; }
+        sortAndRenderList(true); updateMultiCount();
+        if (want) showOSD('Çoklu Seçim', 'Kanallara dokunarak seçin');
+    }
+    function multiToggle(id) {
+        if (multiSel.has(id)) multiSel.delete(id); else multiSel.add(id);
+        const el = document.querySelector(`.channel-item[data-chid="${id}"]`);
+        if (el) el.classList.toggle('multi-picked', multiSel.has(id));
+        updateMultiCount();
+    }
+    function multiSelectAll() {
+        const ids = getVisibleGridItems().map(el => el.dataset.chid).filter(Boolean);
+        const allOn = ids.length > 0 && ids.every(id => multiSel.has(id));
+        ids.forEach(id => { if (allOn) multiSel.delete(id); else multiSel.add(id); });
+        document.querySelectorAll('.channel-item').forEach(el => el.classList.toggle('multi-picked', multiSel.has(el.dataset.chid)));
+        updateMultiCount();
+    }
+    function multiSetFav(on) {
+        if (!multiSel.size) { showOSD('Önce kanal seçin'); return; }
+        let n = 0;
+        allChannels.forEach(c => {
+            if (!multiSel.has(c.id)) return;
+            c.isFavorite = on; n++;
+            if (on) { if (!favUrls.includes(c.url)) favUrls.push(c.url); } else { favUrls = favUrls.filter(u => u !== c.url); }
+        });
+        try { localStorage.setItem('tv_favorites', JSON.stringify(favUrls)); } catch (e) {}
+        multiSel = new Set(); sortAndRenderList(); updateMultiCount(); updateMainFavBtn();
+        showOSD(on ? 'Favorilere Eklendi' : 'Favorilerden Çıkarıldı', n + ' kanal');
+    }
+    async function multiDelete() {
+        if (!multiSel.size) { showOSD('Önce kanal seçin'); return; }
+        const ok = await showTvConfirm('Toplu Silme', `${multiSel.size} kanal listeden silinsin mi?`);
+        if (!ok) return;
+        const ids = new Set(multiSel), ctx = currentListContext;
+        const del = allChannels.filter(c => ids.has(c.id)), delUrls = new Set(del.map(c => c.url));
+        if (String(ctx).startsWith('local_')) {
+            const realUrls = new Set(del.filter(c => !c.id.startsWith('ch_ex_')).map(c => c.url));
+            saveLocalList(ctx, getLocalList(ctx).filter(x => !realUrls.has(x.url)));
+        }
+        if (Array.isArray(extraChannelsDict[ctx])) {
+            extraChannelsDict[ctx] = extraChannelsDict[ctx].filter(c => !ids.has(c.id) && !delUrls.has(c.url));
+            try { localStorage.setItem('tv_extras_dict', JSON.stringify(extraChannelsDict)); } catch (e) {}
+        }
+        if (!Array.isArray(deletedUrlsDict[ctx])) deletedUrlsDict[ctx] = [];
+        delUrls.forEach(u => { if (!deletedUrlsDict[ctx].includes(u)) deletedUrlsDict[ctx].push(u); });
+        try { localStorage.setItem('tv_deleted_urls', JSON.stringify(deletedUrlsDict)); } catch (e) {}
+        allChannels = allChannels.filter(c => !ids.has(c.id));
+        if (Array.isArray(customOrdersDict[ctx])) saveCustomChannelOrder();
+        multiSel = new Set(); sortAndRenderList(); updateMultiCount();
+        showOSD('Kanallar Silindi', del.length + ' kanal listeden kaldırıldı');
+    }
+
+    /* ===== MOBİL VERİDE EN DÜŞÜK KALİTE ===== */
+    function isCellularNow() {
+        try { if (window.Android && typeof Android.isCellular === 'function') return !!Android.isCellular(); } catch (e) {}
+        try { const c = navigator.connection || navigator.mozConnection || navigator.webkitConnection; if (c && c.type) return c.type === 'cellular'; } catch (e) {}
+        return false;
+    }
+    function cellLowEnabled() { return localStorage.getItem('tv_cell_low') !== '0'; }
+    function useLowQuality() { return !!isDataSaver || (cellLowEnabled() && isCellularNow()); }
+    function setCellLow(on) { try { localStorage.setItem('tv_cell_low', on ? '1' : '0'); } catch (e) {} applyQualityPolicy(); showOSD(on ? 'Mobil veride en düşük kalite: Açık' : 'Mobil veride en düşük kalite: Kapalı'); }
+    function applyQualityPolicy() {
+        const low = useLowQuality();
+        try {
+            if (hls && Array.isArray(hls.levels) && hls.levels.length > 1) {
+                if (low) {
+                    let lo = 0; hls.levels.forEach((l, i) => { if ((l.bitrate || 1e12) < (hls.levels[lo].bitrate || 1e12)) lo = i; });
+                    hls.autoLevelCapping = lo; hls.currentLevel = lo;
+                } else { hls.autoLevelCapping = -1; hls.currentLevel = -1; }
+            }
+        } catch (e) {}
+        try { if (low && ytPlayer && typeof ytPlayer.setPlaybackQuality === 'function') ytPlayer.setPlaybackQuality('small'); } catch (e) {}
+    }
+    try { const _c = navigator.connection; if (_c && _c.addEventListener) _c.addEventListener('change', () => { applyQualityPolicy(); if (useLowQuality()) showOSD('Mobil veri algılandı', 'En düşük kalite seçildi'); }); } catch (e) {}
+
+    /* ===== ARKA PLAN ÇALMA & BİLDİRİM KONTROLLERİ (Media Session + APK köprüsü) ===== */
+    function currentIsPlaying() {
+        try {
+            const ytc = document.getElementById('ytContainer');
+            if (ytc && ytc.style.display === 'block' && ytPlayer && typeof ytPlayer.getPlayerState === 'function') return ytPlayer.getPlayerState() === 1;
+            const v = document.getElementById('localPlayer'); return !!v && !v.paused;
+        } catch (e) { return false; }
+    }
+    function refreshNowPlaying() {
+        const ch = (curIdx >= 0) ? allChannels[curIdx] : null;
+        const title = ch ? ch.name : 'TV Cast';
+        const playing = currentIsPlaying();
+        try {
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = new MediaMetadata({ title, artist: getActiveListDisplayName(), album: 'TV Cast', artwork: (ch && ch.logo && /^https?:/.test(ch.logo)) ? [{ src: ch.logo, sizes: '192x192' }] : [] });
+                navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
+            }
+        } catch (e) {}
+        try { if (window.Android && typeof Android.nowPlaying === 'function') Android.nowPlaying(title, playing); } catch (e) {}
+    }
+    (function setupMediaSession() {
+        try {
+            if (!('mediaSession' in navigator)) return;
+            const set = (a, f) => { try { navigator.mediaSession.setActionHandler(a, f); } catch (e) {} };
+            set('play', () => toggleLocalPlaybackStatus(false));
+            set('pause', () => toggleLocalPlaybackStatus(true));
+            set('previoustrack', () => prevCh());
+            set('nexttrack', () => nextCh());
+            set('stop', () => toggleLocalPlaybackStatus(true));
+        } catch (e) {}
+    })();
+    // Uygulama arka plana alınınca tarayıcı videoyu durdurursa, ses kaldığı yerden devam etsin
+    (function keepAudioInBackground() {
+        let wasPlaying = false, userPaused = false;
+        document.addEventListener('visibilitychange', () => {
+            const v = document.getElementById('localPlayer');
+            if (!v) return;
+            if (document.hidden) {
+                wasPlaying = !v.paused && v.style.display !== 'none';
+                if (wasPlaying) { [150, 600, 1500].forEach(ms => setTimeout(() => { if (document.hidden && v.paused && wasPlaying) v.play().catch(() => {}); }, ms)); }
+            } else { wasPlaying = false; refreshNowPlaying(); }
+        });
+    })();
+
+    /* ===== REKLAM KURALLARI (APK): GitHub txt -> uygulama + bulut kopyası ===== */
+    const AD_RULES_URL = 'https://hamzakivrak.github.io/TVHKTV/rules.txt';
+    function adRulesVersion(t) { const m = String(t || '').match(/^\s*version\s*:\s*(\S+)/mi); return m ? m[1] : '?'; }
+    function adRulesValid(t) { return typeof t === 'string' && /TVCAST-RULES/i.test(t.slice(0, 200)) && t.length > 40; }
+    function refreshAdRulesInfo() {
+        const el = document.getElementById('adRulesInfo'); if (!el) return;
+        const t = localStorage.getItem('tv_ad_rules'); const when = localStorage.getItem('tv_ad_rules_t');
+        const nat = !!(window.Android && typeof Android.saveRules === 'function');
+        el.innerText = (nat ? '' : 'Bu özellik yalnızca APK içinde çalışır. ') + (t ? `Kural sürümü: ${adRulesVersion(t)}${when ? ' · ' + new Date(Number(when)).toLocaleString('tr-TR') : ''}` : 'Henüz kural indirilmedi (APK ile gelen ilk kurallar kullanılır).');
+    }
+    async function updateAdRules(manual = true) {
+        const el = document.getElementById('adRulesInfo');
+        if (manual && el) { el.style.color = '#f1c40f'; el.innerText = 'Kurallar indiriliyor...'; }
+        let text = null, source = '';
+        try { const r = await fetchTO(AD_RULES_URL + '?t=' + Date.now(), 9000); if (r.ok) { const t = await r.text(); if (adRulesValid(t)) { text = t; source = 'GitHub'; } } } catch (e) {}
+        const syncId = (localStorage.getItem('tv_sync_id') || '').trim();
+        const workerBase = MY_CLOUD_PROXY.split('?url=')[0];
+        if (!text && syncId) {
+            try { const r = await fetchTO(`${workerBase}sync/${encodeURIComponent(syncId)}-rules`, 9000); if (r.ok) { const d = await r.json(); if (adRulesValid(d && d.rules)) { text = d.rules; source = 'Bulut'; } } } catch (e) {}
+        }
+        if (!text) { if (manual && el) { el.style.color = '#e74c3c'; el.innerText = 'Kurallar indirilemedi (GitHub ve bulut yanıt vermedi). Eski kurallar kullanılmaya devam eder.'; } return false; }
+        try { localStorage.setItem('tv_ad_rules', text); localStorage.setItem('tv_ad_rules_t', String(Date.now())); } catch (e) {}
+        try { if (window.Android && typeof Android.saveRules === 'function') Android.saveRules(text); } catch (e) {}
+        if (source === 'GitHub' && syncId) {
+            try { await fetch(`${workerBase}sync/${encodeURIComponent(syncId)}-rules`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rules: text, t: Date.now() }) }); } catch (e) {}
+        }
+        if (manual) { if (el) el.style.color = '#2ecc71'; showOSD('Reklam Kuralları Güncellendi', `Sürüm ${adRulesVersion(text)} · ${source}`); }
+        refreshAdRulesInfo();
+        if (manual && el) el.style.color = '#aaa';
+        return true;
+    }
+    function setAdBlock(on) {
+        try { localStorage.setItem('tv_adblock', on ? '1' : '0'); } catch (e) {}
+        try { if (window.Android && typeof Android.setAdBlock === 'function') Android.setAdBlock(!!on); } catch (e) {}
+        showOSD('Reklam engelleme: ' + (on ? 'Açık' : 'Kapalı'), 'Uygulamayı yeniden başlatınca tam etkili olur');
+    }
+
+    /* ===== OTOMATİK YEDEK / ÇEKME ===== */
+    let autoBackupTimer = null, autoBackupBusy = false;
+    function scheduleAutoBackup() {
+        if (localStorage.getItem('tv_auto_backup') === '0' || !localStorage.getItem('tv_sync_id')) return;
+        clearTimeout(autoBackupTimer);
+        autoBackupTimer = setTimeout(async () => { autoBackupBusy = true; try { await syncDataToCloud(true); } catch (e) {} finally { autoBackupBusy = false; } }, 25000);
+    }
+    (function hookStorageForBackup() {
+        try {
+            const orig = Storage.prototype.setItem;
+            const KEYS = new Set(['tv_favorites', 'tv_deleted_urls', 'tv_custom_orders', 'tv_presets', 'tv_yt_playlists', 'tv_broken', 'tv_extras_dict']);
+            Storage.prototype.setItem = function (k, v) {
+                orig.call(this, k, v);
+                try { if (this === localStorage && !autoBackupBusy && (KEYS.has(k) || String(k).startsWith('tvl_'))) scheduleAutoBackup(); } catch (e) {}
+            };
+        } catch (e) {}
+    })();
+    function setAutoBackup(on) { try { localStorage.setItem('tv_auto_backup', on ? '1' : '0'); } catch (e) {} showOSD('Otomatik yedekleme: ' + (on ? 'Açık' : 'Kapalı')); }
+    function startupSyncCheck() {
+        try {
+            const m = String(location.hash || '').match(/[#&]sync=([^&]+)/);
+            if (m) { localStorage.setItem('tv_sync_id', decodeURIComponent(m[1])); const f = document.getElementById('syncUserId'); if (f) f.value = decodeURIComponent(m[1]); try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {} setTimeout(() => syncDataFromCloud(), 800); return; }
+            const hasLocal = (favUrls && favUrls.length) || (personalPresets && personalPresets.length) || (ytPlaylistsData && ytPlaylistsData.length);
+            if (localStorage.getItem('tv_sync_id') && !hasLocal && localStorage.getItem('tv_auto_backup') !== '0') setTimeout(() => syncDataFromCloud(), 1500);
+        } catch (e) {}
+    }
+
     function getLocalList(id) { try { return JSON.parse(localStorage.getItem('tvl_' + id)) || []; } catch (e) { return []; } }
     function saveLocalList(id, arr) { try { localStorage.setItem('tvl_' + id, JSON.stringify(arr)); return true; } catch (e) { showOSD('Kaydedilemedi'); return false; } }
     function collectLocalLists() { const o = {}; personalPresets.forEach(p => { if (p && p.url && String(p.url).startsWith('local_')) o[p.url] = getLocalList(p.url); }); return o; }
@@ -4743,6 +4967,7 @@ function playAudioDirect(video, url, token) {
                 e.preventDefault(); e.stopImmediatePropagation();
                 clearChannelHoldTimers();
                 if (isBulkOrderMode) { finishBulkOrderMode(true); return; }
+                if (isMultiSel) { toggleMultiSel(false); return; }
                 closeAllDrawers(); return;
             }
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(k)) {
@@ -4758,7 +4983,9 @@ function playAudioDirect(video, url, token) {
                 document.getElementById('filterInput'),
                 document.getElementById('clearFilterBtn'),
                 document.getElementById('rightCountrySelect'),
-                document.getElementById('rightSettingsBtn')
+                document.getElementById('multiBtn'),
+                document.getElementById('rightSettingsBtn'),
+                ...(isMultiSel ? ['multiAllBtn', 'multiFavBtn', 'multiUnfavBtn', 'multiDelBtn', 'multiExitBtn'].map(i => document.getElementById(i)) : [])
             ].filter(Boolean);
             const bulkControls = isBulkOrderMode ? [
                 document.getElementById('bulkModeSwitchBtn'),
@@ -5068,6 +5295,17 @@ function playAudioDirect(video, url, token) {
     window.addEventListener('DOMContentLoaded', () => {
         applyGridColumns();
         lockAllInputs();
+        try {
+            document.getElementById('cellLowChk').checked = cellLowEnabled();
+            document.getElementById('autoBackupChk').checked = localStorage.getItem('tv_auto_backup') !== '0';
+            document.getElementById('adBlockChk').checked = localStorage.getItem('tv_adblock') !== '0';
+            refreshAdRulesInfo();
+            startupSyncCheck();
+            if (window.Android && typeof Android.saveRules === 'function') {
+                const last = Number(localStorage.getItem('tv_ad_rules_t') || 0);
+                if (Date.now() - last > 12 * 3600e3) setTimeout(() => updateAdRules(false), 4000);
+            }
+        } catch (e) {}
         updatePresetDropdown();
         changeCountry(currentListContext);
         resetControlsTimer();
@@ -5075,8 +5313,8 @@ function playAudioDirect(video, url, token) {
         const sp = document.getElementById('bufSpinner');
         ['waiting','loadstart'].forEach(ev => vid.addEventListener(ev, () => sp.style.display = 'block'));
         ['playing','canplay','error','pause'].forEach(ev => vid.addEventListener(ev, () => sp.style.display = 'none'));
-        vid.addEventListener('play', () => { document.getElementById('playIcon').innerText = 'pause'; updateSeekBarUI(false); });
-        vid.addEventListener('pause', () => { document.getElementById('playIcon').innerText = 'play_arrow'; updateSeekBarUI(false); });
+        vid.addEventListener('play', () => { document.getElementById('playIcon').innerText = 'pause'; updateSeekBarUI(false); refreshNowPlaying(); });
+        vid.addEventListener('pause', () => { document.getElementById('playIcon').innerText = 'play_arrow'; updateSeekBarUI(false); refreshNowPlaying(); });
         ['timeupdate', 'loadedmetadata', 'durationchange', 'progress'].forEach(ev => vid.addEventListener(ev, () => updateSeekBarUI(false)));
         setInterval(() => updateSeekBarUI(false), 500);
         const rwBtn = document.getElementById('rewindBtn');
