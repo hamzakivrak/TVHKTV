@@ -339,6 +339,8 @@
                 <div class="sub-module">
                     <span class="sub-module-title" style="color:#74b9ff;">Ağ & Yedekleme</span>
                     <label style="display:flex; align-items:center; gap:10px; font-size:0.9rem; margin-bottom:10px;"><input type="checkbox" style="position:static; width:22px; height:22px;" id="cellLowChk" onchange="setCellLow(this.checked)"> Mobil veri kullanılıyorsa en düşük kaliteyi seç</label>
+                    <div style="margin:12px 0 4px; font-size:0.8rem; color:#aaa;">Bulut sunucu adresi (isteğe bağlı; boş = varsayılan). Operatör workers.dev'i engelliyorsa kendi alan adınızı yazın:</div>
+                    <div style="display:flex; gap:8px; margin-bottom:12px;"><input type="text" id="cloudBaseInput" placeholder="https://sync.alanadiniz.com" style="flex:1; min-width:0;"><button class="btn" style="padding:0 14px;" onclick="setCloudBase()">Kaydet</button></div>
                     <label style="display:flex; align-items:center; gap:10px; font-size:0.9rem;"><input type="checkbox" style="position:static; width:22px; height:22px;" id="autoBackupChk" onchange="setAutoBackup(this.checked)"> Değişiklikleri otomatik buluta yedekle (Kimlik ID girilmişse)</label>
                 </div>
                 <div class="sub-module">
@@ -606,7 +608,15 @@
 </div>
 
 <script>
-    const MY_CLOUD_PROXY = "https://quiet-cell-a027.hamzakivrak.workers.dev/?url=";
+    const DEFAULT_CLOUD_PROXY = "https://quiet-cell-a027.hamzakivrak.workers.dev/?url=";
+    // İsteğe bağlı: kendi alan adınız / yedek sunucu adresi (Ayarlar > Ağ & Yedekleme). Boşsa varsayılan kullanılır.
+    const MY_CLOUD_PROXY = (() => {
+        try {
+            let v = (localStorage.getItem('tv_cloud_base') || '').trim();
+            if (/^https:\/\//i.test(v)) { v = v.replace(/\?url=.*$/, '').replace(/\/+$/, ''); return v + '/?url='; }
+        } catch (e) {}
+        return DEFAULT_CLOUD_PROXY;
+    })();
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const DEFAULT_LIST = "https://iptv-org.github.io/iptv/countries/tr.m3u";
 
@@ -835,6 +845,10 @@
         const tryOne = async (u) => { const c = new AbortController(); const t = setTimeout(() => c.abort(), 12000); try { return await fetch(u, Object.assign({}, opts || {}, { signal: c.signal })); } finally { clearTimeout(t); } };
         try { return await tryOne(url); }
         catch (e1) {
+            if (MY_CLOUD_PROXY !== DEFAULT_CLOUD_PROXY) {
+                const cb = MY_CLOUD_PROXY.split('?url=')[0], db = DEFAULT_CLOUD_PROXY.split('?url=')[0];
+                if (url.startsWith(cb)) { try { return await tryOne(db + url.slice(cb.length)); } catch (e0) {} }
+            }
             try { return await tryOne('https://corsproxy.io/?' + encodeURIComponent(url)); }
             catch (e2) { throw new Error(await diagnoseWorker(url)); }
         }
@@ -961,6 +975,11 @@
     function exportBackup() {
         const keyToSave = reconcileStateBeforeSync();
         const payload = { favorites: favUrls, broken: brokenUrls, custom: customChannelsData, presets: personalPresets, extras: extraChannelsDict, ytPlaylists: ytPlaylistsData, customOrders: customOrdersDict, deletedUrls: deletedUrlsDict, lastContext: currentListContext, localLists: collectLocalLists(), apiKey: keyToSave };
+        const jsonText = JSON.stringify(payload, null, 1);
+        if (window.Android && typeof Android.saveFile === 'function') {
+            const where = Android.saveFile('tvcast-yedek.json', jsonText);
+            if (where) { showOSD("Yedek kaydedildi", where); return; }
+        }
         const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], { type: 'application/json' })); a.download = 'tvcast-yedek.json'; a.click();
         showOSD("Yedek indirildi", "Sıralamalar ve karantina durumu dahil");
     }
@@ -4229,6 +4248,13 @@ async function resetQuarantine() {
     /* ===== ÇOKLU SEÇİM: toplu favori / toplu silme ===== */
     var isMultiSel = false, multiSel = new Set();
     function updateMultiCount() { const el = document.getElementById('multiCount'); if (el) el.innerText = `${multiSel.size} seçili`; }
+    function setCloudBase() {
+        const el = document.getElementById('cloudBaseInput'); let v = (el.value || '').trim();
+        if (v && !/^https:\/\/[^\s/]+/i.test(v)) { showOSD('Adres https:// ile başlamalı'); return; }
+        try { if (v) localStorage.setItem('tv_cloud_base', v); else localStorage.removeItem('tv_cloud_base'); } catch (e) {}
+        showOSD(v ? 'Sunucu adresi kaydedildi' : 'Varsayılan sunucuya dönüldü', 'Sayfa yenileniyor...');
+        setTimeout(() => location.reload(), 900);
+    }
     function startMultiFromSettings() { closeAllDrawers(); setTimeout(() => { openRightSidebar(); setTimeout(() => toggleMultiSel(true), 120); }, 320); }
     function toggleMultiSel(on) {
         const want = (on === undefined) ? !isMultiSel : !!on;
@@ -5567,6 +5593,7 @@ function playAudioDirect(video, url, token) {
             document.getElementById('adBlockChk').checked = localStorage.getItem('tv_adblock') !== '0';
             refreshAdRulesInfo();
             applyEasyMode(); updateYtToggleBtn();
+            try { document.getElementById('cloudBaseInput').value = localStorage.getItem('tv_cloud_base') || ''; } catch (e) {}
             startupSyncCheck();
             if (window.Android && typeof Android.saveRules === 'function') {
                 const last = Number(localStorage.getItem('tv_ad_rules_t') || 0);
