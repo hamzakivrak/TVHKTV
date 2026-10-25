@@ -19,6 +19,16 @@
         #playerWrapper { position:absolute; top:0; left:0; right:0; bottom:0; background:#000; display:flex; flex-direction:column; z-index:1; touch-action:none; cursor:default; outline:none; }
         video#localPlayer { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; background:#000; z-index:2; }
         video::cue { background-color:rgba(0,0,0,0.85); color:white; font-size:1.2rem; }
+        body.easy-mode #controlsOverlay { display:none !important; }
+        #liveSubtitleOverlay { font-size:var(--sub-size,18px) !important; bottom:var(--sub-bottom,10%) !important; color:var(--sub-fg,#fff) !important; background:var(--sub-bg,rgba(0,0,0,0.8)) !important; text-shadow:var(--sub-sh,none); }
+        .sub-row { display:flex; align-items:center; gap:8px; margin:10px 0; }
+        .sub-row b { flex:1; text-align:left; color:#9aa0b4; font-weight:600; }
+        .sub-row span { min-width:58px; font-weight:700; }
+        .sub-row .tv-modal-btn { min-width:56px; padding:6px 10px; }
+        #subPreviewBox { position:relative; height:110px; border-radius:10px; background:linear-gradient(135deg,#3a4a5e,#6b5b4a); overflow:hidden; margin:8px 0 6px; }
+        #subPreviewTxt { position:absolute; left:50%; transform:translateX(-50%); bottom:calc(var(--sub-bottom,12%) * 0.9); padding:4px 10px; border-radius:4px; font-size:var(--sub-size,18px); color:var(--sub-fg,#fff); background:var(--sub-bg,rgba(0,0,0,.85)); text-shadow:var(--sub-sh,none); white-space:nowrap; max-width:96%; overflow:hidden; }
+        #subThemes { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:8px 0; }
+        #subThemes .sub-theme.on { outline:3px solid var(--accent2); }
         #ytContainer { position:absolute; top:0; left:0; width:100%; height:100%; z-index:2; background:#000; display:none; pointer-events:none; }
         #ytContainer iframe { width:100%; height:100%; border:none; }
         #ytContainer.yt-wait { visibility:hidden; }
@@ -218,7 +228,7 @@
         </div>
         <div class="ctrl-hint-pill" id="ctrlHintPill">◀ ▶ Alt Kontroller &amp; Sarma · ▲ ▼ Kanal Değiştir · OK: Kanal Rehberi</div>
         <div class="center-buttons" id="bottomControlBar">
-            <button class="ctrl-btn small" id="ccBtn" onclick="toggleSubtitles()" title="Altyazı Aç/Kapat"><i class="material-icons-round">closed_caption</i></button>
+            <button class="ctrl-btn small" id="ccBtn" onclick="ccClick()" title="Altyazı Aç/Kapat (4 sn basılı tut: ayarlar)"><i class="material-icons-round">closed_caption</i></button>
             <button class="ctrl-btn" id="rewindBtn" onclick="triggerSingleSeek(-1)" title="10 Saniye Geri Sar"><i class="material-icons-round">replay_10</i></button>
             <button class="ctrl-btn main" id="playPauseBtn" onclick="togglePlayPause()" title="Oynat / Duraklat"><i class="material-icons-round" id="playIcon">play_arrow</i></button>
             <button class="ctrl-btn" id="forwardBtn" onclick="triggerSingleSeek(1)" title="10 Saniye İleri Sar"><i class="material-icons-round">forward_10</i></button>
@@ -320,6 +330,10 @@
                         <button class="btn" onclick="document.getElementById('importFile').click()">Dosyadan yükle</button>
                     </div>
                     <input type="file" id="importFile" accept=".json,application/json" style="display:none" onchange="importBackup(this)">
+                </div>
+                <div class="sub-module">
+                    <span class="sub-module-title" style="color:#55efc4;">Kolay Kullanım Modu</span>
+                    <label style="display:flex; align-items:center; gap:10px; font-size:0.9rem;"><input type="checkbox" style="position:static; width:22px; height:22px;" id="easyModeChk" onchange="setEasyMode(this.checked)"> Açık: yalnızca seçili listenin kanalları döner; kanal listesi ve alt çubuk kapanır. Çıkmak için OK / ekrana 6 sn basılı tutup ayarlara girin.</label>
                 </div>
                 <div class="sub-module">
                     <span class="sub-module-title" style="color:#74b9ff;">Ağ & Yedekleme</span>
@@ -442,6 +456,9 @@
                 <optgroup label="Kişisel Listelerim" id="personalPresetsRight"></optgroup>
                 <optgroup label="YouTube Listeleri" id="ytPlaylistsGroupRight"></optgroup>
             </select>
+            <button class="btn-icon" id="ytToggleBtn" onclick="toggleYtLists()" title="YouTube listelerini göster / gizle" style="white-space:nowrap; padding:0 12px; display:none;">
+                <i class="material-icons-round" style="font-size:20px;">smart_display</i> <span id="ytToggleTxt">YT</span>
+            </button>
             <button class="btn-icon" id="multiBtn" onclick="toggleMultiSel()" title="Çoklu seçim (toplu favori / sil)" style="white-space:nowrap; padding:0 12px;">
                 <i class="material-icons-round" style="font-size:20px;">checklist</i> <span class="hide-mobile-txt">Seç</span>
             </button>
@@ -557,6 +574,21 @@
         <video id="smartPreviewVideo" playsinline controls></video>
         <div id="smartPreviewIframe"></div>
         <div id="smartPreviewStatus" style="font-size:0.85rem; color:#aaa; margin-top:10px; text-align:center; padding:8px;">Hazır</div>
+    </div>
+</div>
+
+<div id="subSetModal" class="tv-modal-backdrop" onclick="if(Date.now()-modalOpenedAt>400) closeSubSettings()">
+    <div class="tv-modal-card" onclick="event.stopPropagation()">
+        <p class="tv-modal-title">Altyazı Ayarları</p>
+        <div id="subPreviewBox"><span id="subPreviewTxt">Örnek altyazı metni</span></div>
+        <div class="sub-row"><b>Boyut</b><button type="button" class="tv-modal-btn" onclick="subAdj('size',-10)">−</button><span id="subSizeVal">100%</span><button type="button" class="tv-modal-btn" onclick="subAdj('size',10)">+</button></div>
+        <div class="sub-row"><b>Konum (alttan)</b><button type="button" class="tv-modal-btn" onclick="subAdj('pos',-4)">▼</button><span id="subPosVal">12%</span><button type="button" class="tv-modal-btn" onclick="subAdj('pos',4)">▲</button></div>
+        <div class="sub-row" style="margin-bottom:0;"><b>Tema</b></div>
+        <div id="subThemes"></div>
+        <div class="btn-group" style="margin-top:12px;">
+            <button class="btn" onclick="subReset()" style="background:#2a2d3a;">Sıfırla</button>
+            <button class="btn" id="subCloseBtn" onclick="closeSubSettings()" style="background:#1c1e26;"><i class="material-icons-round" style="margin-right:6px;">close</i> Kapat</button>
+        </div>
     </div>
 </div>
 
@@ -801,7 +833,7 @@
 
     async function diagnoseWorker(url) {
         try { await fetch(url, { mode: 'no-cors' }); return 'Sunucuya ulaşılıyor ama tarayıcı izin vermiyor (CORS). Bu sayfanın adresi: ' + location.origin; }
-        catch (e) { let h = url; try { h = new URL(url).host; } catch (e2) {} return 'Sunucuya hiç ulaşılamıyor (ağ, DNS veya engel): ' + h; }
+        catch (e) { let h = url; try { h = new URL(url).host; } catch (e2) {} return 'Sunucuya hiç ulaşılamıyor (ağ, DNS veya engel): ' + h + ' · sayfa: ' + location.protocol + '//' + (location.host || '(dosya)') + ' · ' + (window.Android ? 'APK köprüsü var' : 'APK köprüsü yok') + ' · çevrimiçi: ' + navigator.onLine; }
     }
     // Önce doğrudan dener; olmazsa aynı isteği ücretsiz bir CORS aktarıcısı üzerinden dener; ikisi de olmazsa nedenini söyler
     async function workerFetch(url, opts) {
@@ -1053,6 +1085,7 @@
         } else if (event.data === YT.PlayerState.PAUSED) {
             document.getElementById('playIcon').innerText = 'play_arrow';
             try { refreshNowPlaying(); } catch (e) {}
+            if (document.hidden && !ytUserPaused) { try { ytPlayer.playVideo(); } catch (e) {} }
             document.getElementById('bufSpinner').style.display = 'none';
         } else if (event.data === YT.PlayerState.ENDED) {
             nextCh(); // Video bitince sonrakine geçer
@@ -1107,6 +1140,8 @@
         if (bulkNumModal && bulkNumModal.classList.contains('show')) { closeBulkNumModal(); pushDrawerHistoryState(); return; }
         const camModal = document.getElementById('channelActionModal');
         if (camModal && camModal.classList.contains('show')) { closeChannelActionModal(); pushDrawerHistoryState(); return; }
+        const subModalH = document.getElementById('subSetModal');
+        if (subModalH && subModalH.classList.contains('show')) { closeSubSettings(); pushDrawerHistoryState(); return; }
         const infoModalH = document.getElementById('infoModal');
         if (infoModalH && infoModalH.classList.contains('show')) { closeInfoModal(); pushDrawerHistoryState(); return; }
         const previewModal = document.getElementById('smartPreviewModal');
@@ -1119,6 +1154,7 @@
     });
 
     function openRightSidebar() {
+        if (easyMode) { easyHint(); return; }
         if (Date.now() - lastDrawerActionTime < 250) return;
         lastDrawerActionTime = Date.now();
         pushDrawerHistoryState();
@@ -1177,6 +1213,7 @@
         const sbw = document.getElementById('seekBarWrap'); if (sbw) sbw.classList.remove('show');
     }
     function showControls(focusBottomBar = false) {
+        if (easyMode) { easyHint(); return; }
         const ctrl = document.getElementById('controlsOverlay');
         ctrl.classList.remove('hide');
         if (focusBottomBar) {
@@ -1187,6 +1224,7 @@
     }
     function resetControlsTimer() {
         const ctrl = document.getElementById('controlsOverlay');
+        if (easyMode) { ctrl.classList.add('hide'); return; }
         ctrl.classList.remove('hide');
         clearTimeout(controlsTimer);
         if (document.getElementById('leftSidebar').classList.contains('open') || document.getElementById('rightSidebar').classList.contains('open')) return;
@@ -1243,6 +1281,7 @@
         });
         ytPlaylistsData.forEach((p) => {
             const cleanId = String(p.id).replace(/^ytpl_/, '');
+            if (!ytListsOpen && 'ytpl_' + cleanId !== currentListContext) return;
             const optL = document.createElement('option'); optL.value = 'ytpl_' + cleanId; optL.innerText = "📺 " + p.name; ytGrpLeft.appendChild(optL);
             const optR = document.createElement('option'); optR.value = 'ytpl_' + cleanId; optR.innerText = "📺 " + p.name; ytGrpRight.appendChild(optR);
         });
@@ -1996,6 +2035,10 @@
             if (pinActionMode === 'bulk_order') {
                 closeChannelActionModal();
                 startBulkOrderModeAfterPin();
+            } else if (pinActionMode === 'multi') {
+                const fn = multiPinPending; multiPinPending = null;
+                closeChannelActionModal();
+                if (fn) fn();
             } else {
                 const idToDel = camTargetChannelId;
                 closeChannelActionModal();
@@ -4187,7 +4230,8 @@ async function resetQuarantine() {
         document.querySelectorAll('.channel-item').forEach(el => el.classList.toggle('multi-picked', multiSel.has(el.dataset.chid)));
         updateMultiCount();
     }
-    function multiSetFav(on) {
+    function multiSetFav(on) { multiRequirePin(on ? 'Toplu favori ekleme' : 'Toplu favoriden çıkarma', () => _multiSetFavDo(on)); }
+    function _multiSetFavDo(on) {
         if (!multiSel.size) { showOSD('Önce kanal seçin'); return; }
         let n = 0;
         allChannels.forEach(c => {
@@ -4199,7 +4243,8 @@ async function resetQuarantine() {
         multiSel = new Set(); sortAndRenderList(); updateMultiCount(); updateMainFavBtn();
         showOSD(on ? 'Favorilere Eklendi' : 'Favorilerden Çıkarıldı', n + ' kanal');
     }
-    async function multiDelete() {
+    function multiDelete() { multiRequirePin('Toplu silme', () => _multiDeleteDo()); }
+    async function _multiDeleteDo() {
         if (!multiSel.size) { showOSD('Önce kanal seçin'); return; }
         const ok = await showTvConfirm('Toplu Silme', `${multiSel.size} kanal listeden silinsin mi?`);
         if (!ok) return;
@@ -4282,6 +4327,10 @@ async function resetQuarantine() {
         document.addEventListener('visibilitychange', () => {
             const v = document.getElementById('localPlayer');
             if (!v) return;
+            const ytc = document.getElementById('ytContainer');
+            if (document.hidden && ytc && ytc.style.display === 'block' && typeof ytPlayer !== 'undefined' && ytPlayer) {
+                [200, 800, 2000, 5000].forEach(ms => setTimeout(() => { if (document.hidden && !ytUserPaused) { try { if (ytPlayer.getPlayerState() !== 1) ytPlayer.playVideo(); } catch (e) {} } }, ms));
+            }
             if (document.hidden) {
                 wasPlaying = !v.paused && v.style.display !== 'none';
                 if (wasPlaying) { [150, 600, 1500].forEach(ms => setTimeout(() => { if (document.hidden && v.paused && wasPlaying) v.play().catch(() => {}); }, ms)); }
@@ -4352,6 +4401,139 @@ async function resetQuarantine() {
             if (localStorage.getItem('tv_sync_id') && !hasLocal && localStorage.getItem('tv_auto_backup') !== '0') setTimeout(() => syncDataFromCloud(), 1500);
         } catch (e) {}
     }
+
+    /* ===== SAYFA GİZLİ OLSA DA SES SÜRSÜN (APK) ===== */
+    if (window.Android) {
+        try {
+            Object.defineProperty(document, 'hidden', { get() { return false; }, configurable: true });
+            Object.defineProperty(document, 'visibilityState', { get() { return 'visible'; }, configurable: true });
+            document.addEventListener('visibilitychange', e => e.stopImmediatePropagation(), true);
+        } catch (e) {}
+    }
+
+    /* ===== KOLAY KULLANIM MODU ===== */
+    var easyMode = false; try { easyMode = localStorage.getItem('tv_easy_mode') === '1'; } catch (e) {}
+    var easyHintAt = 0;
+    function applyEasyMode() {
+        document.body.classList.toggle('easy-mode', easyMode);
+        const c = document.getElementById('easyModeChk'); if (c) c.checked = easyMode;
+    }
+    function setEasyMode(on) {
+        easyMode = !!on;
+        try { localStorage.setItem('tv_easy_mode', easyMode ? '1' : '0'); } catch (e) {}
+        applyEasyMode();
+        if (easyMode) { closeAllDrawers(); showOSD('Kolay Kullanım Modu Açık', 'Çıkmak için OK / ekrana 6 sn basılı tutup ayarlara girin'); }
+        else showOSD('Kolay Kullanım Modu Kapalı');
+    }
+    function easyHint() {
+        if (Date.now() - easyHintAt < 2500) return;
+        easyHintAt = Date.now();
+        showOSD('Kolay Kullanım Modu', 'Ayarlar için OK / ekrana 6 sn basılı tutun');
+    }
+
+    /* ===== YOUTUBE LİSTELERİNİ TEK BUTONDA GİZLE / GÖSTER ===== */
+    var ytListsOpen = false; try { ytListsOpen = localStorage.getItem('tv_yt_open') === '1'; } catch (e) {}
+    function updateYtToggleBtn() {
+        const t = document.getElementById('ytToggleTxt'), b = document.getElementById('ytToggleBtn');
+        const n = ytPlaylistsData.length;
+        if (t) t.innerText = 'YT' + (n ? ' (' + n + ')' : '');
+        if (b) { b.style.background = ytListsOpen ? 'var(--accent2)' : ''; b.style.color = ytListsOpen ? '#000' : ''; b.style.display = n ? '' : 'none'; }
+    }
+    function toggleYtLists() {
+        ytListsOpen = !ytListsOpen;
+        try { localStorage.setItem('tv_yt_open', ytListsOpen ? '1' : '0'); } catch (e) {}
+        updatePresetDropdown();
+        const s = document.getElementById('rightCountrySelect');
+        if (s && currentListContext && Array.from(s.options).some(o => o.value === currentListContext)) s.value = currentListContext;
+        if (ytListsOpen) {
+            try { s.focus(); if (typeof s.showPicker === 'function') s.showPicker(); } catch (e) {}
+        } else showOSD('YouTube listeleri gizlendi', 'YT düğmesiyle tekrar açın');
+    }
+    (function () { const _u = updatePresetDropdown; updatePresetDropdown = function () { _u.apply(this, arguments); updateYtToggleBtn(); }; })();
+
+    /* ===== TOPLU İŞLEMLERDE 1111 ŞİFRESİ ===== */
+    var multiPinPending = null;
+    function multiRequirePin(label, fn) {
+        if (!multiSel.size) { showOSD('Önce kanal seçin'); return; }
+        multiPinPending = fn; pinActionMode = 'multi'; camTargetChannelId = null;
+        modalOpenedAt = Date.now(); suppressClicksUntil = Date.now() + 750;
+        delPinBuffer = ''; document.getElementById('delPinInput').value = '';
+        document.getElementById('camTitle').innerText = 'Toplu İşlem';
+        document.getElementById('camSub').innerText = label + ' için 1111 şifresini girin:';
+        const p = document.getElementById('camPinPromptText'); if (p) p.innerHTML = label + ' için <b>1111</b> girin:';
+        document.getElementById('camButtons').style.display = 'none';
+        document.getElementById('camPinArea').style.display = 'block';
+        document.getElementById('channelActionModal').classList.add('show');
+        setTimeout(() => { const b1 = document.getElementById('delPinBtn1'); if (b1) b1.focus(); }, 60);
+    }
+
+    /* ===== ALTYAZI AYARLARI (altyazı düğmesine 4 sn basılı tut) ===== */
+    const SUB_THEMES = [
+        { id: 'classic', name: 'Klasik', fg: '#ffffff', bg: 'rgba(0,0,0,0.85)', sh: 'none' },
+        { id: 'yellow', name: 'Sarı', fg: '#ffeb3b', bg: 'rgba(0,0,0,0.85)', sh: 'none' },
+        { id: 'clear', name: 'Şeffaf', fg: '#ffffff', bg: 'transparent', sh: '0 0 4px #000, 0 0 4px #000, 1px 1px 3px #000' },
+        { id: 'blue', name: 'Mavi', fg: '#ffffff', bg: 'rgba(10,40,110,0.9)', sh: 'none' },
+        { id: 'light', name: 'Açık', fg: '#111111', bg: 'rgba(255,255,255,0.92)', sh: 'none' }
+    ];
+    var subCfg = { size: 100, pos: 12, theme: 'classic' };
+    try { Object.assign(subCfg, JSON.parse(localStorage.getItem('tv_sub_cfg') || '{}')); } catch (e) {}
+    var ccLongFired = false, ccKeyTimer = null;
+    function subTheme() { return SUB_THEMES.find(t => t.id === subCfg.theme) || SUB_THEMES[0]; }
+    function subPlaceCues() {
+        const v = document.getElementById('localPlayer'); if (!v || !v.textTracks) return;
+        for (let i = 0; i < v.textTracks.length; i++) {
+            const cs = v.textTracks[i].cues; if (!cs) continue;
+            for (let j = 0; j < cs.length; j++) { try { cs[j].snapToLines = false; cs[j].lineAlign = 'end'; cs[j].line = 100 - subCfg.pos; } catch (e) {} }
+        }
+    }
+    function applySubCfg() {
+        subCfg.size = Math.max(50, Math.min(300, Math.round(subCfg.size)));
+        subCfg.pos = Math.max(2, Math.min(70, Math.round(subCfg.pos)));
+        const th = subTheme(), r = document.documentElement.style;
+        r.setProperty('--sub-size', Math.round(18 * subCfg.size / 100) + 'px');
+        r.setProperty('--sub-bottom', subCfg.pos + '%');
+        r.setProperty('--sub-fg', th.fg); r.setProperty('--sub-bg', th.bg); r.setProperty('--sub-sh', th.sh);
+        let st = document.getElementById('subCueStyle');
+        if (!st) { st = document.createElement('style'); st.id = 'subCueStyle'; document.head.appendChild(st); }
+        st.textContent = `video::cue { font-size:${(1.2 * subCfg.size / 100).toFixed(2)}rem; color:${th.fg}; background-color:${th.bg}; text-shadow:${th.sh}; }`;
+        subPlaceCues();
+        const a = document.getElementById('subSizeVal'); if (a) a.innerText = subCfg.size + '%';
+        const b = document.getElementById('subPosVal'); if (b) b.innerText = subCfg.pos + '%';
+        document.querySelectorAll('#subThemes .sub-theme').forEach(el => el.classList.toggle('on', el.dataset.t === subCfg.theme));
+        try { localStorage.setItem('tv_sub_cfg', JSON.stringify(subCfg)); } catch (e) {}
+    }
+    function subAdj(k, d) { subCfg[k] += d; applySubCfg(); }
+    function subSetTheme(id) { subCfg.theme = id; applySubCfg(); }
+    function subReset() { subCfg = { size: 100, pos: 12, theme: 'classic' }; applySubCfg(); }
+    function openSubSettings() {
+        modalOpenedAt = Date.now();
+        hideControlsNow();
+        const box = document.getElementById('subThemes');
+        if (box && !box.children.length) box.innerHTML = SUB_THEMES.map(t => `<button type="button" class="tv-modal-btn sub-theme" data-t="${t.id}" onclick="subSetTheme('${t.id}')" style="background:${t.bg === 'transparent' ? '#333' : t.bg}; color:${t.fg}; text-shadow:${t.sh};">${t.name}</button>`).join('');
+        applySubCfg();
+        document.getElementById('subSetModal').classList.add('show');
+        setTimeout(() => { const b = document.getElementById('subCloseBtn'); if (b) try { b.focus({ preventScroll: true }); } catch (e) { b.focus(); } }, 40);
+    }
+    function closeSubSettings() {
+        document.getElementById('subSetModal').classList.remove('show');
+        const pw = document.getElementById('playerWrapper'); if (pw) { try { pw.focus({ preventScroll: true }); } catch (e) { pw.focus(); } }
+    }
+    function ccClick() { if (ccLongFired) { ccLongFired = false; return; } toggleSubtitles(); }
+    (function subInit() {
+        applySubCfg();
+        const v = document.getElementById('localPlayer');
+        const hook = tr => { try { tr.addEventListener('cuechange', subPlaceCues); } catch (e) {} };
+        if (v && v.textTracks) { for (let i = 0; i < v.textTracks.length; i++) hook(v.textTracks[i]); v.textTracks.addEventListener('addtrack', e => { hook(e.track); subPlaceCues(); }); }
+        const b = document.getElementById('ccBtn'); let t = null, th = null;
+        const stop = () => { clearTimeout(t); clearTimeout(th); try { if (!document.getElementById('subSetModal').classList.contains('show')) resetControlsTimer(); } catch (e) {} };
+        b.addEventListener('pointerdown', () => {
+            ccLongFired = false; clearTimeout(t); clearTimeout(th); clearTimeout(controlsTimer);
+            th = setTimeout(() => showOSD('Altyazı Ayarları', 'Açılana kadar basılı tutun'), 1500);
+            t = setTimeout(() => { ccLongFired = true; openSubSettings(); }, 4000);
+        });
+        ['pointerup', 'pointercancel'].forEach(ev => b.addEventListener(ev, stop));
+        b.addEventListener('contextmenu', e => e.preventDefault());
+    })();
 
     function getLocalList(id) { try { return JSON.parse(localStorage.getItem('tvl_' + id)) || []; } catch (e) { return []; } }
     function saveLocalList(id, arr) { try { localStorage.setItem('tvl_' + id, JSON.stringify(arr)); return true; } catch (e) { showOSD('Kaydedilemedi'); return false; } }
@@ -4823,6 +5005,12 @@ function playAudioDirect(video, url, token) {
         if (!k || k === 'Unidentified' || k === 'Process') k = TV_KC[kc] || k;
         if (seekHoldActive && (k === 'Enter' || k === ' ' || k === 'ArrowLeft' || k === 'ArrowRight' || kc === 23 || kc === 13 || kc === 66)) stopAcceleratingSeek();
         if (k === 'Enter' || k === ' ' || kc === 23 || kc === 13 || kc === 66) {
+            if (okPressContext === 'cc') {
+                clearTimeout(ccKeyTimer); ccKeyTimer = null; okPressContext = null;
+                e.preventDefault(); e.stopImmediatePropagation();
+                toggleSubtitles();
+                return;
+            }
             clearOkTimers(); clearChannelHoldTimers();
             if (ignoreKeyUntilRelease) {
                 e.preventDefault(); e.stopImmediatePropagation();
@@ -4944,6 +5132,17 @@ function playAudioDirect(video, url, token) {
             return;
         }
 
+        const subModalEl = document.getElementById('subSetModal');
+        if (subModalEl && subModalEl.classList.contains('show')) {
+            e.preventDefault(); e.stopImmediatePropagation();
+            if (['Escape', 'BrowserBack', 'GoBack'].includes(k) || kc === 4 || kc === 27) { if (!e.repeat) closeSubSettings(); return; }
+            const sb = Array.from(subModalEl.querySelectorAll('button')).filter(el => el.getClientRects().length > 0 && !el.disabled);
+            let si = sb.indexOf(ae); if (si < 0) si = sb.length - 1;
+            if (k === 'ArrowDown' || k === 'ArrowRight') sb[Math.min(sb.length - 1, si + 1)].focus();
+            else if (k === 'ArrowUp' || k === 'ArrowLeft') sb[Math.max(0, si - 1)].focus();
+            else if (!e.repeat && (Date.now() - modalOpenedAt > 700) && (k === 'Enter' || k === ' ' || kc === 23 || kc === 13 || kc === 66)) { if (sb[si]) sb[si].click(); }
+            return;
+        }
         const infoModalEl = document.getElementById('infoModal');
         if (infoModalEl && infoModalEl.classList.contains('show')) {
             e.preventDefault(); e.stopImmediatePropagation();
@@ -5012,6 +5211,7 @@ function playAudioDirect(video, url, token) {
                 document.getElementById('filterInput'),
                 document.getElementById('clearFilterBtn'),
                 document.getElementById('rightCountrySelect'),
+                document.getElementById('ytToggleBtn'),
                 document.getElementById('multiBtn'),
                 document.getElementById('rightSettingsBtn'),
                 ...(isMultiSel ? ['multiAllBtn', 'multiFavBtn', 'multiUnfavBtn', 'multiDelBtn', 'multiExitBtn'].map(i => document.getElementById(i)) : [])
@@ -5240,6 +5440,14 @@ function playAudioDirect(video, url, token) {
                     resetControlsTimer();
                     return;
                 }
+                if (focusedBtn.id === 'ccBtn') {
+                    if (!e.repeat && okPressContext === null) {
+                        okPressContext = 'cc'; ccLongFired = false; clearTimeout(ccKeyTimer);
+                        ccKeyTimer = setTimeout(() => { ccKeyTimer = null; if (okPressContext === 'cc') { okPressContext = null; ccLongFired = true; openSubSettings(); } }, 4000);
+                    }
+                    resetControlsTimer();
+                    return;
+                }
                 if (!e.repeat) { okPressContext = 'controls'; focusedBtn.click(); resetControlsTimer(); }
                 return;
             }
@@ -5329,6 +5537,7 @@ function playAudioDirect(video, url, token) {
             document.getElementById('autoBackupChk').checked = localStorage.getItem('tv_auto_backup') !== '0';
             document.getElementById('adBlockChk').checked = localStorage.getItem('tv_adblock') !== '0';
             refreshAdRulesInfo();
+            applyEasyMode(); updateYtToggleBtn();
             startupSyncCheck();
             if (window.Android && typeof Android.saveRules === 'function') {
                 const last = Number(localStorage.getItem('tv_ad_rules_t') || 0);
