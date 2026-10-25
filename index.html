@@ -2441,11 +2441,11 @@ async function resetQuarantine() {
     function toggleLocalPlaybackStatus(forcePause = null) {
         const ytContainer = document.getElementById('ytContainer'); const vid = document.getElementById('localPlayer');
         if (ytContainer.style.display === 'block' && ytPlayer) {
-            if (forcePause === true || ytPlayer.getPlayerState() === YT.PlayerState.PLAYING) { ytUserPaused = true; ytPlayer.pauseVideo(); }
-            else if (forcePause === false || ytPlayer.getPlayerState() !== YT.PlayerState.PLAYING) { ytUserPaused = false; ytPlayer.playVideo(); }
+            if (forcePause === true || ytPlayer.getPlayerState() === YT.PlayerState.PLAYING) { ytUserPaused = true; bgUserPaused = true; ytPlayer.pauseVideo(); }
+            else if (forcePause === false || ytPlayer.getPlayerState() !== YT.PlayerState.PLAYING) { ytUserPaused = false; bgUserPaused = false; ytPlayer.playVideo(); }
         } else {
-            if (forcePause === true || !vid.paused) vid.pause();
-            else if (forcePause === false || vid.paused) vid.play();
+            if (forcePause === true || !vid.paused) { bgUserPaused = true; vid.pause(); }
+            else if (forcePause === false || vid.paused) { bgUserPaused = false; vid.play(); }
         }
     }
     function toggleSubtitles() {
@@ -2855,7 +2855,7 @@ async function resetQuarantine() {
 
     async function play(idx, dir = 0) {
         if (idx < 0 || idx >= allChannels.length) return;
-        currentPlaySession++; let mySession = currentPlaySession; curIdx = idx; let ch = allChannels[curIdx];
+        currentPlaySession++; let mySession = currentPlaySession; curIdx = idx; let ch = allChannels[curIdx]; bgUserPaused = false;
         ytRetry = {}; window.ytCurrentSource = null;
         try { localStorage.setItem('tv_last_channel', ch.url); } catch(e) {}
         autoPlayDirection = dir || 1;
@@ -4458,6 +4458,21 @@ async function resetQuarantine() {
             document.addEventListener('visibilitychange', e => e.stopImmediatePropagation(), true);
         } catch (e) {}
     }
+
+    /* ===== ARKA PLANDA DURAKLAMAYI GERİ AL (APK uygulama küçülünce / ekran kilitliyken) ===== */
+    var bgUserPaused = false;
+    function bgKeep() {
+        if (bgUserPaused || !(window.__tvBg || document.hidden)) return;
+        try { if (typeof remotePlayer !== 'undefined' && remotePlayer && remotePlayer.isConnected) return; } catch (e) {}
+        const ytc = document.getElementById('ytContainer'), v = document.getElementById('localPlayer');
+        if (ytc && ytc.style.display === 'block' && typeof ytPlayer !== 'undefined' && ytPlayer && typeof ytPlayer.getPlayerState === 'function') {
+            let st = -2; try { st = ytPlayer.getPlayerState(); } catch (e) { return; }
+            if (st === 2 || st === 5 || st === -1) { try { ytPlayer.playVideo(); } catch (e) {} }
+        } else if (v && v.style.display !== 'none' && v.paused && !v.ended && (v.currentSrc || v.src)) {
+            v.play().catch(() => {});
+        }
+    }
+    setInterval(bgKeep, 2000);
 
     /* ===== KOLAY KULLANIM MODU ===== */
     var easyMode = false; try { easyMode = localStorage.getItem('tv_easy_mode') === '1'; } catch (e) {}
