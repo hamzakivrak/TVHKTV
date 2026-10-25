@@ -2431,6 +2431,15 @@ async function resetQuarantine() {
     }
     function toggleSubtitles() {
         subtitlesActive = !subtitlesActive;
+        subUserToggled = true;
+        const ytc0 = document.getElementById('ytContainer');
+        if (ytc0 && ytc0.style.display === 'block') {
+            try { if (subtitlesActive) ytPlayer.loadModule('captions'); else ytPlayer.unloadModule('captions'); } catch (e) {}
+            try { pushSubToYt(); } catch (e) {}
+            const b0 = document.getElementById('ccBtn'); if (b0) b0.classList.toggle('active', subtitlesActive);
+            showOSD("Altyazı " + (subtitlesActive ? "Açık" : "Kapalı"), "YouTube");
+            return;
+        }
         const btn = document.getElementById('ccBtn');
         if (subtitlesActive) btn.classList.add('active'); else btn.classList.remove('active');
         const video = document.getElementById('localPlayer');
@@ -4491,7 +4500,7 @@ async function resetQuarantine() {
     ];
     var subCfg = { size: 100, pos: 12, theme: 'classic' };
     try { Object.assign(subCfg, JSON.parse(localStorage.getItem('tv_sub_cfg') || '{}')); } catch (e) {}
-    var ccLongFired = false, ccKeyTimer = null;
+    var ccLongFired = false, ccKeyTimer = null, subUserToggled = false;
     function subTheme() { return SUB_THEMES.find(t => t.id === subCfg.theme) || SUB_THEMES[0]; }
     function subPlaceCues() {
         const v = document.getElementById('localPlayer'); if (!v || !v.textTracks) return;
@@ -4520,8 +4529,8 @@ async function resetQuarantine() {
     function pushSubToYt() {
         const th = subTheme();
         let f = null; try { f = ytPlayer && ytPlayer.getIframe && ytPlayer.getIframe(); } catch (e) {}
-        if (f && f.contentWindow) f.contentWindow.postMessage(JSON.stringify({ tvcSub: { size: subCfg.size, pos: subCfg.pos, fg: th.fg, bg: th.bg, sh: th.sh } }), '*');
-        try { ytPlayer.setOption('captions', 'fontSize', subCfg.size <= 70 ? -1 : subCfg.size <= 100 ? 0 : subCfg.size <= 130 ? 1 : subCfg.size <= 170 ? 2 : 3); } catch (e) {}
+        if (f && f.contentWindow) f.contentWindow.postMessage(JSON.stringify({ tvcSub: { size: subCfg.size, pos: subCfg.pos, fg: th.fg, bg: th.bg, sh: th.sh, hide: !!(subUserToggled && !subtitlesActive) } }), '*');
+        if (!(subUserToggled && !subtitlesActive)) try { ytPlayer.setOption('captions', 'fontSize', subCfg.size <= 70 ? -1 : subCfg.size <= 100 ? 0 : subCfg.size <= 130 ? 1 : subCfg.size <= 170 ? 2 : 3); } catch (e) {}
     }
     function subAdj(k, d) { subCfg[k] += d; applySubCfg(); }
     function subSetTheme(id) { subCfg.theme = id; applySubCfg(); }

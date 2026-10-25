@@ -1,7 +1,7 @@
 # TVCAST-RULES
 # Bu dosya GitHub'a (index.html ile ayni yere) yuklenir. Uygulamada Ayarlar > "Kurallari Guncelle" ile indirilir.
 # YouTube bir sey degistirip engelleme bozulursa yalniz bu dosya guncellenir; APK'yi yeniden derlemek gerekmez.
-version: 3
+version: 4
 
 # Kurallarin gecerli olacagi alan adlari (baska sitelere/IPTV adreslerine dokunulmaz)
 [scope]
@@ -81,6 +81,7 @@ youtube-nocookie.com/embed/
       if (!st) { st = document.createElement('style'); st.id = 'tvc-sub-style'; (document.head || document.documentElement).appendChild(st); }
       st.textContent =
         '.caption-window { zoom:' + (c.size / 100) + ' !important; top:auto !important; bottom:' + c.pos + '% !important; margin-bottom:0 !important; }' +
+        (c.hide ? '.ytp-caption-window-container, .caption-window { display:none !important; }' : '') +
         '.ytp-caption-segment { color:' + c.fg + ' !important; background:' + c.bg + ' !important; text-shadow:' + c.sh + ' !important; }';
     } catch (x) {}
   });
