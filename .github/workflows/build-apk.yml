@@ -86,6 +86,13 @@ jobs:
               }
           }
           TVCAST_EOF
+          mkdir -p app/src/main/res/xml
+          cat > app/src/main/res/xml/automotive_app_desc.xml <<'TVCAST_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <automotiveApp>
+              <uses name="media" />
+          </automotiveApp>
+          TVCAST_EOF
           mkdir -p app/src/main
           cat > app/src/main/AndroidManifest.xml <<'TVCAST_EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -121,10 +128,17 @@ jobs:
                           <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
                       </intent-filter>
                   </activity>
+                  <meta-data
+                      android:name="com.google.android.gms.car.application"
+                      android:resource="@xml/automotive_app_desc" />
                   <service
                       android:name=".PlaybackService"
-                      android:exported="false"
-                      android:foregroundServiceType="mediaPlayback" />
+                      android:exported="true"
+                      android:foregroundServiceType="mediaPlayback">
+                      <intent-filter>
+                          <action android:name="android.media.browse.MediaBrowserService" />
+                      </intent-filter>
+                  </service>
               </application>
           </manifest>
           TVCAST_EOF
@@ -601,9 +615,16 @@ jobs:
           import android.os.Build;
           import android.os.IBinder;
           import android.os.PowerManager;
+          import android.os.Bundle;
+          import android.os.SystemClock;
+          import android.media.MediaMetadata;
+          import android.media.browse.MediaBrowser;
+          import android.service.media.MediaBrowserService;
+          import java.util.ArrayList;
+          import java.util.List;
 
           /** Arka planda calmayi surduren on plan servisi + bildirimde onceki / oynat-durdur / sonraki dugmeleri. */
-          public class PlaybackService extends Service {
+          public class PlaybackService extends MediaBrowserService {
               public static final String ACTION_CMD = "com.tvcast.player.CMD";
               private static final String CHANNEL = "tvcast_playback";
               private static final int NOTIF_ID = 4711;
@@ -628,6 +649,8 @@ jobs:
                       @Override public void onSkipToNext() { send("next"); }
                       @Override public void onSkipToPrevious() { send("prev"); }
                   });
+                  try { session.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS); } catch (Exception ignored) { }
+                  try { setSessionToken(session.getSessionToken()); } catch (Exception ignored) { }
                   session.setActive(true);
                   try {
                       PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
@@ -683,8 +706,14 @@ jobs:
                       PlaybackState st = new PlaybackState.Builder()
                               .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE
                                       | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS)
-                              .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f)
+                              .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f, SystemClock.elapsedRealtime())
                               .build();
+                      session.setMetadata(new MediaMetadata.Builder()
+                              .putString(MediaMetadata.METADATA_KEY_TITLE, title)
+                              .putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, title)
+                              .putString(MediaMetadata.METADATA_KEY_ARTIST, "TV Cast")
+                              .build());
+                      session.setActive(true);
                       session.setPlaybackState(st);
                   } catch (Exception ignored) { }
                   Notification n = build();
@@ -712,7 +741,14 @@ jobs:
               }
 
               @Override
-              public IBinder onBind(Intent intent) { return null; }
+              public BrowserRoot onGetRoot(String clientPackageName, int clientUid, Bundle rootHints) {
+                  return new BrowserRoot("tvcast_root", null);
+              }
+
+              @Override
+              public void onLoadChildren(String parentId, Result<List<MediaBrowser.MediaItem>> result) {
+                  result.sendResult(new ArrayList<MediaBrowser.MediaItem>());
+              }
           }
           TVCAST_EOF
           mkdir -p app/src/main/res/values
