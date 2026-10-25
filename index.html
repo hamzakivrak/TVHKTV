@@ -296,6 +296,7 @@
                         <div class="btn-group" style="margin-top:10px;">
                             <button class="btn" id="scanBtn" style="background:rgba(241,196,15,0.2); color:var(--fav); border-color:var(--fav);" onclick="scanAllChannels()"><i class="material-icons-round" style="font-size:18px; margin-right:4px;">radar</i> Hepsini Test Et</button>
                             <button class="btn" style="background:rgba(0,206,201,0.18); color:var(--accent2); border-color:var(--accent2);" onclick="openBulkOrderFromSettings()"><i class="material-icons-round" style="font-size:18px; margin-right:4px;">format_list_numbered</i> Toplu Sırala</button>
+                            <button class="btn" style="background:rgba(241,196,15,0.18); color:var(--fav); border-color:var(--fav);" onclick="startMultiFromSettings()"><i class="material-icons-round" style="font-size:18px; margin-right:4px;">checklist</i> Çoklu Seç</button>
                         </div>
                         <div class="btn-group" style="margin-top:8px;">
                             <button class="btn" id="retestQuarSettingsBtn" style="background:rgba(52,152,219,0.2); color:#5dade2; border-color:#3498db;" onclick="retestQuarantineFromSettings()"><i class="material-icons-round" style="font-size:18px; margin-right:4px;">refresh</i> Karantinayı Test Et</button>
@@ -456,12 +457,6 @@
                 <optgroup label="Kişisel Listelerim" id="personalPresetsRight"></optgroup>
                 <optgroup label="YouTube Listeleri" id="ytPlaylistsGroupRight"></optgroup>
             </select>
-            <button class="btn-icon" id="ytToggleBtn" onclick="toggleYtLists()" title="YouTube listelerini göster / gizle" style="white-space:nowrap; padding:0 12px; display:none;">
-                <i class="material-icons-round" style="font-size:20px;">smart_display</i> <span id="ytToggleTxt">YT</span>
-            </button>
-            <button class="btn-icon" id="multiBtn" onclick="toggleMultiSel()" title="Çoklu seçim (toplu favori / sil)" style="white-space:nowrap; padding:0 12px;">
-                <i class="material-icons-round" style="font-size:20px;">checklist</i> <span class="hide-mobile-txt">Seç</span>
-            </button>
             <button class="btn-icon" id="rightSettingsBtn" onclick="requestSettingsOpen()" title="Ayarlar" style="background:var(--primary); border-color:var(--primary); white-space:nowrap; padding:0 14px;">
                 <i class="material-icons-round" style="font-size:20px;">settings</i> <span class="hide-mobile-txt">Ayarlar</span>
             </button>
@@ -1279,6 +1274,14 @@
             const optL = document.createElement('option'); optL.value = p.url; optL.innerText = "📁 " + p.name; grpLeft.appendChild(optL);
             const optR = document.createElement('option'); optR.value = p.url; optR.innerText = "📁 " + p.name; grpRight.appendChild(optR);
         });
+        if (ytPlaylistsData.length) {
+            ['L', 'R'].forEach(sd => {
+                const g = sd === 'L' ? ytGrpLeft : ytGrpRight;
+                const o = document.createElement('option'); o.value = '__yt_toggle__';
+                o.innerText = ytListsOpen ? '▾ YouTube listelerini gizle' : '▸ YouTube listeleri (' + ytPlaylistsData.length + ') — göster';
+                g.appendChild(o);
+            });
+        }
         ytPlaylistsData.forEach((p) => {
             const cleanId = String(p.id).replace(/^ytpl_/, '');
             if (!ytListsOpen && 'ytpl_' + cleanId !== currentListContext) return;
@@ -1320,6 +1323,7 @@
         document.getElementById('removePresetBtn').style.display = isPersonal ? 'block' : 'none';
     }
     function syncAndChangeCountry(val) {
+        if (val === '__yt_toggle__') { toggleYtLists(); return; }
         if (val === '__fav_only__') {
             favFilterOnly = true;
             updatePresetDropdown();
@@ -4208,6 +4212,7 @@ async function resetQuarantine() {
     /* ===== ÇOKLU SEÇİM: toplu favori / toplu silme ===== */
     var isMultiSel = false, multiSel = new Set();
     function updateMultiCount() { const el = document.getElementById('multiCount'); if (el) el.innerText = `${multiSel.size} seçili`; }
+    function startMultiFromSettings() { closeAllDrawers(); setTimeout(() => { openRightSidebar(); setTimeout(() => toggleMultiSel(true), 120); }, 320); }
     function toggleMultiSel(on) {
         const want = (on === undefined) ? !isMultiSel : !!on;
         if (want && typeof isBulkOrderMode !== 'undefined' && isBulkOrderMode) finishBulkOrderMode(true);
@@ -4443,11 +4448,12 @@ async function resetQuarantine() {
         ytListsOpen = !ytListsOpen;
         try { localStorage.setItem('tv_yt_open', ytListsOpen ? '1' : '0'); } catch (e) {}
         updatePresetDropdown();
-        const s = document.getElementById('rightCountrySelect');
-        if (s && currentListContext && Array.from(s.options).some(o => o.value === currentListContext)) s.value = currentListContext;
+        const right = document.getElementById('rightCountrySelect'), left = document.getElementById('countrySelect');
+        [right, left].forEach(sel => { if (sel && currentListContext && Array.from(sel.options).some(o => o.value === currentListContext)) sel.value = currentListContext; });
         if (ytListsOpen) {
-            try { s.focus(); if (typeof s.showPicker === 'function') s.showPicker(); } catch (e) {}
-        } else showOSD('YouTube listeleri gizlendi', 'YT düğmesiyle tekrar açın');
+            const active = (document.getElementById('leftSidebar').classList.contains('open') && left) ? left : right;
+            setTimeout(() => { try { active.focus(); if (typeof active.showPicker === 'function') active.showPicker(); } catch (e) {} }, 60);
+        } else showOSD('YouTube listeleri gizlendi');
     }
     (function () { const _u = updatePresetDropdown; updatePresetDropdown = function () { _u.apply(this, arguments); updateYtToggleBtn(); }; })();
 
@@ -5211,8 +5217,6 @@ function playAudioDirect(video, url, token) {
                 document.getElementById('filterInput'),
                 document.getElementById('clearFilterBtn'),
                 document.getElementById('rightCountrySelect'),
-                document.getElementById('ytToggleBtn'),
-                document.getElementById('multiBtn'),
                 document.getElementById('rightSettingsBtn'),
                 ...(isMultiSel ? ['multiAllBtn', 'multiFavBtn', 'multiUnfavBtn', 'multiDelBtn', 'multiExitBtn'].map(i => document.getElementById(i)) : [])
             ].filter(Boolean);
