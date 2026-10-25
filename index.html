@@ -1072,6 +1072,7 @@
         if (!ytc || ytc.style.display !== 'block') return;
         if (event.data === YT.PlayerState.PLAYING) { ytc.classList.remove('yt-wait'); window.ytCurrentSource = null; }
         if (event.data === YT.PlayerState.PLAYING) {
+            setTimeout(() => { try { pushSubToYt(); } catch (e) {} }, 600);
             try { if (useLowQuality()) ytPlayer.setPlaybackQuality('small'); } catch (e) {}
             document.getElementById('playIcon').innerText = 'pause';
             document.getElementById('pStatus').innerText = "Cihazda İzleniyor (YT)";
@@ -1720,6 +1721,13 @@
                 toggleBulkPickChannel(ch.id, idx);
             }
             return;
+        }
+        if (idx === curIdx && allChannels[idx]) {
+            // Aynı kanala tekrar basıldı: yayın düzgün oynuyorsa yeniden başlatma, yalnızca ekrana dön
+            const vid = document.getElementById('localPlayer'), ytc = document.getElementById('ytContainer');
+            const st = (document.getElementById('pStatus') || {}).innerText || '';
+            const loaded = (ytc && ytc.style.display === 'block') || (vid && (vid.currentSrc || vid.src) && vid.style.display !== 'none');
+            if (loaded && !/hata|bağlan|yükleniyor|karantina|deneniyor|hazırlan|çözülüyor|aranıyor|atlanıyor/i.test(st)) { closeAllDrawers(); return; }
         }
         closeAllDrawers(); play(idx, 0);
     }
@@ -4503,10 +4511,17 @@ async function resetQuarantine() {
         if (!st) { st = document.createElement('style'); st.id = 'subCueStyle'; document.head.appendChild(st); }
         st.textContent = `video::cue { font-size:${(1.2 * subCfg.size / 100).toFixed(2)}rem; color:${th.fg}; background-color:${th.bg}; text-shadow:${th.sh}; }`;
         subPlaceCues();
+        try { pushSubToYt(); } catch (e) {}
         const a = document.getElementById('subSizeVal'); if (a) a.innerText = subCfg.size + '%';
         const b = document.getElementById('subPosVal'); if (b) b.innerText = subCfg.pos + '%';
         document.querySelectorAll('#subThemes .sub-theme').forEach(el => el.classList.toggle('on', el.dataset.t === subCfg.theme));
         try { localStorage.setItem('tv_sub_cfg', JSON.stringify(subCfg)); } catch (e) {}
+    }
+    function pushSubToYt() {
+        const th = subTheme();
+        let f = null; try { f = ytPlayer && ytPlayer.getIframe && ytPlayer.getIframe(); } catch (e) {}
+        if (f && f.contentWindow) f.contentWindow.postMessage(JSON.stringify({ tvcSub: { size: subCfg.size, pos: subCfg.pos, fg: th.fg, bg: th.bg, sh: th.sh } }), '*');
+        try { ytPlayer.setOption('captions', 'fontSize', subCfg.size <= 70 ? -1 : subCfg.size <= 100 ? 0 : subCfg.size <= 130 ? 1 : subCfg.size <= 170 ? 2 : 3); } catch (e) {}
     }
     function subAdj(k, d) { subCfg[k] += d; applySubCfg(); }
     function subSetTheme(id) { subCfg.theme = id; applySubCfg(); }
@@ -5301,6 +5316,7 @@ function playAudioDirect(video, url, token) {
                 if (k === 'ArrowUp') {
                     e.preventDefault(); e.stopImmediatePropagation();
                     if (curPos < cols) {
+                        if (e.repeat) return;   // tuş basılı: en üst sırada dur, bırakıp tekrar basınca üst bölüme geç
                         if (isBulkOrderMode) document.getElementById('bulkSaveBtn').focus();
                         else if ((curPos % cols) >= Math.ceil(cols / 2)) document.getElementById('rightCountrySelect').focus();
                         else document.getElementById('filterInput').focus();
