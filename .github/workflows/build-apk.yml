@@ -149,10 +149,17 @@ jobs:
           import android.Manifest;
           import android.app.Activity;
           import android.content.BroadcastReceiver;
+          import android.content.ContentValues;
           import android.content.Context;
           import android.content.Intent;
           import android.content.IntentFilter;
           import android.content.pm.PackageManager;
+          import android.os.Environment;
+          import android.provider.MediaStore;
+          import android.webkit.ValueCallback;
+          import java.io.File;
+          import java.io.FileOutputStream;
+          import java.io.OutputStream;
           import android.net.ConnectivityManager;
           import android.net.Network;
           import android.net.NetworkCapabilities;
@@ -197,6 +204,8 @@ jobs:
               private final AdRules rules = new AdRules();
               private BroadcastReceiver cmdReceiver;
               private boolean serviceUp = false;
+              private ValueCallback<Uri[]> fileCb;
+              private static final int REQ_FILE = 7421;
 
               @Override
               protected void onCreate(Bundle b) {
@@ -283,6 +292,22 @@ jobs:
                       public Bitmap getDefaultVideoPoster() {
                           return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888);
                       }
+
+                      @Override
+                      public boolean onShowFileChooser(WebView w, ValueCallback<Uri[]> cb, FileChooserParams p) {
+                          if (fileCb != null) { try { fileCb.onReceiveValue(null); } catch (Exception ignored) { } }
+                          fileCb = cb;
+                          try {
+                              Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+                              i.addCategory(Intent.CATEGORY_OPENABLE);
+                              i.setType("*/*");
+                              startActivityForResult(Intent.createChooser(i, "Dosya seç"), REQ_FILE);
+                              return true;
+                          } catch (Exception e) {
+                              fileCb = null;
+                              return false;
+                          }
+                      }
                   });
               }
 
@@ -354,9 +379,58 @@ jobs:
                   }
 
                   @JavascriptInterface
+                  public String saveFile(String name, String text) {
+                      try {
+                          String safe = (name == null || name.isEmpty()) ? "tvcast-yedek.json" : name.replaceAll("[^A-Za-z0-9._-]", "_");
+                          byte[] data = (text == null ? "" : text).getBytes("UTF-8");
+                          if (Build.VERSION.SDK_INT >= 29) {
+                              ContentValues v = new ContentValues();
+                              v.put(MediaStore.Downloads.DISPLAY_NAME, safe);
+                              v.put(MediaStore.Downloads.MIME_TYPE, "application/json");
+                              v.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                              Uri u = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                              if (u == null) return "";
+                              OutputStream o = getContentResolver().openOutputStream(u);
+                              o.write(data);
+                              o.close();
+                              return "İndirilenler/" + safe;
+                          } else {
+                              File dir = getExternalFilesDir(null);
+                              if (dir == null) return "";
+                              File f = new File(dir, safe);
+                              FileOutputStream o = new FileOutputStream(f);
+                              o.write(data);
+                              o.close();
+                              return f.getAbsolutePath();
+                          }
+                      } catch (Exception e) {
+                          return "";
+                      }
+                  }
+
+                  @JavascriptInterface
                   public void setAdBlock(boolean on) {
                       rules.setEnabled(MainActivity.this, on);
                   }
+              }
+
+              @Override
+              protected void onActivityResult(int req, int res, Intent data) {
+                  if (req == REQ_FILE) {
+                      Uri[] r = null;
+                      if (res == RESULT_OK && data != null) {
+                          if (data.getData() != null) {
+                              r = new Uri[] { data.getData() };
+                          } else if (data.getClipData() != null) {
+                              int n = data.getClipData().getItemCount();
+                              r = new Uri[n];
+                              for (int k = 0; k < n; k++) r[k] = data.getClipData().getItemAt(k).getUri();
+                          }
+                      }
+                      if (fileCb != null) { fileCb.onReceiveValue(r); fileCb = null; }
+                      return;
+                  }
+                  super.onActivityResult(req, res, data);
               }
 
               private void startPlayback(String title, boolean playing) {
