@@ -71,8 +71,8 @@ jobs:
                   applicationId "com.tvcast.player"
                   minSdk 21
                   targetSdk 34
-                  versionCode 4
-                  versionName "1.3"
+                  versionCode 5
+                  versionName "1.4"
               }
 
               buildTypes {
@@ -148,6 +148,13 @@ jobs:
 
           import android.Manifest;
           import android.app.Activity;
+          import android.app.UiModeManager;
+          import android.content.SharedPreferences;
+          import android.content.res.Configuration;
+          import java.net.InetAddress;
+          import java.net.NetworkInterface;
+          import java.util.Enumeration;
+          import org.json.JSONObject;
           import android.content.BroadcastReceiver;
           import android.content.ContentValues;
           import android.content.Context;
@@ -204,6 +211,8 @@ jobs:
               private final AdRules rules = new AdRules();
               private BroadcastReceiver cmdReceiver;
               private boolean serviceUp = false;
+              private RemoteServer remote;
+              private static final int REMOTE_PORT = 8765;
               private ValueCallback<Uri[]> fileCb;
               private static final int REQ_FILE = 7421;
 
@@ -219,6 +228,7 @@ jobs:
                   rules.load(this);
                   setupWebView();
                   registerCommandReceiver();
+                  startRemote();
                   askNotificationPermission();
                   immersive();
                   load();
@@ -409,6 +419,92 @@ jobs:
                   }
 
                   @JavascriptInterface
+                  public String remoteInfo() {
+                      try {
+                          JSONObject o = new JSONObject();
+                          o.put("enabled", remoteEnabled());
+                          o.put("ip", localIp());
+                          o.put("port", REMOTE_PORT);
+                          o.put("code", remoteCode());
+                          return o.toString();
+                      } catch (Exception e) {
+                          return "{}";
+                      }
+                  }
+
+                  @JavascriptInterface
+                  public void setRemoteEnabled(boolean on) {
+                      rp().edit().putBoolean("enabled", on).apply();
+                      startRemote();
+                  }
+
+                  @JavascriptInterface
+                  public String newRemoteCode() {
+                      String c = String.format(Locale.US, "%04d", new java.util.Random().nextInt(10000));
+                      rp().edit().putString("code", c).apply();
+                      startRemote();
+                      return c;
+                  }
+
+                  @JavascriptInterface
+                  public void tvPing(final String ip, final String code) {
+                      if (ip == null || !ip.matches("^[0-9]{1,3}(\\.[0-9]{1,3}){3}$")) return;
+                      new Thread(new Runnable() {
+                          @Override
+                          public void run() {
+                              boolean ok = false;
+                              String msg = "";
+                              try {
+                                  HttpURLConnection c = (HttpURLConnection) new URL("http://" + ip + ":" + REMOTE_PORT + "/ping?code=" + code).openConnection();
+                                  c.setConnectTimeout(3000);
+                                  c.setReadTimeout(4000);
+                                  int rc = c.getResponseCode();
+                                  ok = rc == 200;
+                                  msg = rc == 403 ? "Kod yanlış" : (ok ? "" : "HTTP " + rc);
+                                  c.disconnect();
+                              } catch (Exception e) {
+                                  msg = "Ulaşılamadı (TV açık mı, uygulama çalışıyor mu, aynı Wi-Fi mi?)";
+                              }
+                              jsCb("window.__tvPingDone&&__tvPingDone(" + JSONObject.quote(ip) + "," + ok + "," + JSONObject.quote(msg) + ")");
+                          }
+                      }).start();
+                  }
+
+                  @JavascriptInterface
+                  public void tvSend(final String ip, final String code, final String json) {
+                      if (ip == null || !ip.matches("^[0-9]{1,3}(\\.[0-9]{1,3}){3}$")) return;
+                      new Thread(new Runnable() {
+                          @Override
+                          public void run() {
+                              boolean ok = false;
+                              String msg = "";
+                              try {
+                                  JSONObject o = new JSONObject(json);
+                                  o.put("code", code);
+                                  byte[] b = o.toString().getBytes("UTF-8");
+                                  HttpURLConnection c = (HttpURLConnection) new URL("http://" + ip + ":" + REMOTE_PORT + "/cmd").openConnection();
+                                  c.setConnectTimeout(3000);
+                                  c.setReadTimeout(5000);
+                                  c.setRequestMethod("POST");
+                                  c.setDoOutput(true);
+                                  c.setRequestProperty("Content-Type", "application/json");
+                                  c.setRequestProperty("Content-Length", String.valueOf(b.length));
+                                  OutputStream os = c.getOutputStream();
+                                  os.write(b);
+                                  os.close();
+                                  int rc = c.getResponseCode();
+                                  ok = rc == 200;
+                                  msg = rc == 403 ? "Kod yanlış" : (ok ? "" : "HTTP " + rc);
+                                  c.disconnect();
+                              } catch (Exception e) {
+                                  msg = "TV'ye ulaşılamadı";
+                              }
+                              jsCb("window.__tvSendDone&&__tvSendDone(" + ok + "," + JSONObject.quote(msg) + ")");
+                          }
+                      }).start();
+                  }
+
+                  @JavascriptInterface
                   public void setAdBlock(boolean on) {
                       rules.setEnabled(MainActivity.this, on);
                   }
@@ -431,6 +527,78 @@ jobs:
                       return;
                   }
                   super.onActivityResult(req, res, data);
+              }
+
+              private SharedPreferences rp() {
+                  return getSharedPreferences("tvcast_remote", MODE_PRIVATE);
+              }
+
+              private String remoteCode() {
+                  String c = rp().getString("code", "");
+                  if (c.length() != 4) {
+                      c = String.format(Locale.US, "%04d", new java.util.Random().nextInt(10000));
+                      rp().edit().putString("code", c).apply();
+                  }
+                  return c;
+              }
+
+              private boolean isTvDevice() {
+                  try {
+                      UiModeManager m = (UiModeManager) getSystemService(Context.UI_MODE_SERVICE);
+                      return m != null && m.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION;
+                  } catch (Exception e) {
+                      return false;
+                  }
+              }
+
+              private boolean remoteEnabled() {
+                  return rp().getBoolean("enabled", isTvDevice());
+              }
+
+              private void startRemote() {
+                  stopRemote();
+                  if (!remoteEnabled()) return;
+                  remote = new RemoteServer(REMOTE_PORT, remoteCode(), new RemoteServer.Handler() {
+                      @Override
+                      public void onCommand(final String json) {
+                          runOnUiThread(new Runnable() {
+                              @Override
+                              public void run() {
+                                  try { web.evaluateJavascript("try{tvRemoteCmd(" + json + ")}catch(e){}", null); } catch (Exception ignored) { }
+                              }
+                          });
+                      }
+                  });
+                  remote.start();
+              }
+
+              private void stopRemote() {
+                  if (remote != null) { remote.stop(); remote = null; }
+              }
+
+              private String localIp() {
+                  try {
+                      Enumeration<NetworkInterface> en = NetworkInterface.getNetworkInterfaces();
+                      while (en != null && en.hasMoreElements()) {
+                          NetworkInterface ni = en.nextElement();
+                          if (!ni.isUp() || ni.isLoopback()) continue;
+                          Enumeration<InetAddress> ad = ni.getInetAddresses();
+                          while (ad.hasMoreElements()) {
+                              InetAddress a = ad.nextElement();
+                              if (a instanceof java.net.Inet4Address && !a.isLoopbackAddress() && a.isSiteLocalAddress()) return a.getHostAddress();
+                          }
+                      }
+                  } catch (Exception ignored) { }
+                  return "";
+              }
+
+              private void jsCb(final String js) {
+                  runOnUiThread(new Runnable() {
+                      @Override
+                      public void run() {
+                          try { web.evaluateJavascript(js, null); } catch (Exception ignored) { }
+                      }
+                      });
               }
 
               private void startPlayback(String title, boolean playing) {
@@ -589,10 +757,159 @@ jobs:
               @Override
               protected void onDestroy() {
                   bgH.removeCallbacks(bgR);
+                  stopRemote();
                   try { if (cmdReceiver != null) unregisterReceiver(cmdReceiver); } catch (Exception ignored) { }
                   try { stopService(new Intent(this, PlaybackService.class)); } catch (Exception ignored) { }
                   if (web != null) { web.loadUrl("about:blank"); web.destroy(); }
                   super.onDestroy();
+              }
+          }
+          TVCAST_EOF
+          cat > app/src/main/java/com/tvcast/player/RemoteServer.java <<'TVCAST_EOF'
+          package com.tvcast.player;
+
+          import org.json.JSONObject;
+
+          import java.io.ByteArrayOutputStream;
+          import java.io.InputStream;
+          import java.io.OutputStream;
+          import java.net.InetSocketAddress;
+          import java.net.ServerSocket;
+          import java.net.Socket;
+
+          /** Ayni Wi-Fi'daki telefondan gelen basit komutlari (HTTP) kabul eden kucuk sunucu. Kod ile korunur. */
+          public class RemoteServer {
+              public interface Handler {
+                  void onCommand(String json);
+              }
+
+              private final int port;
+              private final String code;
+              private final Handler handler;
+              private volatile boolean running = false;
+              private ServerSocket server;
+
+              public RemoteServer(int port, String code, Handler handler) {
+                  this.port = port;
+                  this.code = code;
+                  this.handler = handler;
+              }
+
+              public void start() {
+                  running = true;
+                  Thread t = new Thread(new Runnable() {
+                      @Override
+                      public void run() {
+                          loop();
+                      }
+                  });
+                  t.setDaemon(true);
+                  t.start();
+              }
+
+              public void stop() {
+                  running = false;
+                  try {
+                      if (server != null) server.close();
+                  } catch (Exception ignored) {
+                  }
+              }
+
+              private void loop() {
+                  try {
+                      server = new ServerSocket();
+                      server.setReuseAddress(true);
+                      server.bind(new InetSocketAddress(port));
+                      while (running) {
+                          Socket s = server.accept();
+                          try {
+                              handle(s);
+                          } catch (Exception ignored) {
+                          } finally {
+                              try {
+                                  s.close();
+                              } catch (Exception ignored) {
+                              }
+                          }
+                      }
+                  } catch (Exception ignored) {
+                  }
+              }
+
+              private void handle(Socket s) throws Exception {
+                  s.setSoTimeout(4000);
+                  InputStream in = s.getInputStream();
+                  OutputStream out = s.getOutputStream();
+                  ByteArrayOutputStream hb = new ByteArrayOutputStream();
+                  int c;
+                  int n = 0;
+                  int st = 0;
+                  while ((c = in.read()) != -1) {
+                      hb.write(c);
+                      n++;
+                      if (n > 16384) break;
+                      if (c == '\r' && (st == 0 || st == 2)) {
+                          st++;
+                      } else if (c == '\n' && (st == 1 || st == 3)) {
+                          st++;
+                          if (st == 4) break;
+                      } else {
+                          st = (c == '\r') ? 1 : 0;
+                      }
+                  }
+                  String head = hb.toString("ISO-8859-1");
+                  int eol = head.indexOf("\r\n");
+                  String first = eol > 0 ? head.substring(0, eol) : head;
+                  if (first.startsWith("GET /ping")) {
+                      if (first.contains("code=" + code)) {
+                          reply(out, 200, "TVCAST");
+                      } else {
+                          Thread.sleep(500);
+                          reply(out, 403, "BAD CODE");
+                      }
+                      return;
+                  }
+                  if (first.startsWith("POST /cmd")) {
+                      int len = 0;
+                      java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?i)content-length:\\s*(\\d+)").matcher(head);
+                      if (m.find()) len = Integer.parseInt(m.group(1));
+                      if (len <= 0 || len > 65536) {
+                          reply(out, 400, "BAD LENGTH");
+                          return;
+                      }
+                      byte[] body = new byte[len];
+                      int got = 0;
+                      while (got < len) {
+                          int r = in.read(body, got, len - got);
+                          if (r < 0) break;
+                          got += r;
+                      }
+                      JSONObject o;
+                      try {
+                          o = new JSONObject(new String(body, 0, got, "UTF-8"));
+                      } catch (Exception e) {
+                          reply(out, 400, "BAD JSON");
+                          return;
+                      }
+                      if (!code.equals(o.optString("code"))) {
+                          Thread.sleep(500);
+                          reply(out, 403, "BAD CODE");
+                          return;
+                      }
+                      o.remove("code");
+                      handler.onCommand(o.toString());
+                      reply(out, 200, "OK");
+                      return;
+                  }
+                  reply(out, 404, "NOT FOUND");
+              }
+
+              private void reply(OutputStream out, int status, String text) throws Exception {
+                  byte[] b = text.getBytes("UTF-8");
+                  String head = "HTTP/1.1 " + status + " X\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: " + b.length + "\r\nConnection: close\r\n\r\n";
+                  out.write(head.getBytes("ISO-8859-1"));
+                  out.write(b);
+                  out.flush();
               }
           }
           TVCAST_EOF
