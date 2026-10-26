@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
@@ -207,6 +207,7 @@
 </head>
 <body class="tv-mode">
 
+
 <div id="playerWrapper" tabindex="0">
     <video id="localPlayer" playsinline crossorigin="anonymous"></video>
     <div id="ytContainer"><div id="ytPlayer"></div></div>
@@ -251,6 +252,7 @@
     </div>
     <div id="overlayBackdrop" class="overlay-backdrop" onclick="onBackdropClick(event)"></div>
 </div>
+
 
 <div id="leftSidebar" class="drawer" onclick="event.stopPropagation()">
     <div class="drawer-header">
@@ -363,17 +365,18 @@
                     <div id="apiKeyTestResult" style="font-size:0.78rem; color:#aaa; margin-top:8px; line-height:1.35; text-align:center;">Anahtarınızı girdikten sonra "API Test Et" ile doğrulayabilirsiniz.</div>
                 </div>
                 <div class="sub-module">
-                    <span class="sub-module-title" style="color:#fdcb6e;">Film / Video Ara</span>
+                    <span class="sub-module-title" style="color:#fdcb6e;">Film / Video Ara (Tüm Web)</span>
                     <div style="display:flex; gap:5px; margin-bottom:8px;">
-                        <input type="text" id="movieQuery" readonly placeholder="Film veya video adı" style="margin:0;">
+                        <input type="text" id="movieQuery" readonly placeholder="Film adı, konu veya doğrudan web linki..." style="margin:0;">
                         <button class="btn" style="flex:0.4; background:#fdcb6e; border-color:#fdcb6e; color:#000; margin:0;" onclick="movieSearch()"><i class="material-icons-round">search</i></button>
                     </div>
                     <div style="display:flex; gap:14px; font-size:0.84rem; margin-bottom:8px; align-items:center; flex-wrap:wrap;">
-                        <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" style="position:static; width:20px; height:20px;" id="srcMvYt" checked> YouTube (uzun videolar)</label>
+                        <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" style="position:static; width:20px; height:20px;" id="srcMvWeb" checked> 🌐 Tüm Web (Film Siteleri / Dailymotion / Genel)</label>
+                        <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" style="position:static; width:20px; height:20px;" id="srcMvYt" checked> YouTube (API'li / API'siz)</label>
                         <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" style="position:static; width:20px; height:20px;" id="srcMvArc" checked> Internet Archive (telifsiz)</label>
                     </div>
-                    <div id="movieStatus" style="font-size:0.75rem; color:#aaa; text-align:center; margin-bottom:8px;">Film adı yazın; bulunan videolar listelenir, ▶ ile izlenir.</div>
-                    <div id="movieResults" class="yt-search-results" style="max-height:320px; display:none;"></div>
+                    <div id="movieStatus" style="font-size:0.75rem; color:#aaa; text-align:center; margin-bottom:8px;">Film adı yazın; tüm web taranır, ▶ ile izlenir veya ➕ ile listeye eklenir.</div>
+                    <div id="movieResults" class="yt-search-results" style="max-height:340px; display:none;"></div>
                 </div>
                 <div class="sub-module">
                     <span class="sub-module-title" style="color:#e84118;">YouTube Playlist Ekle</span>
@@ -456,6 +459,7 @@
     </div>
 </div>
 
+
 <div id="rightSidebar" class="drawer" onclick="event.stopPropagation()">
     <div class="drawer-header">
         <div style="display:flex; gap:8px; flex:1; width:100%; align-items:center;">
@@ -511,6 +515,7 @@
     <div id="channelList" class="channel-list"></div>
 </div>
 
+
 <div id="channelActionModal" class="tv-modal-backdrop" onclick="if(Date.now()-modalOpenedAt>800) closeChannelActionModal()">
     <div class="tv-modal-card" onclick="event.stopPropagation()">
         <p class="tv-modal-title" id="camTitle">Kanal İşlemleri</p>
@@ -543,6 +548,7 @@
     </div>
 </div>
 
+
 <div id="bulkNumModal" class="tv-modal-backdrop" onclick="closeBulkNumModal()">
     <div class="tv-modal-card" onclick="event.stopPropagation()">
         <p class="tv-modal-title" id="bulkNumTitle">Hedef Sıra Numarası</p>
@@ -566,6 +572,7 @@
     </div>
 </div>
 
+
 <div id="tvConfirmModal" class="tv-modal-backdrop" onclick="resolveTvConfirm(false)">
     <div class="tv-modal-card" onclick="event.stopPropagation()">
         <p class="tv-modal-title" id="tvConfirmTitle">Onay</p>
@@ -576,6 +583,7 @@
         </div>
     </div>
 </div>
+
 
 <div id="smartPreviewModal" class="tv-modal-backdrop" onclick="if(Date.now()-modalOpenedAt>500) closeSmartPreview()">
     <div class="tv-modal-card" onclick="event.stopPropagation()" style="width:min(720px,94vw); max-width:none; padding:14px;">
@@ -591,6 +599,7 @@
     </div>
 </div>
 
+
 <div id="subSetModal" class="tv-modal-backdrop" onclick="if(Date.now()-modalOpenedAt>400) closeSubSettings()">
     <div class="tv-modal-card" onclick="event.stopPropagation()">
         <p class="tv-modal-title">Altyazı Ayarları</p>
@@ -605,6 +614,7 @@
         </div>
     </div>
 </div>
+
 
 <div id="infoModal" class="tv-modal-backdrop" onclick="if(Date.now()-modalOpenedAt>400) closeInfoModal()">
     <div class="tv-modal-card info-card" onclick="event.stopPropagation()">
@@ -624,6 +634,7 @@
     </div>
 </div>
 
+
 <script>
     const DEFAULT_CLOUD_PROXY = "https://quiet-cell-a027.hamzakivrak.workers.dev/?url=";
     // İsteğe bağlı: kendi alan adınız / yedek sunucu adresi (Ayarlar > Ağ & Yedekleme). Boşsa varsayılan kullanılır.
@@ -636,6 +647,7 @@
     })();
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const DEFAULT_LIST = "https://iptv-org.github.io/iptv/countries/tr.m3u";
+
 
     let allChannels = [];
     let curIdx = -1;
@@ -665,6 +677,7 @@
     let tvConfirmResolver = null;
     let tvConfirmPrevFocus = null;
 
+
     function showTvConfirm(title, msg) {
         return new Promise((resolve) => {
             tvConfirmPrevFocus = document.activeElement;
@@ -682,6 +695,7 @@
         if (res) res(!!ans);
     }
 
+
     let gridColumns = parseInt(localStorage.getItem('tv_grid_cols'), 10) || 4;
     if (gridColumns < 2 || gridColumns > 6) gridColumns = 4;
     function applyGridColumns() {
@@ -697,10 +711,12 @@
         showOSD(`Kanal Listesi: ${gridColumns} Sütun`, "Görünüm güncellendi");
     }
 
+
     function cleanApiKey(raw) { if (!raw) return ""; return String(raw).replace(/[^A-Za-z0-9_\-]/g, '').trim(); }
     let userYTApiKey = cleanApiKey(localStorage.getItem('tv_yt_api_key') || (extraChannelsDict && extraChannelsDict['__yt_api_key__']) || "");
     document.getElementById('userApiKey').value = userYTApiKey;
     document.getElementById('syncUserId').value = localStorage.getItem('tv_sync_id') || "";
+
 
     function getActiveApiKey() {
         const inputVal = cleanApiKey(document.getElementById('userApiKey') ? document.getElementById('userApiKey').value : "");
@@ -710,6 +726,7 @@
         if (key) { userYTApiKey = key; localStorage.setItem('tv_yt_api_key', key); }
         return key;
     }
+
 
     async function testApiKeyNow() {
         const key = getActiveApiKey();
@@ -733,12 +750,14 @@
         } catch (e) { resBox.style.color = "#e74c3c"; resBox.innerText = "Bağlantı hatası: " + e.message; }
     }
 
+
     let pinBuffer = "";
     let lastDrawerActionTime = 0;
     let ignoreKeyUntilRelease = false;
     let ignoreKeySafetyTimer = null;
     let modalOpenedAt = 0;
     let suppressClicksUntil = 0;
+
 
     function setIgnoreKeyUntilRelease(val, maxHoldMs = 15000) {
         ignoreKeyUntilRelease = !!val;
@@ -781,6 +800,7 @@
         } else { showOSD("Hatalı Şifre!", "Şifre: 1111"); pinClear(); }
     }
 
+
     function lockAllInputs() {
         document.querySelectorAll('input[type="text"], input[type="password"], textarea').forEach(el => {
             el.setAttribute('readonly', 'readonly'); el.classList.remove('kb-unlocked');
@@ -800,6 +820,7 @@
         const inp = e.target.closest('input[type="text"], input[type="password"], textarea');
         if (inp && inp.hasAttribute('readonly')) unlockInputForTyping(inp);
     }, true);
+
 
         function markChannelHealthy(urlOrCh) {
         if (!urlOrCh) return;
@@ -823,6 +844,7 @@
             if (quarBar && brokenCount === 0) { quarBar.style.display = 'none'; quarBar.innerHTML = ''; }
         }
     }
+
 
     function reconcileStateBeforeSync() {
         const brokenSet = new Set(brokenUrls);
@@ -853,6 +875,7 @@
         return keyToSave;
     }
 
+
     async function diagnoseWorker(url) {
         try { await fetch(url, { mode: 'no-cors' }); return 'Sunucuya ulaşılıyor ama tarayıcı izin vermiyor (CORS). Bu sayfanın adresi: ' + location.origin; }
         catch (e) { let h = url; try { h = new URL(url).host; } catch (e2) {} return 'Sunucuya hiç ulaşılamıyor (ağ, DNS veya engel): ' + h + ' · sayfa: ' + location.protocol + '//' + (location.host || '(dosya)') + ' · ' + (window.Android ? 'APK köprüsü var' : 'APK köprüsü yok') + ' · çevrimiçi: ' + navigator.onLine; }
@@ -870,6 +893,7 @@
             catch (e2) { throw new Error(await diagnoseWorker(url)); }
         }
     }
+
 
     async function syncDataToCloud(silent = false) {
         const userId = document.getElementById('syncUserId').value.trim();
@@ -916,6 +940,7 @@
         } catch (e) { stat.innerText = "Yedekleme Hatası: " + ((e && e.message) || e); stat.style.color = "#e74c3c"; }
     }
 
+
     function applyImportedData(d) {
         if (d && d.data && !d.favorites && !d.ytPlaylists) d = d.data;
         d = d || {};
@@ -938,23 +963,28 @@
         const presAll = []; presets.forEach(n => { if (n && n.url && !presAll.some(c => c.url === n.url)) presAll.push(n); });
         personalPresets.forEach(n => { if (n && n.url && !presAll.some(c => c.url === n.url)) presAll.push(n); });
 
+
         const cloudFavs = Array.isArray(rawExtras['__favs_v2__']) ? rawExtras['__favs_v2__'] : pick('favorites', []);
         favUrls = Array.isArray(cloudFavs) ? Array.from(new Set(cloudFavs)) : favUrls;
+
 
         const cloudBroken = Array.isArray(rawExtras['__broken_v2__']) ? rawExtras['__broken_v2__'] : pick('broken', []);
         if (Array.isArray(cloudBroken)) {
             brokenUrls = Array.from(new Set(cloudBroken)).filter(u => !extractYTId(u));
         }
 
+
         const cloudOrders = rawExtras['__custom_orders__'] || pick('customOrders', ['tv_custom_orders']);
         if (cloudOrders && typeof cloudOrders === 'object') {
             customOrdersDict = Object.assign({}, customOrdersDict, cloudOrders);
         }
 
+
         const cloudDeleted = rawExtras['__deleted_urls__'] || pick('deletedUrls', ['tv_deleted_urls']);
         if (cloudDeleted && typeof cloudDeleted === 'object') {
             deletedUrlsDict = Object.assign({}, deletedUrlsDict, cloudDeleted);
         }
+
 
         const cloudLocalLists = rawExtras['__local_lists__'] || d.localLists;
         if (cloudLocalLists && typeof cloudLocalLists === 'object') {
@@ -963,15 +993,18 @@
             });
         }
 
+
         if (rawExtras['__grid_cols__']) {
             const gc = parseInt(rawExtras['__grid_cols__'], 10);
             if (gc >= 2 && gc <= 6) { gridColumns = gc; localStorage.setItem('tv_grid_cols', String(gridColumns)); applyGridColumns(); }
         }
 
+
         ytPlaylistsData = ytAll;
         personalPresets = presAll;
         customChannelsData = pick('custom', []) || customChannelsData;
         extraChannelsDict = Object.assign({}, extraChannelsDict, rawExtras);
+
 
         const set = (k, v) => localStorage.setItem(k, JSON.stringify(v));
         set('tv_custom_orders', customOrdersDict);
@@ -983,11 +1016,13 @@
         set('tv_custom', customChannelsData);
         set('tv_extras_dict', extraChannelsDict);
 
+
         const importedKey = cleanApiKey(pick('apiKey', ['userYTApiKey', 'tv_yt_api_key', 'ytApiKey']) || (extraChannelsDict && extraChannelsDict['__yt_api_key__']) || "");
         if (importedKey) { userYTApiKey = importedKey; localStorage.setItem('tv_yt_api_key', userYTApiKey); document.getElementById('userApiKey').value = userYTApiKey; }
         if (d.lastContext) { currentListContext = d.lastContext; localStorage.setItem('tv_last_context', d.lastContext); }
         return { yt: ytAll.length, pres: presAll.length, fav: favUrls.length, broken: brokenUrls.length, orders: Object.keys(customOrdersDict).length, hasKey: !!userYTApiKey };
     }
+
 
     function exportBackup() {
         const keyToSave = reconcileStateBeforeSync();
@@ -1011,6 +1046,7 @@
         };
         rd.readAsText(f);
     }
+
 
     async function syncDataFromCloud() {
         let rawInput = document.getElementById('syncUserId').value.trim();
@@ -1038,6 +1074,8 @@
     }
 
 
+
+
     function saveApiKey() {
         const key = cleanApiKey(document.getElementById('userApiKey').value);
         document.getElementById('userApiKey').value = key;
@@ -1048,14 +1086,17 @@
         showOSD("API Anahtarı Kaydedildi", key ? `Uzunluk: ${key.length} karakter` : "Anahtar silindi");
     }
 
+
     if (localStorage.getItem('tv_extras') && !localStorage.getItem('tv_extras_dict')) {
         extraChannelsDict[DEFAULT_LIST] = JSON.parse(localStorage.getItem('tv_extras'));
         localStorage.setItem('tv_extras_dict', JSON.stringify(extraChannelsDict));
         localStorage.removeItem('tv_extras');
     }
 
+
     let ytPlayer = null;
     let isYtApiReady = false;
+
 
     function onYouTubeIframeAPIReady() {
         isYtApiReady = true;
@@ -1065,6 +1106,7 @@
             events: { 'onStateChange': onYtPlayerStateChange, 'onError': onYtPlayerError }
         });
     }
+
 
     /* YouTube iframe izleyici: reklam sonrası sesi aç, takılı duraklatmayı kaldır, reklamda atla düğmesine dokunulabilsin */
     let ytWatchTimer = null, ytAutoMuted = false, ytUserPaused = false, ytAdActive = false, ytWatchId = null;
@@ -1103,6 +1145,7 @@
         }
     }
 
+
     function onYtPlayerStateChange(event) {
         const ytc = document.getElementById('ytContainer');
         if (!ytc || ytc.style.display !== 'block') return;
@@ -1124,6 +1167,7 @@
         }
     }
 
+
     function onYtPlayerError(event) {
         const c = event.data;
         if (c === 152 || c === 153 || c === 15) { showOSD("YouTube oynatmayı reddetti (" + c + ")", "Sayfayı file:// yerine https adresinden açın"); document.getElementById('pStatus').innerText = "YouTube engelledi"; return; }
@@ -1131,6 +1175,7 @@
         handleStreamError(currentPlaySession);
     }
     if (window.YT && YT.Player && !ytPlayer) onYouTubeIframeAPIReady();
+
 
     function extractYTId(url) {
         if (!url) return null;
@@ -1144,6 +1189,7 @@
         return null;
     }
 
+
     function fastScrollGridToItem(el) {
         if (!el) return;
         const container = document.getElementById('channelList');
@@ -1155,6 +1201,7 @@
         else if (eRect.top < cRect.top + pad) container.scrollTop -= (cRect.top + pad - eRect.top);
     }
 
+
     function openLeftSidebar() { requestSettingsOpen(); }
     function pushDrawerHistoryState() {
         try {
@@ -1163,6 +1210,7 @@
             }
         } catch (e) {}
     }
+
 
     window.addEventListener('popstate', () => {
         if (castShown) { castStop(); pushDrawerHistoryState(); return; }
@@ -1185,6 +1233,7 @@
             closeAllDrawers();
         }
     });
+
 
     function openRightSidebar() {
         if (easyMode) { easyHint(); return; }
@@ -1224,6 +1273,7 @@
         hideControlsNow();
         setTimeout(() => { const pw = document.getElementById('playerWrapper'); if (pw) pw.focus(); }, 50);
     }
+
 
     function updateControlHintPill() {
         const pill = document.getElementById('ctrlHintPill'); if (!pill) return;
@@ -1269,6 +1319,7 @@
         }, inControls ? 6500 : 4000);
     }
 
+
     function showOSD(name, subtitle = "") {
         const osd = document.getElementById('osdTitle');
         osd.innerHTML = `${esc(name)} <div style="font-size:0.85rem; color:#aaa; margin-top:5px; font-weight:400;">${esc(subtitle)}</div>`;
@@ -1276,6 +1327,7 @@
         clearTimeout(osdTimer);
         osdTimer = setTimeout(() => osd.classList.remove('show'), 3200);
     }
+
 
     function updateMainFavBtn() {
         if (curIdx === -1 || !allChannels[curIdx]) return;
@@ -1289,6 +1341,7 @@
         localStorage.setItem('tv_favorites', JSON.stringify(favUrls)); sortAndRenderList();
     }
 
+
     function getActiveListDisplayName() {
         const selL = document.getElementById('countrySelect');
         if (selL) {
@@ -1297,6 +1350,7 @@
         }
         return 'Aktif Liste';
     }
+
 
     function updatePresetDropdown() {
         document.querySelectorAll('.tmp-opt').forEach(o => o.remove());
@@ -1307,6 +1361,7 @@
         const favGrpRight = document.getElementById('favFilterGroupRight');
         grpLeft.innerHTML = ''; ytGrpLeft.innerHTML = ''; grpRight.innerHTML = ''; ytGrpRight.innerHTML = '';
         if (favGrpRight) favGrpRight.innerHTML = '';
+
 
         personalPresets.forEach((p) => {
             const optL = document.createElement('option'); optL.value = p.url; optL.innerText = "📁 " + p.name; grpLeft.appendChild(optL);
@@ -1388,6 +1443,7 @@
         }
     }
 
+
     async function removeCurrentPreset() {
         const ok = await showTvConfirm("Özel Listeyi Sil", "Bu özel listeyi tamamen silmek istediğinize emin misiniz?");
         if (!ok) return;
@@ -1396,6 +1452,7 @@
         else { if (val.startsWith('local_')) { try { localStorage.removeItem('tvl_' + val); } catch (e) {} } personalPresets = personalPresets.filter(p => p.url !== val); localStorage.setItem('tv_presets', JSON.stringify(personalPresets)); }
         currentListContext = 'tr'; updatePresetDropdown(); syncAndChangeCountry("tr");
     }
+
 
     function applyDeletedAndOrderFilters() {
         const deletedList = deletedUrlsDict[currentListContext] || [];
@@ -1415,6 +1472,7 @@
         } else { allChannels.forEach((ch) => { delete ch.customOrder; }); }
     }
 
+
     function undeleteUrl(context, url) {
         if (!url || !context) return;
         if (!Array.isArray(deletedUrlsDict[context])) return;
@@ -1424,6 +1482,7 @@
             try { localStorage.setItem('tv_deleted_urls', JSON.stringify(deletedUrlsDict)); } catch (e) {}
         }
     }
+
 
     function saveCustomChannelOrder() {
         customOrdersDict[currentListContext] = allChannels.map(c => c.url);
@@ -1441,7 +1500,9 @@
         applyDeletedAndOrderFilters();
     }
 
+
     function deleteSingleChannel(event, id) { if (event) event.stopPropagation(); openChannelActionModal(id, true); }
+
 
     function executeChannelDelete(id) {
         const dc = allChannels.find(x => x.id === id);
@@ -1471,6 +1532,7 @@
         }, 60);
     }
 
+
     function addSingleChannel() {
         const name = document.getElementById('singleName').value.trim(); const url = document.getElementById('singleUrl').value.trim(); const logo = document.getElementById('singleLogo').value.trim();
         if (!name || !url) { showOSD("Eksik Bilgi", "Lütfen kanal adı ve yayın linkini girin"); return; }
@@ -1484,6 +1546,7 @@
         lockAllInputs();
         showOSD("Kanal Eklendi", name + " listeye eklendi.");
     }
+
 
     async function searchYouTube() {
         const query = document.getElementById('ytSearchQuery').value.trim();
@@ -1509,6 +1572,7 @@
     }
     function selectYtSearchResult(title, url, thumbnail) { document.getElementById('singleName').value = title; document.getElementById('singleUrl').value = url; document.getElementById('singleLogo').value = thumbnail; document.getElementById('ytSearchResults').style.display = 'none'; }
 
+
     async function addYTPlaylist() {
         let url = document.getElementById('ytPlaylistUrl').value.trim();
         const key = getActiveApiKey();
@@ -1527,6 +1591,7 @@
             updatePresetDropdown(); syncAndChangeCountry('ytpl_' + listId); document.getElementById('ytPlaylistUrl').value = '';
         } catch(e) { stat.innerText = "Hata"; }
     }
+
 
     async function fetchYTPage(cleanListId, key, pageToken, startIndex) {
         let pageParam = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '';
@@ -1548,6 +1613,7 @@
         if (vidIds.length) fetchBatchYtOfficialDurations(vidIds).catch(() => {});
         return { items, nextPageToken: data.nextPageToken };
     }
+
 
     async function loadYTPlaylistFromId(listId) {
         const key = getActiveApiKey();
@@ -1604,6 +1670,7 @@
         }
     }
 
+
     function changeCountry(v) {
         ytplLoadSession++;
         const val = (typeof v === 'string') ? v : document.getElementById('countrySelect').value;
@@ -1620,6 +1687,7 @@
         }
     }
 
+
     function manualLoad(append = false) {
         let val = document.getElementById('inputData').value.trim(); let name = document.getElementById('presetName').value.trim(); if (!val) return;
         if (val.includes('<script') && val.includes('src=')) { let m = val.match(/src=["'](.*?)["']/); if(m) val = m[1]; }
@@ -1632,6 +1700,7 @@
         lockAllInputs();
     }
 
+
     function fetchTO(u, ms) { let t; return Promise.race([fetch(u), new Promise((_, rej) => { t = setTimeout(() => rej(new Error('Zaman aşımı')), ms); })]).finally(() => clearTimeout(t)); }
     async function fetchText(url) {
         const tries = [url, MY_CLOUD_PROXY + encodeURIComponent(url), 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url), 'https://corsproxy.io/?' + encodeURIComponent(url)];
@@ -1642,6 +1711,7 @@
         }
         throw last;
     }
+
 
     async function loadUrl(url, msg, append = false) {
         const stat = document.getElementById('status'); stat.innerText = "Yükleniyor...";
@@ -1662,6 +1732,7 @@
             showOSD("Liste açılamadı", (e && e.message) || "");
         }
     }
+
 
     function parseAndAdd(text, append = false) {
         const newChannels = []; const lines = text.split('\n'); let info = {}; let startIndex = append ? allChannels.length : 0;
@@ -1686,6 +1757,7 @@
         }
     }
 
+
     function clearSearchFilter() {
         const inp = document.getElementById('filterInput'); if (!inp) return;
         inp.value = ''; inp.setAttribute('readonly', 'readonly'); inp.classList.remove('kb-unlocked');
@@ -1698,12 +1770,14 @@
         }, 40);
     }
 
+
     function toggleFavFilterMode() {
         favFilterOnly = !favFilterOnly;
         updatePresetDropdown();
         performSearch();
         showOSD(favFilterOnly ? "Favori Kanallar ⭐" : "Tüm Kanallar 📋");
     }
+
 
     function performSearch() {
         const inp = document.getElementById('filterInput');
@@ -1728,12 +1802,14 @@
         if (inp) inp.placeholder = `Kanal ara... (${countTxt})`;
     }
 
+
         let isBulkOrderMode = false;
     let bulkSubMode = 'queue'; // 'queue' (1,2,3 Tıkla-Diz) or 'number' (Sıra No Ver)
     let bulkPickedIds = [];
     let pinActionMode = 'delete'; // 'delete' or 'bulk_order'
     let bulkNumTargetChId = null;
     let bulkNumBuffer = "";
+
 
     function selectChannelFromGrid(idx) {
         if (movingChannelId) {
@@ -1769,12 +1845,14 @@
         closeAllDrawers(); play(idx, 0);
     }
 
+
     function openBulkOrderFromSettings() {
         document.getElementById('leftSidebar').classList.remove('open');
         document.getElementById('rightSidebar').classList.add('open');
         document.getElementById('overlayBackdrop').classList.add('show');
         startBulkOrderModeAfterPin();
     }
+
 
     async function retestQuarantineFromSettings() {
         const list = allChannels.filter(c => c.broken);
@@ -1788,6 +1866,7 @@
         await runQuarTest(list);
         if (stat) stat.innerText = "Karantina testi tamamlandı!";
     }
+
 
     function requestBulkOrderMode() {
         if (isBulkOrderMode) { finishBulkOrderMode(true); return; }
@@ -1808,6 +1887,7 @@
         setTimeout(() => { const b1 = document.getElementById('delPinBtn1'); if (b1) b1.focus(); }, 60);
     }
 
+
     function camRequestBulkOrder() {
         pinActionMode = 'bulk_order';
         document.getElementById('camButtons').style.display = 'none';
@@ -1819,6 +1899,7 @@
         delPinBuffer = ""; document.getElementById('delPinInput').value = "";
         setTimeout(() => { const b1 = document.getElementById('delPinBtn1'); if (b1) b1.focus(); }, 50);
     }
+
 
     function startBulkOrderModeAfterPin() {
         isBulkOrderMode = true;
@@ -1836,6 +1917,7 @@
         }, 60);
     }
 
+
     function updateBulkBannerUI() {
         const cntEl = document.getElementById('bulkPickedCount');
         if (cntEl) cntEl.innerText = String(bulkPickedIds.length);
@@ -1850,11 +1932,13 @@
         }
     }
 
+
     function toggleBulkSubMode() {
         bulkSubMode = (bulkSubMode === 'queue') ? 'number' : 'queue';
         updateBulkBannerUI();
         showOSD(bulkSubMode === 'queue' ? "Mod: Tıkla-Diz (1, 2, 3...)" : "Mod: Hedef Sıra Numarası Ver", bulkSubMode === 'queue' ? "Kanallara OK basarak sıraya dizin" : "Kanala OK basıp sıra numarası yazın");
     }
+
 
     function toggleBulkPickChannel(chId, focusIdx) {
         const pos = bulkPickedIds.indexOf(chId);
@@ -1874,6 +1958,7 @@
         }, 20);
     }
 
+
     function bulkUndoLastPick() {
         if (!bulkPickedIds.length) { showOSD("Henüz kanal seçilmedi"); return; }
         const removedId = bulkPickedIds.pop();
@@ -1883,12 +1968,14 @@
         showOSD("Geri Alındı", ch ? `${ch.name} seçimden çıkarıldı` : "");
     }
 
+
     function bulkClearPicks() {
         bulkPickedIds = [];
         updateBulkBannerUI();
         sortAndRenderList(true);
         showOSD("Seçimler Temizlendi", "Yeniden 1, 2, 3... diye seçebilirsiniz");
     }
+
 
     function finishBulkOrderMode(save = true) {
         if (!isBulkOrderMode) return;
@@ -1930,6 +2017,7 @@
         }, 50);
     }
 
+
     function openBulkNumModal(chId) {
         const ch = allChannels.find(c => c.id === chId);
         if (!ch) return;
@@ -1943,6 +2031,7 @@
         document.getElementById('bulkNumModal').classList.add('show');
         setTimeout(() => { const b1 = document.getElementById('bulkNumBtn1'); if (b1) b1.focus(); }, 60);
     }
+
 
     function closeBulkNumModal() {
         const modal = document.getElementById('bulkNumModal');
@@ -1958,16 +2047,19 @@
         }, 40);
     }
 
+
     function bulkNumAdd(d) {
         if (bulkNumBuffer.length >= 4) return;
         bulkNumBuffer += d;
         document.getElementById('bulkNumInput').value = bulkNumBuffer;
     }
 
+
     function bulkNumClear() {
         bulkNumBuffer = "";
         document.getElementById('bulkNumInput').value = "";
     }
+
 
     function applyBulkNumMove() {
         const targetRank = parseInt(bulkNumBuffer || document.getElementById('bulkNumInput').value, 10);
@@ -1996,6 +2088,7 @@
         }, 50);
     }
 
+
     let chHoldTimer = null;
     let chHoldHintTimer = null;
     let chLongPressTriggered = false;
@@ -2016,6 +2109,7 @@
             openChannelActionModal(chId, false);
         }, 4500);
     }
+
 
     function openChannelActionModal(chId, directDeletePin = false) {
         const ch = allChannels.find(c => c.id === chId); if (!ch) return;
@@ -2046,6 +2140,7 @@
         }, 60);
     }
 
+
     function closeChannelActionModal() {
         const modal = document.getElementById('channelActionModal');
         if (!modal || !modal.classList.contains('show')) return;
@@ -2059,6 +2154,7 @@
             }
         }, 50);
     }
+
 
     function camToggleFav() {
         if (!camTargetChannelId) return;
@@ -2147,6 +2243,7 @@
         }, 40);
     }
 
+
     function sortAndRenderList(skipSort = false) {
         const currentId = (curIdx !== -1 && allChannels[curIdx]) ? allChannels[curIdx].id : null;
         const hasCustomOrder = Array.isArray(customOrdersDict[currentListContext]) && customOrdersDict[currentListContext].length > 0;
@@ -2213,6 +2310,8 @@
     }
 
 
+
+
     let isScanning = false; let scanController = new AbortController();
     async function scanAllChannels() {
         if (isScanning) { scanController.abort(); isScanning = false; document.getElementById('scanBtn').innerText = "Hepsini Tara"; document.getElementById('status').innerText = "Tarama Durduruldu."; return; }
@@ -2236,12 +2335,14 @@
     }
         const ytOfficialDurationMap = new Map();
 
+
     function parseIso8601Duration(iso) {
         if (!iso || typeof iso !== 'string') return 0;
         const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/i);
         if (!m) return 0;
         return (parseInt(m[1] || '0', 10) * 3600) + (parseInt(m[2] || '0', 10) * 60) + parseInt(m[3] || '0', 10);
     }
+
 
     async function fetchBatchYtOfficialDurations(videoIds) {
         const key = getActiveApiKey();
@@ -2267,12 +2368,14 @@
         } catch (e) {}
     }
 
+
     async function ensureYtOfficialDuration(ytId) {
         if (!ytId) return 0;
         if (ytOfficialDurationMap.has(ytId)) return ytOfficialDurationMap.get(ytId);
         await fetchBatchYtOfficialDurations([ytId]);
         return ytOfficialDurationMap.get(ytId) || 0;
     }
+
 
     function createHlsForStream(streamUrl, useProxy = false, extraConfig = {}) {
         const cleanUrl = String(streamUrl || '').split('#')[0];
@@ -2324,6 +2427,8 @@
     }
 
 
+
+
     function testHlsCandidateOnce(rawUrl, useProxy, timeoutMs) {
         return new Promise((resolve) => {
             const cleanUrl = String(rawUrl || '').split('#')[0];
@@ -2361,6 +2466,7 @@
             }
         });
     }
+
 
     async function verifyAndResolveStream(url, ms = 5500) {
         if (!url) return { ok: false, url: '' };
@@ -2433,6 +2539,7 @@
         });
     }
 
+
     async function testStreamBackground(url, ms = 5000) {
         const res = await verifyAndResolveStream(url, ms);
         return !!res.ok;
@@ -2451,6 +2558,7 @@ async function resetQuarantine() {
             syncAndChangeCountry("tr"); closeAllDrawers();
         }
     }
+
 
     function togglePlayPause() {
         if (remotePlayer && remotePlayer.isConnected) { remoteController.playOrPause(); if (isDualPlayActive) toggleLocalPlaybackStatus(); }
@@ -2485,12 +2593,14 @@ async function resetQuarantine() {
         showOSD("Altyazı " + (subtitlesActive ? "Açık" : "Kapalı"), foundTrack ? "" : "Gömülü altyazı yok");
     }
 
+
     let seekBarHideTimer = null;
     let seekHoldTimer = null;
     let seekHoldActive = false;
     let seekHoldDir = 0;
     let seekHoldStepCount = 0;
     let lastSingleSeekAt = 0;
+
 
     function formatMediaTime(sec) {
         if (!isFinite(sec) || sec < 0) return "00:00";
@@ -2606,6 +2716,7 @@ async function resetQuarantine() {
         if (seekHoldActive) { seekHoldActive = false; seekHoldDir = 0; seekHoldStepCount = 0; updateSeekBarUI(true); }
     }
 
+
     function handleStreamError(sessionToken) {
         if (sessionToken !== undefined && sessionToken !== currentPlaySession) return;
         if (isErrorHandling || curIdx === -1 || !allChannels[curIdx]) return;
@@ -2639,6 +2750,7 @@ async function resetQuarantine() {
         }, waitTime);
     }
 
+
     /* ===== YOUTUBE & STREAM ENGINE: çok kaynaklı, nazik (rate-limit dostu) reklamsız akış çözücü =====
        Kaynaklar: Piped API · Invidious API · (ikisi de CORS/bölge engeline karşı kendi Cloudflare worker'ınız üzerinden) · Invidious /latest_version yönlendirmesi.
        Aynı anda en fazla 3 istek, her biri farklı sunucuya; ilk çalışan kaynak bulununca kalanlar hiç denenmez.
@@ -2655,6 +2767,7 @@ async function resetQuarantine() {
     // Reklamsız kaynak denemesi kapalı (yavaşlatıyordu). Tekrar denemek için true yapın.
     const YT_ADFREE = false;
 
+
     function ytHealthSave() { try { localStorage.setItem(YT_HEALTH_KEY, JSON.stringify(ytHealth)); } catch (e) {} }
     function ytHostOf(u) { try { return new URL(u).host; } catch (e) { return String(u); } }
     function ytMarkOk(h) { if (!h) return; const x = ytHealth[h] || (ytHealth[h] = { f: 0, o: 0, t: 0 }); x.o++; x.f = 0; x.t = 0; ytHealthSave(); }
@@ -2667,6 +2780,7 @@ async function resetQuarantine() {
     function ytCacheGet(id) { const e = ytCache.get(id); if (e && Date.now() - e.t < 20 * 60e3) return e.c; ytCache.delete(id); return null; }
     function ytCacheSet(id, c) { ytCache.set(id, { c, t: Date.now() }); if (ytCache.size > 40) ytCache.delete(ytCache.keys().next().value); }
     function ytCacheDel(id) { ytCache.delete(id); }
+
 
     async function jf(u) { const r = await fetchTO(u, 6000); if (!r.ok) throw 0; return await r.json(); }
     async function fastJsonFetch(u, ms = 4500) { const r = await fetchTO(u, ms); if (!r.ok) throw 0; return await r.json(); }
@@ -2681,6 +2795,7 @@ async function resetQuarantine() {
             return await r.json();
         } finally { clearTimeout(t); if (signal) signal.removeEventListener('abort', onAbort); }
     }
+
 
     // Güncel örnek listesini arka planda yenile (ilk oynatmayı BEKLETMEZ; hazır liste hemen kullanılır)
     function loadInstances() {
@@ -2713,11 +2828,13 @@ async function resetQuarantine() {
         })();
     }
 
+
     function ytStrip(s) {
         return String(s || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
     }
     function ytAbs(a, u) { return /^https?:/i.test(u) ? u : a + u; }
     function ytRememberMeta(id, meta) { ytMetaCache[id] = Object.assign(ytMetaCache[id] || {}, meta); }
+
 
     function ytPipedTask(a, id, viaProxy) {
         const hostName = ytHostOf(a), host = hostName + (viaProxy ? '~p' : '');
@@ -2764,6 +2881,7 @@ async function resetQuarantine() {
         return { host, instant: true, run: async () => ({ url: `${a}/latest_version?id=${id}&itag=18&local=true`, mime: 'video/mp4', type: 'mp4', src: 'Invidious (yönlendirme)', host, hostName, unverified: true }) };
     }
 
+
     function createYtResolver(id) {
         loadInstances();
         const P = ytSortHosts(PIPED), I = ytSortHosts(INVID);
@@ -2799,6 +2917,7 @@ async function resetQuarantine() {
         };
     }
 
+
     async function getDirectYtMp4(id) {
         if (!YT_ADFREE) return null;
         const cached = ytCacheGet(id);
@@ -2811,6 +2930,7 @@ async function resetQuarantine() {
         return cand;
     }
     async function getFastAdFreeYt(id) { return await getDirectYtMp4(id); }
+
 
     async function tryAutoHealChannelStream(ch, failedUrl, sessionToken) {
         if (!ch || sessionToken !== currentPlaySession) return null;
@@ -2828,6 +2948,7 @@ async function resetQuarantine() {
             return (item.fallbackStreams || []).some(fs => fs.split('?')[0] === failedUrl.split('?')[0].split('#')[0]);
         });
         if (!matchedOfficial && !cleanPageUrl) return null;
+
 
         document.getElementById('pStatus').innerText = "Yedek Canlı Kaynak Aranıyor...";
         const pageToScrape = cleanPageUrl || (matchedOfficial ? matchedOfficial.pageUrl : '');
@@ -2871,6 +2992,7 @@ async function resetQuarantine() {
         return null;
     }
 
+
     async function play(idx, dir = 0) {
         if (idx < 0 || idx >= allChannels.length) return;
         currentPlaySession++; let mySession = currentPlaySession; curIdx = idx; let ch = allChannels[curIdx]; bgUserPaused = false;
@@ -2896,6 +3018,7 @@ async function resetQuarantine() {
         playLocally(ch.url, mySession);
         hideControlsNow();
     }
+
 
     let ytIframeOnlyId = null;
     let ytActiveResolver = null;
@@ -2961,6 +3084,7 @@ async function resetQuarantine() {
         });
     }
 
+
     async function playYtAdFree(ytId, video, ytContainer, token) {
         if (!YT_ADFREE) return false;
         if (ytIframeOnlyId === ytId) return false;
@@ -2997,12 +3121,14 @@ async function resetQuarantine() {
         return token !== currentPlaySession;
     }
 
+
     async function playLocally(url, sessionToken, isRetryAfterHeal = false) {
         const video = document.getElementById('localPlayer');
         const ytContainer = document.getElementById('ytContainer');
         document.getElementById('castOnlyScreen').style.display = 'none';
         video.onerror = null; video.onloadedmetadata = null;
         if (hls) { hls.destroy(); hls = null; }
+
 
         if (url.includes('#web_live')) {
             const cleanPageUrl = url.split('#')[0];
@@ -3023,6 +3149,7 @@ async function resetQuarantine() {
                 else { handleStreamError(sessionToken); return; }
             }
         }
+
 
         const ytId = extractYTId(url);
         if (ytId) {
@@ -3062,6 +3189,7 @@ async function resetQuarantine() {
             return;
         }
 
+
         video.onended = null;
         ytContainer.style.display = 'none';
         if (isYtApiReady && ytPlayer && typeof ytPlayer.stopVideo === 'function') { try { ytPlayer.stopVideo(); } catch (e) {} }
@@ -3075,6 +3203,7 @@ async function resetQuarantine() {
         video.removeAttribute('crossorigin');
         const cleanStreamUrl = url.split('#')[0];
         const forceProxyFirst = url.includes('#cors_proxy');
+
 
         if (Hls.isSupported()) {
             let triedProxyFallback = forceProxyFirst;
@@ -3133,6 +3262,7 @@ async function resetQuarantine() {
         }
     }
 
+
     function moveToNextWorking(dir) {
         if(!allChannels.length) return;
         let next = curIdx; let attempts = 0;
@@ -3159,10 +3289,12 @@ async function resetQuarantine() {
     function nextCh() { moveToNextWorking(1); }
     function prevCh() { moveToNextWorking(-1); }
 
+
     function updateChannelMeta() {
         const el = document.getElementById('chCounter'); if (!el) return;
         el.textContent = (curIdx >= 0 && allChannels[curIdx]) ? `${curIdx + 1} / ${allChannels.length}` : (allChannels.length ? `${allChannels.length} kanal` : '');
     }
+
 
     const SMART_SYN = { radyo:['radio'], radyolar:['radio'], haber:['news'], haberler:['news'], spor:['sport'], cocuk:['kids','children'], cocuklar:['kids','children'], muzik:['music'], film:['movie'], filmler:['movie'], sinema:['movie'], belgesel:['documentary'], dini:['religious'], eglence:['entertainment'], yemek:['cooking'], hava:['weather'], alisveris:['shop'], dizi:['series'], genel:['general'], ulusal:['general'], komedi:['comedy'], egitim:['education'], seyahat:['travel'], bilim:['science'], aile:['family'], klasik:['classic'], animasyon:['animation'], kultur:['culture'] };
     const CC_ALIAS = { us:'abd amerika usa', uk:'ingiltere birlesik krallik britanya england', tr:'turkiye turkey' };
@@ -3173,6 +3305,7 @@ async function resetQuarantine() {
     const cnameCache = {};
     let smartResults = [], smartSel = new Set(), isSmartTesting = false, smartAbort = null;
     let quarSel = new Set(), isQuarTesting = false, quarAbort = null;
+
 
     function normTxt(s) { return String(s || '').toLocaleLowerCase('tr').replace(/ı/g, 'i').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ß/g, 'ss').replace(/\s+/g, ' ').trim(); }
     function buildCountryMap() {
@@ -3244,11 +3377,13 @@ async function resetQuarantine() {
         throw last;
     }
 
+
     const TR_COMMUNITY_M3U_URLS = [
         'https://gist.githubusercontent.com/zek/209bcd5888473014d4cc5d82390e7d56/raw',
         'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlists/playlist_turkey.m3u8'
     ];
     let trCommunityCache = null;
+
 
     const OFFICIAL_WEB_CHANNELS = [
         { name: 'Kanal D', pageUrl: 'https://www.kanald.com.tr/canli-yayin', keys: ['kanald', 'kanal d', 'ulusal'], fallbackStreams: [
@@ -3420,6 +3555,7 @@ async function resetQuarantine() {
         ]}
     ];
 
+
     async function fetchHtmlViaProxy(pageUrl, timeoutMs = 9500) {
         const proxies = [
             MY_CLOUD_PROXY + encodeURIComponent(pageUrl),
@@ -3435,6 +3571,7 @@ async function resetQuarantine() {
         }));
         return await Promise.any(jobs);
     }
+
 
     function extractStreamsFromHtml(html, sourceUrl = '') {
         if (!html) return { m3u8: [], yt: [], dm: [], title: '', logo: '', iframes: [] };
@@ -3456,6 +3593,7 @@ async function resetQuarantine() {
         const ogImg = unescaped.match(/property=["']og:image["'][^>]*content=["']([^"']+)["']/i) || unescaped.match(/content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
         if (ogImg && ogImg[1] && /^https?:\/\//i.test(ogImg[1])) logo = ogImg[1];
 
+
         const m3u8Regex = /https?:\/\/[A-Za-z0-9_\-\.\/:%\?=&~+#]+\.m3u8(?:\?[A-Za-z0-9_\-\.\/:%=&~+#]*)?/gi;
         const rawM3u8 = unescaped.match(m3u8Regex) || [];
         const m3u8 = []; const seenM = new Set();
@@ -3464,6 +3602,7 @@ async function resetQuarantine() {
             if (clean.includes('example.com') || clean.endsWith('/.m3u8')) continue;
             if (!seenM.has(clean)) { seenM.add(clean); m3u8.push(clean); }
         }
+
 
         const yt = []; const seenY = new Set();
         const ytEmbedRegex = /https?:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\/(?:embed\/|watch\?v=|live\/)([A-Za-z0-9_\-]{11})/gi;
@@ -3474,12 +3613,14 @@ async function resetQuarantine() {
             if (!seenY.has(watchUrl)) { seenY.add(watchUrl); yt.push(watchUrl); }
         }
 
+
         const dm = []; const seenD = new Set();
         const dmRegex = /(?:dailymotion\.com\/(?:embed\/)?video\/|geo\.dailymotion\.com\/player[^"']*?[?&]video=)([a-zA-Z0-9]+)/gi;
         while ((m = dmRegex.exec(unescaped)) !== null) {
             const dmId = m[1];
             if (dmId && !seenD.has(dmId)) { seenD.add(dmId); dm.push(dmId); }
         }
+
 
         const iframes = [];
         const iframeRegex = /<iframe[^>]+src=["']([^"']+)["']/gi;
@@ -3492,6 +3633,7 @@ async function resetQuarantine() {
         return { m3u8, yt, dm, title, logo, iframes };
     }
 
+
     async function resolveDailymotionM3u8(dmId) {
         try {
             const metaUrl = `https://www.dailymotion.com/player/metadata/video/${dmId}`;
@@ -3503,6 +3645,7 @@ async function resetQuarantine() {
         return null;
     }
 
+
     async function scrapeLivePageStreams(pageUrl, defaultName = '', fallbackStreams = [], defaultLogo = '') {
         const results = []; const seen = new Set();
         let pageTitle = defaultName; let pageLogo = defaultLogo;
@@ -3512,9 +3655,11 @@ async function resetQuarantine() {
             results.push({ name: (pageTitle || 'Web Canlı Yayın') + (labelSuffix ? ` (${labelSuffix})` : ''), url, logo: pageLogo || defaultLogo || '', group: grp, cc: 'tr', kind: 'web' });
         };
 
+
         (fallbackStreams || []).forEach((u, idx) => {
             addStream(u, idx === 0 ? 'Doğrudan Canlı' : `Yedek #${idx + 1}`, 'Resmi Canlı CDN');
         });
+
 
         try {
             const html = await fetchHtmlViaProxy(pageUrl, 7500);
@@ -3546,6 +3691,7 @@ async function resetQuarantine() {
         } catch (e) {}
         return results;
     }
+
 
     async function searchWebLiveSites(rawQuery, pq) {
         const qTrim = String(rawQuery || '').trim();
@@ -3589,6 +3735,7 @@ async function resetQuarantine() {
         return out;
     }
 
+
     async function loadTrCommunityStreams() {
         if (trCommunityCache) return trCommunityCache;
         const merged = [];
@@ -3601,6 +3748,7 @@ async function resetQuarantine() {
         trCommunityCache = merged;
         return merged;
     }
+
 
     async function searchTv(pq) {
         let list = [];
@@ -3632,6 +3780,7 @@ async function resetQuarantine() {
         return out;
     }
 
+
     async function searchRadio(pq) {
         const nameWords = pq.words.filter(w => !RADIO_WORDS.includes(w)); let cc = pq.country; let note = '';
         if (!cc && !nameWords.length) { cc = 'tr'; note = 'Türkiye radyoları listelendi'; }
@@ -3655,6 +3804,7 @@ async function resetQuarantine() {
         });
         return { list, note, dropped };
     }
+
 
     async function smartSearch() {
         const q = document.getElementById('smartQuery').value.trim(); if (!q) return;
@@ -3685,10 +3835,12 @@ async function resetQuarantine() {
         st.innerText = `${smartResults.length} yayın bulundu (Web: ${webList.length}, IPTV: ${tv.length}, Radyo: ${radio.length}). Çalışan yayınlar doğrulanıyor...`;
         renderSmart();
 
+
         if (smartResults.length <= 30 || webList.length > 0) {
             await smartTest(true);
         }
     }
+
 
     function renderSmart(preserveFocusIdx) {
         const ae = document.activeElement;
@@ -3704,6 +3856,7 @@ async function resetQuarantine() {
                 savedFocusInfo = { type: 'id', id: ae.id };
             }
         }
+
 
         invalidateLeftNav();
         const box = document.getElementById('smartResults'), act = document.getElementById('smartActions');
@@ -3722,6 +3875,7 @@ async function resetQuarantine() {
             </div>`;
         }).join('');
         updateSmartCount(); fillSmartTargets();
+
 
         setTimeout(() => {
             let target = null;
@@ -3758,6 +3912,7 @@ async function resetQuarantine() {
     }
     function smartSelectAll(on) { smartSel = on ? new Set(smartResults.map((r, i) => i).filter(i => !smartResults[i].dead)) : new Set(); renderSmart(); }
 
+
     let smartPreviewHls = null;
     async function previewSmartResult(idx) {
         const r = smartResults[idx]; if (!r) return;
@@ -3775,6 +3930,7 @@ async function resetQuarantine() {
         vid.style.display = 'block';
         iframeContainer.innerHTML = '';
         iframeContainer.style.display = 'none';
+
 
         const ytId = extractYTId(r.url);
         if (ytId) {
@@ -3811,6 +3967,7 @@ async function resetQuarantine() {
             stat.style.color = "#2ecc71";
         }
 
+
         const verified = await verifyAndResolveStream(r.url, 6000);
         let playUrl = (verified.ok && verified.url) ? verified.url : r.url;
         if (verified.ok && verified.url) {
@@ -3821,8 +3978,10 @@ async function resetQuarantine() {
             renderSmart(idx);
         }
 
+
         const cleanUrl = playUrl.split('#')[0];
         const useProxy = playUrl.includes('#cors_proxy');
+
 
         if (playUrl.includes('#audio') || /\.(mp3|aac|ogg)(\?|$)/i.test(cleanUrl)) {
             vid.removeAttribute('crossorigin');
@@ -3830,6 +3989,7 @@ async function resetQuarantine() {
             vid.play().then(() => { stat.innerText = "Oynatılıyor (Radyo/Ses)"; stat.style.color = "#2ecc71"; }).catch(e => { stat.innerText = "Hata: " + e.message; stat.style.color = "#e74c3c"; });
             return;
         }
+
 
         if (Hls.isSupported() && (cleanUrl.includes('.m3u') || cleanUrl.includes('playlist') || cleanUrl.includes('master'))) {
             smartPreviewHls = createHlsForStream(cleanUrl, useProxy);
@@ -3862,6 +4022,7 @@ async function resetQuarantine() {
         modal.classList.remove('show');
     }
 
+
     function fillSmartTargets() {
         const sel = document.getElementById('smartTarget'); if (!sel) return; const prev = sel.value; sel.innerHTML = '';
         const add = (v, t) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); };
@@ -3874,6 +4035,7 @@ async function resetQuarantine() {
         smartTargetChanged();
     }
     function smartTargetChanged() { const sel = document.getElementById('smartTarget'), nm = document.getElementById('smartNewName'); if (sel && nm) nm.style.display = sel.value === '__new__' ? 'block' : 'none'; }
+
 
     async function smartTest(autoMode = false) {
         const btn = document.getElementById('smartTestBtn');
@@ -3936,6 +4098,7 @@ async function resetQuarantine() {
             }
         }
     }
+
 
     /* ===== BİLGİ PANELİ (info butonu) ===== */
     let infoSeq = 0;
@@ -4077,8 +4240,10 @@ async function resetQuarantine() {
         setTimeout(() => { const b = document.querySelector('#infoQuality .info-q-btn.on'); if (b) try { b.focus({ preventScroll: true }); } catch (e) {} }, 30);
     }
 
+
     /* ===== YOUTUBE OYNATMA LİSTESİ ARA & KAYDET ===== */
     let ytplResults = [], ytplSel = new Set(), ytplLoadSession = 0;
+
 
     async function ytplSearchApi(q, key) {
         const r = await fetchTO(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=playlist&q=${encodeURIComponent(q)}&maxResults=25&key=${encodeURIComponent(key)}`, 9000);
@@ -4135,6 +4300,7 @@ async function resetQuarantine() {
             next();
         });
     }
+
 
     async function searchYtPlaylists() {
         const q = document.getElementById('ytplQuery').value.trim();
@@ -4264,6 +4430,7 @@ async function resetQuarantine() {
         showOSD('Oynatma Listesi Kaydedildi', name);
     }
 
+
     /* ===== ÇOKLU SEÇİM: toplu favori / toplu silme ===== */
     var isMultiSel = false, multiSel = new Set();
     function updateMultiCount() { const el = document.getElementById('multiCount'); if (el) el.innerText = `${multiSel.size} seçili`; }
@@ -4334,6 +4501,7 @@ async function resetQuarantine() {
         showOSD('Kanallar Silindi', del.length + ' kanal listeden kaldırıldı');
     }
 
+
     /* ===== MOBİL VERİDE EN DÜŞÜK KALİTE ===== */
     function isCellularNow() {
         try { if (window.Android && typeof Android.isCellular === 'function') return !!Android.isCellular(); } catch (e) {}
@@ -4356,6 +4524,7 @@ async function resetQuarantine() {
         try { if (low && ytPlayer && typeof ytPlayer.setPlaybackQuality === 'function') ytPlayer.setPlaybackQuality('small'); } catch (e) {}
     }
     try { const _c = navigator.connection; if (_c && _c.addEventListener) _c.addEventListener('change', () => { applyQualityPolicy(); if (useLowQuality()) showOSD('Mobil veri algılandı', 'En düşük kalite seçildi'); }); } catch (e) {}
+
 
     /* ===== ARKA PLAN ÇALMA & BİLDİRİM KONTROLLERİ (Media Session + APK köprüsü) ===== */
     function currentIsPlaying() {
@@ -4405,6 +4574,7 @@ async function resetQuarantine() {
         });
     })();
 
+
     /* ===== REKLAM KURALLARI (APK): GitHub txt -> uygulama + bulut kopyası ===== */
     const AD_RULES_URL = 'https://hamzakivrak.github.io/TVHKTV/rules.txt';
     function adRulesVersion(t) { const m = String(t || '').match(/^\s*version\s*:\s*(\S+)/mi); return m ? m[1] : '?'; }
@@ -4442,6 +4612,7 @@ async function resetQuarantine() {
         showOSD('Reklam engelleme: ' + (on ? 'Açık' : 'Kapalı'), 'Uygulamayı yeniden başlatınca tam etkili olur');
     }
 
+
     /* ===== OTOMATİK YEDEK / ÇEKME ===== */
     let autoBackupTimer = null, autoBackupBusy = false;
     function scheduleAutoBackup() {
@@ -4469,6 +4640,7 @@ async function resetQuarantine() {
         } catch (e) {}
     }
 
+
     /* ===== SAYFA GİZLİ OLSA DA SES SÜRSÜN (APK) ===== */
     if (window.Android) {
         try {
@@ -4477,6 +4649,7 @@ async function resetQuarantine() {
             document.addEventListener('visibilitychange', e => e.stopImmediatePropagation(), true);
         } catch (e) {}
     }
+
 
     /* ===== ARKA PLANDA DURAKLAMAYI GERİ AL (APK uygulama küçülünce / ekran kilitliyken) ===== */
     var bgUserPaused = false;
@@ -4493,7 +4666,8 @@ async function resetQuarantine() {
     }
     setInterval(bgKeep, 2000);
 
-    /* ===== CAST (yayını TV'ye gönder) ===== */
+
+    /* ===== CAST (yayını TV'ye gönder - APK, WebView, RemotePlayback & DLNA/Intent Destekli) ===== */
     var castShown = false;
     function castMime(u) {
         u = String(u).toLowerCase();
@@ -4517,7 +4691,6 @@ async function resetQuarantine() {
     function castLoad(ch) {
         const sess = castSession();
         if (!sess) return Promise.reject(new Error('Cast oturumu yok'));
-        if (extractYTId(ch.url)) { showOSD('YouTube Cast ile gönderilemez', 'Doğrudan yayın bağlantıları gönderilebilir'); return Promise.resolve(); }
         const url = String(ch.url).split('#')[0];
         const mi = new chrome.cast.media.MediaInfo(url, castMime(url));
         mi.streamType = /\.(mp4|webm|mp3|aac)(\?|$)/i.test(url) ? chrome.cast.media.StreamType.BUFFERED : chrome.cast.media.StreamType.LIVE;
@@ -4530,18 +4703,151 @@ async function resetQuarantine() {
             showOSD('TV\'ye gönderildi', ch.name);
         });
     }
-    function castStart() {
+
+
+    async function resolveCastableUrl(ch) {
+        let rawUrl = String(ch.url || '');
+        const ytId = extractYTId(rawUrl);
+        if (ytId) {
+            showOSD('YouTube akışı TV için çözülüyor...', ch.name);
+            try {
+                const r = createYtResolver(ytId);
+                const cand = await r.next();
+                r.stop();
+                if (cand && cand.url) return { url: cand.url, mime: cand.mime || 'video/mp4', isYt: true };
+            } catch (e) {}
+            return { url: 'https://www.youtube.com/watch?v=' + ytId, mime: 'text/html', isYt: true };
+        }
+        return { url: rawUrl.split('#')[0], mime: castMime(rawUrl), isYt: false };
+    }
+
+
+    function openApkCastModal(ch, resolved) {
+        modalOpenedAt = Date.now();
+        const streamUrl = resolved.url;
+        const mime = resolved.mime;
+        const cleanTitle = encodeURIComponent(ch.name || 'Canlı Yayın');
+
+
+        const genericIntent = `intent:${streamUrl}#Intent;action=android.intent.action.VIEW;type=${mime};S.title=${cleanTitle};end`;
+        const wvcIntent = `intent:${streamUrl}#Intent;package=com.instantbits.cast.webvideo;action=android.intent.action.VIEW;type=${mime};S.title=${cleanTitle};end`;
+        const vlcIntent = `intent:${streamUrl}#Intent;package=org.videolan.vlc;action=android.intent.action.VIEW;type=${mime};S.title=${cleanTitle};end`;
+
+
+        const html = `
+            <div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">
+                <button type="button" class="tv-modal-btn" onclick="triggerNativeCastOption('remote')">
+                    <i class="material-icons-round" style="color:var(--accent2)">cast</i> Cihazın Kablosuz Ekran / Cast Menüsü
+                </button>
+                <button type="button" class="tv-modal-btn" onclick="window.location.href='${genericIntent}'">
+                    <i class="material-icons-round" style="color:var(--fav)">tv</i> TV / Cast Uygulaması Seç (Sistem Menüsü)
+                </button>
+                <button type="button" class="tv-modal-btn" onclick="window.location.href='${wvcIntent}'">
+                    <i class="material-icons-round" style="color:#2ecc71">connected_tv</i> Web Video Caster ile TV'ye Gönder
+                </button>
+                <button type="button" class="tv-modal-btn" onclick="window.location.href='${vlcIntent}'">
+                    <i class="material-icons-round" style="color:#e67e22">play_circle</i> VLC Player (Chromecast/DLNA) ile Aç
+                </button>
+                <button type="button" class="tv-modal-btn" onclick="copyStreamForCast('${esc(streamUrl)}')">
+                    <i class="material-icons-round" style="color:#9b59b6">content_copy</i> Yayın Linkini Kopyala
+                </button>
+            </div>
+        `;
+        infoOpen(html, ch.logo, "TV'ye Yansıt (Cast)", ch.name);
+        document.getElementById('infoDesc').innerHTML = '';
+        document.getElementById('infoQuality').innerHTML = '';
+        document.getElementById('infoModal').classList.add('show');
+        setTimeout(() => {
+            const firstBtn = document.querySelector('#infoBody .tv-modal-btn');
+            if (firstBtn) try { firstBtn.focus(); } catch (e) {}
+        }, 50);
+    }
+
+
+    async function triggerNativeCastOption(mode) {
+        closeInfoModal();
+        const vid = document.getElementById('localPlayer');
+        if (mode === 'remote') {
+            if (vid && vid.remote && typeof vid.remote.prompt === 'function') {
+                try {
+                    await vid.remote.prompt();
+                    showOSD('Cast başlatıldı');
+                    return;
+                } catch (e) {}
+            }
+            if (vid && typeof vid.webkitShowPlaybackTargetPicker === 'function') {
+                try { vid.webkitShowPlaybackTargetPicker(); return; } catch (e) {}
+            }
+            if (window.Android) {
+                for (const fn of ['openCastSettings', 'startCast', 'cast', 'openWifiDisplay']) {
+                    if (typeof window.Android[fn] === 'function') {
+                        try { window.Android[fn](); return; } catch (e) {}
+                    }
+                }
+            }
+            try {
+                window.location.href = "intent:#Intent;action=android.settings.CAST_SETTINGS;end";
+            } catch (e) {
+                showOSD('Sistem Cast menüsü açılamadı', 'Diğer aktarım seçeneklerini deneyin');
+            }
+        }
+    }
+
+
+    function copyStreamForCast(url) {
+        try { navigator.clipboard.writeText(url); } catch (e) {}
+        closeInfoModal();
+        showOSD('Yayın adresi kopyalandı', url.slice(0, 60));
+    }
+
+
+    async function castStart() {
         if (castShown) { castStop(); return; }
-        if (window.Android) { showOSD('Cast bu APK\'da desteklenmiyor', 'Chrome tarayıcıdan açın veya telefondan kumanda kullanın'); return; }
-        if (!window.castReady) { showOSD('Cast hazır değil', 'Chrome tarayıcı ve aynı Wi-Fi gerekir'); return; }
         const ch = allChannels[curIdx];
         if (!ch) { showOSD('Önce bir kanal seçin'); return; }
-        if (extractYTId(ch.url)) { showOSD('YouTube Cast ile gönderilemez', 'Doğrudan yayın bağlantıları gönderilebilir'); return; }
-        let ctx; try { ctx = cast.framework.CastContext.getInstance(); } catch (e) { showOSD('Cast hazır değil'); return; }
-        const go = () => castLoad(ch).catch(e => { showOSD('Cast başarısız', String(e && e.message || e).slice(0, 90)); });
-        if (castSession()) go();
-        else ctx.requestSession().then(go).catch(e => { if (e !== 'cancel') showOSD('Cast başlatılamadı', String(e).slice(0, 90)); });
+
+
+        if (window.castReady && typeof cast !== 'undefined' && cast.framework) {
+            try {
+                const ctx = cast.framework.CastContext.getInstance();
+                const resolved = await resolveCastableUrl(ch);
+                const tempCh = Object.assign({}, ch, { url: resolved.url });
+                const go = () => castLoad(tempCh).catch(e => showOSD('Cast başarısız', String(e && e.message || e).slice(0, 90)));
+                if (castSession()) go();
+                else ctx.requestSession().then(go).catch(() => {});
+                return;
+            } catch (e) {}
+        }
+
+
+        const resolved = await resolveCastableUrl(ch);
+        if (window.Android) {
+            for (const fn of ['castVideo', 'castUrl', 'playOnTv', 'startCast']) {
+                if (typeof window.Android[fn] === 'function') {
+                    try {
+                        window.Android[fn](resolved.url, ch.name || 'Yayın');
+                        showOSD('TV\'ye gönderiliyor...', ch.name);
+                        return;
+                    } catch (e) {}
+                }
+            }
+        }
+
+
+        const vid = document.getElementById('localPlayer');
+        if (vid && vid.remote && typeof vid.remote.prompt === 'function' && vid.style.display !== 'none' && (vid.currentSrc || vid.src)) {
+            try {
+                await vid.remote.prompt();
+                showOSD('TV\'ye bağlanıldı', ch.name);
+                return;
+            } catch (e) {}
+        }
+
+
+        openApkCastModal(ch, resolved);
     }
+
+
     function castStop() {
         try { const c = cast.framework.CastContext.getInstance(); c.endCurrentSession(true); } catch (e) {}
         castScreenOn(false);
@@ -4549,50 +4855,243 @@ async function resetQuarantine() {
         const ch = allChannels[curIdx]; if (ch) play(curIdx, 0);
     }
 
-    /* ===== FİLM / VİDEO ARA (YouTube uzun videolar + Internet Archive telifsiz filmler) ===== */
+
+    /* ===== FİLM / VİDEO ARA (TÜM WEB + Dailymotion + YouTube API'siz + Internet Archive) ===== */
     var movieResults = [];
     function mvDur(sec) { sec = Math.round(sec || 0); if (!sec) return ''; const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60); return h ? `${h} sa ${m} dk` : `${m} dk`; }
+
+
     async function mvSearchYt(q, key) {
-        const r = await fetchTO(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoDuration=long&q=${encodeURIComponent(q)}&maxResults=25&key=${encodeURIComponent(key)}`, 9000);
-        const d = await r.json(); if (d.error) throw new Error(d.error.message || 'API hatası');
-        const items = (d.items || []).filter(x => x.id && x.id.videoId).map(x => ({ src: 'yt', id: x.id.videoId, title: x.snippet.title, sub: x.snippet.channelTitle || 'YouTube', thumb: (x.snippet.thumbnails && (x.snippet.thumbnails.medium || x.snippet.thumbnails.default) || {}).url || '', dur: 0 }));
-        if (items.length) {
+        if (key) {
             try {
-                const r2 = await fetchTO(`https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${items.map(i => i.id).join(',')}&key=${encodeURIComponent(key)}`, 7000);
-                const d2 = await r2.json();
-                (d2.items || []).forEach(v => { const it = items.find(i => i.id === v.id); if (it) it.dur = parseIso8601Duration((v.contentDetails || {}).duration); });
+                const r = await fetchTO(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoDuration=long&q=${encodeURIComponent(q)}&maxResults=25&key=${encodeURIComponent(key)}`, 9000);
+                const d = await r.json();
+                if (!d.error && d.items) {
+                    const items = (d.items || []).filter(x => x.id && x.id.videoId).map(x => ({ src: 'yt', id: x.id.videoId, title: x.snippet.title, sub: (x.snippet.channelTitle || 'YouTube') + ' · YouTube', thumb: (x.snippet.thumbnails && (x.snippet.thumbnails.medium || x.snippet.thumbnails.default) || {}).url || '', dur: 0 }));
+                    if (items.length) {
+                        try {
+                            const r2 = await fetchTO(`https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${items.map(i => i.id).join(',')}&key=${encodeURIComponent(key)}`, 7000);
+                            const d2 = await r2.json();
+                            (d2.items || []).forEach(v => { const it = items.find(i => i.id === v.id); if (it) it.dur = parseIso8601Duration((v.contentDetails || {}).duration); });
+                        } catch (e) {}
+                        return items;
+                    }
+                }
             } catch (e) {}
         }
-        return items;
+        loadInstances();
+        const P = ytSortHosts(PIPED).slice(0, 4), I = ytSortHosts(INVID).slice(0, 4);
+        for (const host of P) {
+            try {
+                const d = await ytFetchJson(`${host}/search?q=${encodeURIComponent(q + ' full film izle')}&filter=videos`, null, 6000);
+                const out = (d.items || []).filter(x => x.url && x.url.includes('v=') && (!x.duration || x.duration > 600)).map(x => {
+                    const vid = new URLSearchParams(x.url.substring(x.url.indexOf('?'))).get('v');
+                    return vid ? { src: 'yt', id: vid, title: x.title || 'Video', sub: (x.uploaderName || 'YouTube') + ' · YouTube', thumb: x.thumbnail || '', dur: x.duration || 0 } : null;
+                }).filter(Boolean);
+                if (out.length) return out;
+            } catch (e) {}
+        }
+        for (const host of I) {
+            try {
+                const d = await ytFetchJson(`${host}/api/v1/search?q=${encodeURIComponent(q)}&type=video&duration=long`, null, 6000);
+                const out = (Array.isArray(d) ? d : []).filter(x => x.videoId).map(x => ({
+                    src: 'yt', id: x.videoId, title: x.title || 'Video', sub: (x.author || 'YouTube') + ' · YouTube',
+                    thumb: (x.videoThumbnails && x.videoThumbnails[0] && x.videoThumbnails[0].url) || `https://i.ytimg.com/vi/${x.videoId}/mqdefault.jpg`,
+                    dur: x.lengthSeconds || 0
+                }));
+                if (out.length) return out;
+            } catch (e) {}
+        }
+        return [];
     }
+
+
     async function mvSearchArchive(q) {
         const query = `(${q}) AND mediatype:(movies)`;
         const r = await fetchTO(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(query)}&fl[]=identifier&fl[]=title&fl[]=year&rows=25&sort[]=downloads+desc&output=json`, 10000);
         const d = await r.json();
         return ((d.response && d.response.docs) || []).map(x => ({ src: 'arc', id: x.identifier, title: x.title || x.identifier, sub: 'Internet Archive (telifsiz)' + (x.year ? ' · ' + x.year : ''), thumb: `https://archive.org/services/img/${encodeURIComponent(x.identifier)}`, dur: 0 }));
     }
+
+
+    async function mvSearchDailymotion(q) {
+        const url = `https://api.dailymotion.com/videos?search=${encodeURIComponent(q)}&fields=id,title,duration,thumbnail_240_url,owner.screenname&limit=20&longer_than=10`;
+        const r = await fetchTO(url, 8000);
+        const d = await r.json();
+        return ((d && d.list) || []).map(x => ({
+            src: 'dm',
+            id: x.id,
+            title: x.title || 'Dailymotion Video',
+            sub: 'Dailymotion · ' + (x['owner.screenname'] || 'Web'),
+            thumb: x.thumbnail_240_url || '',
+            dur: x.duration || 0,
+            pageUrl: `https://www.dailymotion.com/video/${x.id}`
+        }));
+    }
+
+
+    async function mvSearchPeerTube(q) {
+        const url = `https://sepiasearch.org/api/v1/search/videos?search=${encodeURIComponent(q)}&count=15&sort=-match`;
+        const r = await fetchTO(url, 8000);
+        const d = await r.json();
+        return ((d && d.data) || []).map(x => ({
+            src: 'web',
+            id: x.url || (x.account && x.account.host ? `https://${x.account.host}/w/${x.shortUUID || x.uuid}` : ''),
+            pageUrl: x.url || '',
+            embedUrl: x.embedUrl ? (x.embedUrl.startsWith('http') ? x.embedUrl : `https://${x.account.host}${x.embedUrl}`) : '',
+            title: x.name || 'Web Video',
+            sub: 'PeerTube Web · ' + ((x.account && x.account.host) || ''),
+            thumb: x.thumbnailUrl || (x.previewPath && x.account ? `https://${x.account.host}${x.previewPath}` : ''),
+            dur: x.duration || 0
+        })).filter(x => x.pageUrl);
+    }
+
+
+    async function mvSearchWebEngine(q) {
+        const results = [];
+        const seen = new Set();
+        const searchQueries = [
+            `${q} izle`,
+            `${q} full film tek parça`
+        ];
+
+
+        const jobs = [
+            (async () => {
+                try {
+                    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchQueries[0])}`;
+                    const html = await fetchHtmlViaProxy(ddgUrl, 9000);
+                    const doc = new DOMParser().parseFromString(html, 'text/html');
+                    doc.querySelectorAll('.result').forEach(el => {
+                        const a = el.querySelector('a.result__a');
+                        if (!a) return;
+                        let href = a.getAttribute('href') || '';
+                        if (href.includes('uddg=')) {
+                            try { href = decodeURIComponent(new URLSearchParams(href.substring(href.indexOf('?'))).get('uddg') || href); } catch (e) {}
+                        }
+                        if (!/^https?:\/\//i.test(href)) return;
+                        let host = '';
+                        try { host = new URL(href).hostname.replace(/^www\./, ''); } catch (e) {}
+                        if (!host || /google\.|duckduckgo\.|wikipedia\.|imdb\.com|sinemalar\.com|beyazperde\.com|eksisozluk\.|twitter\.|instagram\.|facebook\.|tiktok\./i.test(host)) return;
+                        if (seen.has(href)) return;
+                        seen.add(href);
+                        const title = (a.textContent || '').trim();
+                        if (!title) return;
+                        results.push({
+                            src: 'web',
+                            id: href,
+                            pageUrl: href,
+                            title: title,
+                            sub: `🌐 Web (${host})`,
+                            thumb: `https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(host)}`,
+                            dur: 0
+                        });
+                    });
+                } catch (e) {}
+            })(),
+            (async () => {
+                try {
+                    const bingUrl = `https://www.bing.com/videos/search?q=${encodeURIComponent(q + ' full izle')}`;
+                    const html = await fetchHtmlViaProxy(bingUrl, 9000);
+                    const mRegex = /murl&quot;:&quot;(https?:\/\/[^&]+?)&quot;.*?t&quot;:&quot;([^&]+?)&quot;/gi;
+                    let m;
+                    while ((m = mRegex.exec(html)) !== null) {
+                        const href = m[1].replace(/\\u002f/gi, '/');
+                        const title = m[2].replace(/&#(\d+);/g, (_, n) => String.fromCharCode(n));
+                        if (!/^https?:\/\//i.test(href) || seen.has(href)) continue;
+                        seen.add(href);
+                        let host = ''; try { host = new URL(href).hostname.replace(/^www\./, ''); } catch (e) {}
+                        results.push({
+                            src: 'web',
+                            id: href,
+                            pageUrl: href,
+                            title: title || 'Web Video',
+                            sub: `🎬 Web Video (${host})`,
+                            thumb: `https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(host)}`,
+                            dur: 0
+                        });
+                    }
+                } catch (e) {}
+            })()
+        ];
+
+
+        await Promise.all(jobs);
+        return results.slice(0, 25);
+    }
+
+
     async function movieSearch() {
         const q = document.getElementById('movieQuery').value.trim(); if (!q) return;
         lockAllInputs();
         const st = document.getElementById('movieStatus');
         movieResults = []; renderMovies();
-        st.style.color = '#f1c40f'; st.innerText = 'Aranıyor...';
-        const errs = [], jobs = [];
-        if (document.getElementById('srcMvYt').checked) {
-            const key = getActiveApiKey();
-            if (!key) errs.push('YouTube için API anahtarı gerekli');
-            else jobs.push(mvSearchYt(q, key).catch(e => { errs.push('YouTube: ' + (e.message || e)); return []; }));
+
+
+        if (/^https?:\/\//i.test(q)) {
+            let host = 'Web'; try { host = new URL(q).hostname.replace(/^www\./, ''); } catch (e) {}
+            movieResults = [{
+                src: /\.(m3u8|mp4|webm)(\?|$)/i.test(q) ? 'direct' : 'web',
+                id: q,
+                pageUrl: q,
+                title: 'Doğrudan Bağlantı (' + host + ')',
+                sub: q,
+                thumb: '',
+                dur: 0
+            }];
+            st.style.color = '#2ecc71'; st.innerText = 'Bağlantı hazır. ▶ ile hemen açabilirsiniz.';
+            renderMovies();
+            return;
         }
-        if (document.getElementById('srcMvArc').checked) jobs.push(mvSearchArchive(q).catch(e => { errs.push('Internet Archive: ' + (e.message || e)); return []; }));
+
+
+        st.style.color = '#f1c40f'; st.innerText = 'Tüm web ve video kaynakları taranıyor...';
+        const errs = [], jobs = [];
+        const wantWeb = document.getElementById('srcMvWeb') ? document.getElementById('srcMvWeb').checked : true;
+        const wantYt = document.getElementById('srcMvYt') ? document.getElementById('srcMvYt').checked : true;
+        const wantArc = document.getElementById('srcMvArc') ? document.getElementById('srcMvArc').checked : true;
+
+
+        if (wantWeb) {
+            jobs.push(mvSearchWebEngine(q).catch(e => { errs.push('Web: ' + (e.message || e)); return []; }));
+            jobs.push(mvSearchDailymotion(q).catch(() => []));
+            jobs.push(mvSearchPeerTube(q).catch(() => []));
+        }
+        if (wantYt) {
+            const key = getActiveApiKey();
+            jobs.push(mvSearchYt(q, key).catch(e => { errs.push('YouTube: ' + (e.message || e)); return []; }));
+        }
+        if (wantArc) {
+            jobs.push(mvSearchArchive(q).catch(e => { errs.push('Internet Archive: ' + (e.message || e)); return []; }));
+        }
         if (!jobs.length) { st.style.color = '#e74c3c'; st.innerText = errs[0] || 'En az bir kaynak seçin.'; return; }
+
+
         const parts = await Promise.all(jobs);
-        const merged = []; const mx = Math.max(...parts.map(p => p.length));
-        for (let i = 0; i < mx; i++) parts.forEach(p => { if (p[i]) merged.push(p[i]); });
+        const merged = [];
+        const seenIds = new Set();
+        const mx = Math.max(0, ...parts.map(p => p.length));
+        for (let i = 0; i < mx; i++) {
+            parts.forEach(p => {
+                if (p[i] && !seenIds.has(p[i].id)) {
+                    seenIds.add(p[i].id);
+                    merged.push(p[i]);
+                }
+            });
+        }
         movieResults = merged;
-        if (!merged.length) { st.style.color = '#e74c3c'; st.innerText = errs.length ? 'Sonuç alınamadı: ' + errs[0] : 'Sonuç bulunamadı.'; renderMovies(); return; }
-        st.style.color = '#2ecc71'; st.innerText = `${merged.length} video bulundu.` + (errs.length ? ' (' + errs[0] + ')' : '') + ' İzlemek için ▶ düğmesine basın.';
+        if (!merged.length) {
+            st.style.color = '#e74c3c';
+            st.innerText = errs.length ? 'Sonuç alınamadı: ' + errs[0] : 'Sonuç bulunamadı.';
+            renderMovies();
+            return;
+        }
+        st.style.color = '#2ecc71';
+        st.innerText = `${merged.length} video bulundu.` + (errs.length ? ' (' + errs[0] + ')' : '') + ' İzlemek için ▶, listeye eklemek için ➕ düğmesine basın.';
         renderMovies();
     }
+
+
     function renderMovies() {
         invalidateLeftNav();
         const box = document.getElementById('movieResults');
@@ -4601,31 +5100,135 @@ async function resetQuarantine() {
         box.innerHTML = movieResults.map((r, i) => `<div class="yt-search-item" style="cursor:default;">
             ${r.thumb ? `<img loading="lazy" decoding="async" src="${esc(r.thumb)}" onerror="this.style.display='none'" style="flex-shrink:0;">` : ''}
             <span style="flex:1; min-width:0;">${esc(r.title)}<br><small style="color:#888">${esc(r.sub)}${r.dur ? ' · ' + esc(mvDur(r.dur)) : ''}</small></span>
+            <button type="button" class="preview-mini-btn" onclick="event.stopPropagation(); movieAddToList(${i})" title="Listeye Ekle" style="margin-right:4px; border-color:var(--fav); color:var(--fav); background:rgba(241,196,15,0.15);"><i class="material-icons-round" style="font-size:20px;">add</i></button>
             <button type="button" class="preview-mini-btn" onclick="event.stopPropagation(); movieWatch(${i})" title="İzle (OK)"><i class="material-icons-round" style="font-size:24px;">play_arrow</i></button>
         </div>`).join('');
     }
+
+
+    async function resolveMovieStreamUrl(r, st) {
+        if (r.src === 'direct') return { type: 'stream', url: r.pageUrl || r.id };
+        if (r.src === 'yt') return { type: 'stream', url: 'https://www.youtube.com/watch?v=' + r.id };
+        if (r.src === 'dm') {
+            if (st) { st.style.color = '#f1c40f'; st.innerText = 'Dailymotion video akışı çözülüyor...'; }
+            const dmM3u8 = await resolveDailymotionM3u8(r.id);
+            if (dmM3u8) return { type: 'stream', url: dmM3u8 };
+            return { type: 'embed', url: `https://www.dailymotion.com/embed/video/${r.id}?autoplay=1` };
+        }
+        if (r.src === 'arc') {
+            if (st) { st.style.color = '#f1c40f'; st.innerText = 'Archive.org film dosyası aranıyor...'; }
+            const m = await (await fetchTO(`https://archive.org/metadata/${encodeURIComponent(r.id)}`, 10000)).json();
+            const files = (m.files || []).filter(f => /\.(mp4|m4v|webm|ogv)$/i.test(f.name || '') && !/_thumb|sample|trailer|_512kb/i.test(f.name || ''));
+            files.sort((a, b) => ((/h\.264|mpeg4/i.test(b.format || '') ? 1 : 0) - (/h\.264|mpeg4/i.test(a.format || '') ? 1 : 0)) || (Number(b.size || 0) - Number(a.size || 0)));
+            const f = files[0];
+            if (!f) throw new Error('Oynatılabilir video dosyası bulunamadı.');
+            return { type: 'stream', url: `https://archive.org/download/${encodeURIComponent(r.id)}/` + String(f.name).split('/').map(encodeURIComponent).join('/') };
+        }
+        if (r.src === 'web') {
+            const pageUrl = r.pageUrl || r.id;
+            const ytId = extractYTId(pageUrl);
+            if (ytId) return { type: 'stream', url: 'https://www.youtube.com/watch?v=' + ytId };
+
+
+            if (st) { st.style.color = '#f1c40f'; st.innerText = 'Web sayfasındaki film akışı ayıklanıyor...'; }
+            try {
+                const html = await fetchHtmlViaProxy(pageUrl, 9000);
+                const ext = extractStreamsFromHtml(html, pageUrl);
+                if (ext.m3u8 && ext.m3u8.length > 0) return { type: 'stream', url: ext.m3u8[0] };
+
+
+                const mp4Match = html.replace(/\\\//g, '/').match(/https?:\/\/[A-Za-z0-9_\-\.\/:%\?=&~+#]+\.mp4(?:\?[A-Za-z0-9_\-\.\/:%=&~+#]*)?/i);
+                if (mp4Match && mp4Match[0]) return { type: 'stream', url: mp4Match[0] };
+
+
+                if (ext.yt && ext.yt.length > 0) return { type: 'stream', url: ext.yt[0] };
+                if (ext.dm && ext.dm.length > 0) {
+                    const dmUrl = await resolveDailymotionM3u8(ext.dm[0]);
+                    if (dmUrl) return { type: 'stream', url: dmUrl };
+                }
+
+
+                if (ext.iframes && ext.iframes.length > 0) {
+                    for (const ifr of ext.iframes.slice(0, 3)) {
+                        try {
+                            const ifrHtml = await fetchHtmlViaProxy(ifr, 6000);
+                            const ifrExt = extractStreamsFromHtml(ifrHtml, ifr);
+                            if (ifrExt.m3u8 && ifrExt.m3u8.length > 0) return { type: 'stream', url: ifrExt.m3u8[0] };
+                            const ifrMp4 = ifrHtml.replace(/\\\//g, '/').match(/https?:\/\/[A-Za-z0-9_\-\.\/:%\?=&~+#]+\.mp4(?:\?[A-Za-z0-9_\-\.\/:%=&~+#]*)?/i);
+                            if (ifrMp4 && ifrMp4[0]) return { type: 'stream', url: ifrMp4[0] };
+                        } catch (e) {}
+                    }
+                    return { type: 'embed', url: ext.iframes[0] };
+                }
+            } catch (e) {}
+            if (r.embedUrl) return { type: 'embed', url: r.embedUrl };
+            return { type: 'embed', url: pageUrl };
+        }
+        throw new Error('Desteklenmeyen kaynak');
+    }
+
+
+    function openWebEmbedPlayer(title, embedUrl) {
+        const modal = document.getElementById('smartPreviewModal');
+        const vid = document.getElementById('smartPreviewVideo');
+        const iframeContainer = document.getElementById('smartPreviewIframe');
+        const stat = document.getElementById('smartPreviewStatus');
+        modalOpenedAt = Date.now();
+        document.getElementById('smartPreviewTitle').innerText = title;
+        if (smartPreviewHls) { smartPreviewHls.destroy(); smartPreviewHls = null; }
+        vid.pause(); vid.removeAttribute('src'); vid.load();
+        vid.style.display = 'none';
+        iframeContainer.style.display = 'block';
+        iframeContainer.innerHTML = `<iframe src="${esc(embedUrl)}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer"></iframe>`;
+        stat.innerText = "Web Oynatıcıda Açıldı (Tam ekran için oynatıcı kontrollerini kullanın)";
+        stat.style.color = "#2ecc71";
+        modal.classList.add('show');
+    }
+
+
     async function movieWatch(i) {
         const r = movieResults[i]; if (!r) return;
-        const st = document.getElementById('movieStatus'); let url;
-        if (r.src === 'yt') url = 'https://www.youtube.com/watch?v=' + r.id;
-        else {
-            st.style.color = '#f1c40f'; st.innerText = 'Film dosyası aranıyor...';
-            try {
-                const m = await (await fetchTO(`https://archive.org/metadata/${encodeURIComponent(r.id)}`, 10000)).json();
-                const files = (m.files || []).filter(f => /\.(mp4|m4v|webm|ogv)$/i.test(f.name || '') && !/_thumb|sample|trailer|_512kb/i.test(f.name || ''));
-                files.sort((a, b) => ((/h\.264|mpeg4/i.test(b.format || '') ? 1 : 0) - (/h\.264|mpeg4/i.test(a.format || '') ? 1 : 0)) || (Number(b.size || 0) - Number(a.size || 0)));
-                const f = files[0];
-                if (!f) { st.style.color = '#e74c3c'; st.innerText = 'Oynatılabilir video dosyası bulunamadı.'; return; }
-                url = `https://archive.org/download/${encodeURIComponent(r.id)}/` + String(f.name).split('/').map(encodeURIComponent).join('/');
-            } catch (e) { st.style.color = '#e74c3c'; st.innerText = 'Dosya bilgisi alınamadı: ' + (e.message || e); return; }
+        const st = document.getElementById('movieStatus');
+        try {
+            const res = await resolveMovieStreamUrl(r, st);
+            if (res.type === 'embed') {
+                st.style.color = '#2ecc71'; st.innerText = 'Web oynatıcıda açıldı: ' + r.title;
+                openWebEmbedPlayer(r.title, res.url);
+                return;
+            }
+            const url = res.url;
+            st.style.color = '#2ecc71'; st.innerText = 'Açılıyor: ' + r.title;
+            const ch = { id: 'ch_' + (globalIdCounter++), originalIndex: 0, name: r.title, url, logo: r.thumb, broken: false, isFavorite: favUrls.includes(url) };
+            closeAllDrawers();
+            curIdx = -1; allChannels = [ch]; sortAndRenderList();
+            play(0, 0);
+            showOSD('Film açılıyor', r.title);
+        } catch (e) {
+            st.style.color = '#e74c3c'; st.innerText = 'Dosya bilgisi alınamadı: ' + (e.message || e);
         }
-        st.style.color = '#2ecc71'; st.innerText = 'Açılıyor: ' + r.title;
-        const ch = { id: 'ch_' + (globalIdCounter++), originalIndex: 0, name: r.title, url, logo: r.thumb, broken: false, isFavorite: favUrls.includes(url) };
-        closeAllDrawers();
-        curIdx = -1; allChannels = [ch]; sortAndRenderList();
-        play(0, 0);
-        showOSD('Film açılıyor', r.title);
     }
+
+
+    async function movieAddToList(i) {
+        const r = movieResults[i]; if (!r) return;
+        const st = document.getElementById('movieStatus');
+        try {
+            const res = await resolveMovieStreamUrl(r, st);
+            if (res.type === 'embed') {
+                showOSD('Bu film gömülü web oynatıcı kullanıyor', '▶ düğmesi ile doğrudan izleyebilirsiniz');
+                openWebEmbedPlayer(r.title, res.url);
+                return;
+            }
+            document.getElementById('singleName').value = r.title;
+            document.getElementById('singleUrl').value = res.url;
+            document.getElementById('singleLogo').value = r.thumb || '';
+            addSingleChannel();
+            st.style.color = '#2ecc71'; st.innerText = `✅ "${r.title}" aktif listeye eklendi!`;
+        } catch (e) {
+            st.style.color = '#e74c3c'; st.innerText = 'Listeye eklenemedi: ' + (e.message || e);
+        }
+    }
+
 
     /* ===== KOLAY KULLANIM MODU ===== */
     var easyMode = false; try { easyMode = localStorage.getItem('tv_easy_mode') === '1'; } catch (e) {}
@@ -4646,6 +5249,7 @@ async function resetQuarantine() {
         easyHintAt = Date.now();
         showOSD('Kolay Kullanım Modu', 'Ayarlar için OK / ekrana 6 sn basılı tutun');
     }
+
 
     /* ===== YOUTUBE LİSTELERİNİ TEK BUTONDA GİZLE / GÖSTER ===== */
     var ytListsOpen = false; try { ytListsOpen = localStorage.getItem('tv_yt_open') === '1'; } catch (e) {}
@@ -4668,6 +5272,7 @@ async function resetQuarantine() {
     }
     (function () { const _u = updatePresetDropdown; updatePresetDropdown = function () { _u.apply(this, arguments); updateYtToggleBtn(); }; })();
 
+
     /* ===== TOPLU İŞLEMLERDE 1111 ŞİFRESİ ===== */
     var multiPinPending = null;
     function multiRequirePin(label, fn) {
@@ -4683,6 +5288,7 @@ async function resetQuarantine() {
         document.getElementById('channelActionModal').classList.add('show');
         setTimeout(() => { const b1 = document.getElementById('delPinBtn1'); if (b1) b1.focus(); }, 60);
     }
+
 
     /* ===== ALTYAZI AYARLARI (altyazı düğmesine 4 sn basılı tut) ===== */
     const SUB_THEMES = [
@@ -4759,6 +5365,7 @@ async function resetQuarantine() {
         b.addEventListener('contextmenu', e => e.preventDefault());
     })();
 
+
     function getLocalList(id) { try { return JSON.parse(localStorage.getItem('tvl_' + id)) || []; } catch (e) { return []; } }
     function saveLocalList(id, arr) { try { localStorage.setItem('tvl_' + id, JSON.stringify(arr)); return true; } catch (e) { showOSD('Kaydedilemedi'); return false; } }
     function collectLocalLists() { const o = {}; personalPresets.forEach(p => { if (p && p.url && String(p.url).startsWith('local_')) o[p.url] = getLocalList(p.url); }); return o; }
@@ -4781,6 +5388,7 @@ async function resetQuarantine() {
         }
     }
 
+
     function showSmartAddStatus(msg, type = 'success') {
         const el = document.getElementById('smartAddStatus'); if (!el) return;
         el.style.display = 'block';
@@ -4790,6 +5398,7 @@ async function resetQuarantine() {
         el.innerText = msg;
         setTimeout(() => { el.style.display = 'none'; }, 9000);
     }
+
 
     async function smartAddToList() {
         let idxs = [...smartSel].filter(i => smartResults[i] && !smartResults[i].dead).sort((a, b) => a - b);
@@ -4814,6 +5423,7 @@ async function resetQuarantine() {
             }
         }
 
+
         const target = document.getElementById('smartTarget').value;
         const chs = idxs.map(i => {
             const r = smartResults[i];
@@ -4821,12 +5431,14 @@ async function resetQuarantine() {
             return { name: cleanName, url: r.url, logo: r.logo || '' };
         });
 
+
         chs.forEach(c => {
             brokenUrls = brokenUrls.filter(u => u !== c.url && u.split('#')[0] !== c.url.split('#')[0]);
             if (target !== '__new__') undeleteUrl(target, c.url);
             undeleteUrl(currentListContext, c.url);
         });
         localStorage.setItem('tv_broken', JSON.stringify(brokenUrls));
+
 
         if (target === '__new__') {
             const name = document.getElementById('smartNewName').value.trim() || document.getElementById('smartQuery').value.trim() || 'Yeni Liste';
@@ -4909,6 +5521,7 @@ async function resetQuarantine() {
         }
     }
 
+
     
 function playAudioDirect(video, url, token) {
         video.removeAttribute('crossorigin');
@@ -4917,6 +5530,7 @@ function playAudioDirect(video, url, token) {
             if (!e || e.name !== 'AbortError') handleStreamError(token);
         });
     }
+
 
     function quarToggle(ev, id) { ev.stopPropagation(); if (quarSel.has(id)) quarSel.delete(id); else quarSel.add(id); }
     function retestOne(ev, id) { ev.stopPropagation(); const ch = allChannels.find(c => c.id === id); if (ch) runQuarTest([ch]); }
@@ -4935,6 +5549,7 @@ function playAudioDirect(video, url, token) {
         }
         isQuarTesting = false; showOSD('Karantina Testi Bitti');
     }
+
 
     let okPressContext = null;
     let okHoldTimer = null;
@@ -4957,12 +5572,14 @@ function playAudioDirect(video, url, token) {
         bottomNavigatedBySwipe: false
     };
 
+
     function dispatchVirtualRemoteKey(keyName, keyCode) {
         const downEv = new KeyboardEvent('keydown', { key: keyName, code: keyName, keyCode: keyCode, which: keyCode, bubbles: true, cancelable: true });
         window.dispatchEvent(downEv);
         const upEv = new KeyboardEvent('keyup', { key: keyName, code: keyName, keyCode: keyCode, which: keyCode, bubbles: true, cancelable: true });
         window.dispatchEvent(upEv);
     }
+
 
     const pwEl = document.getElementById('playerWrapper');
     pwEl.addEventListener('touchstart', (e) => {
@@ -4979,6 +5596,7 @@ function playAudioDirect(video, url, token) {
         touchGestureState.startTime = Date.now();
         touchGestureState.moved = false;
         touchGestureState.active = true;
+
 
         clearOkTimers();
         okLongPressFired = false;
@@ -4997,6 +5615,7 @@ function playAudioDirect(video, url, token) {
         }, 5500);
     }, { passive: true });
 
+
     pwEl.addEventListener('touchmove', (e) => {
         if (!touchGestureState.active || !e.touches || e.touches.length !== 1) return;
         const t = e.touches[0];
@@ -5007,6 +5626,7 @@ function playAudioDirect(video, url, token) {
             clearOkTimers();
         }
     }, { passive: true });
+
 
     pwEl.addEventListener('touchend', (e) => {
         clearOkTimers();
@@ -5025,6 +5645,7 @@ function playAudioDirect(video, url, token) {
         const absY = Math.abs(dy);
         const dt = Date.now() - touchGestureState.startTime;
 
+
         // 1. KAYDIRMA HAREKETLERİ (SWIPE -> MI STICK YÖN TUŞLARI)
         const SWIPE_MIN = 38;
         if (Math.max(absX, absY) >= SWIPE_MIN && dt < 900) {
@@ -5033,6 +5654,7 @@ function playAudioDirect(video, url, token) {
                 touchGestureState.singleTapTimer = null;
             }
             touchGestureState.lastTapTime = 0;
+
 
             if (absY >= absX * 1.15) {
                 touchGestureState.bottomNavigatedBySwipe = false;
@@ -5055,6 +5677,7 @@ function playAudioDirect(video, url, token) {
             }
             return;
         }
+
 
         // 2. DOKUNMA VE ÇİFT DOKUNMA (DOUBLE TAP -> MI STICK OK TUŞU)
         if (!touchGestureState.moved && dt < 450) {
@@ -5097,11 +5720,13 @@ function playAudioDirect(video, url, token) {
         }
     }, { passive: true });
 
+
     pwEl.addEventListener('touchcancel', () => {
         clearOkTimers();
         touchGestureState.active = false;
         setIgnoreKeyUntilRelease(false);
     }, { passive: true });
+
 
     // Kanal Taşıma Modu açıkken (#rightSidebar içinde) dokunmatik kaydırma ve çift dokunma desteği
     const rightSbEl = document.getElementById('rightSidebar');
@@ -5135,9 +5760,11 @@ function playAudioDirect(video, url, token) {
         }
     }, { passive: true });
 
+
     const TV_KC = { 19: 'ArrowUp', 20: 'ArrowDown', 21: 'ArrowLeft', 22: 'ArrowRight', 23: 'Enter', 66: 'Enter', 4: 'Escape', 82: 'ContextMenu', 166: 'ChannelUp', 167: 'ChannelDown', 33: 'PageUp', 34: 'PageDown', 38: 'ArrowUp', 40: 'ArrowDown', 37: 'ArrowLeft', 39: 'ArrowRight', 13: 'Enter', 27: 'Escape', 8: 'Backspace' };
     let tvPick = null;
     let lastGridMoveTime = 0;
+
 
     function getVisibleGridItems() { return Array.from(document.querySelectorAll('#channelList .channel-item')).filter(el => el.style.display !== 'none'); }
     function focusGridElement(el) {
@@ -5145,6 +5772,7 @@ function playAudioDirect(video, url, token) {
         try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
         fastScrollGridToItem(el);
     }
+
 
     function tvOpenPicker(sel) {
         tvClosePicker();
@@ -5176,6 +5804,7 @@ function playAudioDirect(video, url, token) {
         p.sel.dispatchEvent(new Event('change', { bubbles: true }));
         p.sel.focus();
     }
+
 
     let leftNavCache = null, leftNavCacheAt = 0, lastLeftMoveTime = 0;
     function invalidateLeftNav() { leftNavCache = null; }
@@ -5223,6 +5852,7 @@ function playAudioDirect(video, url, token) {
         fastScrollIntoView(target);
     }
 
+
     window.addEventListener('keyup', function (e) {
         const kc = e.keyCode || e.which || 0;
         let k = e.key;
@@ -5263,6 +5893,7 @@ function playAudioDirect(video, url, token) {
         }
     }, true);
 
+
     window.addEventListener('keydown', function (e) {
         const kc = e.keyCode || e.which || 0;
         let k = e.key;
@@ -5270,15 +5901,18 @@ function playAudioDirect(video, url, token) {
         if (ignoreKeyUntilRelease) { e.preventDefault(); e.stopImmediatePropagation(); return; }
         if (castShown && (['Escape', 'BrowserBack', 'GoBack'].includes(k) || kc === 4 || kc === 27)) { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) castStop(); return; }
 
+
         const ae = document.activeElement;
         const isInputTag = ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA');
         const isTypingMode = isInputTag && !ae.hasAttribute('readonly');
+
 
         if (k === 'Backspace' || kc === 8) {
             if (isTypingMode) { e.stopPropagation(); return; }
             e.preventDefault(); e.stopPropagation();
             return;
         }
+
 
         if (isTypingMode) {
             if (k === 'Enter' || kc === 13 || kc === 23 || kc === 66) {
@@ -5290,6 +5924,7 @@ function playAudioDirect(video, url, token) {
                     if (items.length > 0) focusGridElement(items[0]); else ae.focus();
                 }
                 else if (ae.id === 'pinInput') verifyPin();
+                else if (ae.id === 'movieQuery') movieSearch();
                 else if (ae.id === 'smartQuery') smartSearch();
                 else if (ae.id === 'ytSearchQuery') searchYouTube();
                 else if (ae.id === 'userApiKey') saveApiKey();
@@ -5312,6 +5947,7 @@ function playAudioDirect(video, url, token) {
             return;
         }
 
+
         const confirmModal = document.getElementById('tvConfirmModal');
         if (confirmModal && confirmModal.classList.contains('show')) {
             e.preventDefault(); e.stopImmediatePropagation();
@@ -5325,6 +5961,7 @@ function playAudioDirect(video, url, token) {
             }
             return;
         }
+
 
         const bulkNumModal = document.getElementById('bulkNumModal');
         if (bulkNumModal && bulkNumModal.classList.contains('show')) {
@@ -5342,6 +5979,7 @@ function playAudioDirect(video, url, token) {
             return;
         }
 
+
         const camModal = document.getElementById('channelActionModal');
         if (camModal && camModal.classList.contains('show')) {
             e.preventDefault(); e.stopImmediatePropagation();
@@ -5356,6 +5994,7 @@ function playAudioDirect(video, url, token) {
             else if (!e.repeat && (Date.now() - modalOpenedAt > 350) && (k === 'Enter' || k === ' ' || kc === 23 || kc === 13 || kc === 66)) focusables[idx].click();
             return;
         }
+
 
         const subModalEl = document.getElementById('subSetModal');
         if (subModalEl && subModalEl.classList.contains('show')) {
@@ -5381,12 +6020,14 @@ function playAudioDirect(video, url, token) {
             return;
         }
 
+
         const previewModal = document.getElementById('smartPreviewModal');
         if (previewModal && previewModal.classList.contains('show')) {
             e.preventDefault(); e.stopImmediatePropagation();
             if (!e.repeat && (['Escape', 'BrowserBack', 'GoBack'].includes(k) || kc === 4 || kc === 27 || k === 'Enter' || k === ' ' || kc === 23 || kc === 13 || kc === 66)) closeSmartPreview();
             return;
         }
+
 
         if (tvPick) {
             e.preventDefault(); e.stopImmediatePropagation();
@@ -5398,10 +6039,12 @@ function playAudioDirect(video, url, token) {
             return;
         }
 
+
         const L = document.getElementById('leftSidebar');
         const Rr = document.getElementById('rightSidebar');
         const leftOpen = L.classList.contains('open');
         const rightOpen = Rr.classList.contains('open');
+
 
         if (rightOpen) {
             if (movingChannelId) {
@@ -5452,6 +6095,7 @@ function playAudioDirect(video, url, token) {
             const curItem = ae && ae.closest ? ae.closest('.channel-item') : null;
             const curPos = curItem ? items.indexOf(curItem) : -1;
 
+
             if (inHeaderIdx !== -1) {
                 if (k === 'ArrowLeft') { e.preventDefault(); e.stopImmediatePropagation(); headerControls[Math.max(0, inHeaderIdx - 1)].focus(); return; }
                 if (k === 'ArrowRight') { e.preventDefault(); e.stopImmediatePropagation(); headerControls[Math.min(headerControls.length - 1, inHeaderIdx + 1)].focus(); return; }
@@ -5476,6 +6120,7 @@ function playAudioDirect(video, url, token) {
                 return;
             }
 
+
             if (inBulkIdx !== -1) {
                 if (k === 'ArrowLeft') { e.preventDefault(); e.stopImmediatePropagation(); bulkControls[Math.max(0, inBulkIdx - 1)].focus(); return; }
                 if (k === 'ArrowRight') { e.preventDefault(); e.stopImmediatePropagation(); bulkControls[Math.min(bulkControls.length - 1, inBulkIdx + 1)].focus(); return; }
@@ -5492,6 +6137,7 @@ function playAudioDirect(video, url, token) {
                 }
                 return;
             }
+
 
             if (curPos !== -1) {
                 if (k === 'ArrowRight') {
@@ -5555,6 +6201,7 @@ function playAudioDirect(video, url, token) {
             return;
         }
 
+
         if (leftOpen) {
             if (['Escape', 'BrowserBack', 'GoBack'].includes(k) || kc === 4 || kc === 27) {
                 e.preventDefault(); e.stopImmediatePropagation(); closeAllDrawers(); return;
@@ -5605,6 +6252,7 @@ function playAudioDirect(video, url, token) {
             return;
         }
 
+
         const ctrlOverlay = document.getElementById('controlsOverlay');
         const ctrlVisible = !ctrlOverlay.classList.contains('hide');
         const bottomBtns = [
@@ -5613,6 +6261,7 @@ function playAudioDirect(video, url, token) {
             document.getElementById('mainFavBtn'), document.getElementById('infoBtn'), document.getElementById('castBtn')
         ].filter(Boolean);
         const inBottomIdx = bottomBtns.indexOf(ae);
+
 
         if (ctrlVisible && inBottomIdx !== -1) {
             resetControlsTimer();
@@ -5677,6 +6326,7 @@ function playAudioDirect(video, url, token) {
             }
         }
 
+
         const sbWrap = document.getElementById('seekBarWrap');
         const seekBarShowing = sbWrap && sbWrap.classList.contains('show');
         if (['Escape', 'BrowserBack', 'GoBack'].includes(k) || kc === 4 || kc === 27) {
@@ -5711,6 +6361,7 @@ function playAudioDirect(video, url, token) {
         if (k === 'ContextMenu' || k === 'Menu' || kc === 82) { e.preventDefault(); e.stopImmediatePropagation(); showControls(true); return; }
     }, true);
 
+
     document.addEventListener('keydown', function(e) {
         const pBtn = e.target && e.target.classList && e.target.classList.contains('preview-mini-btn') ? e.target : null;
         if (pBtn && (e.key === 'Enter' || e.key === ' ' || e.keyCode === 13 || e.keyCode === 23 || e.keyCode === 66)) {
@@ -5724,6 +6375,7 @@ function playAudioDirect(video, url, token) {
         if (!L || !L.classList.contains('open')) return;
         const i = parseInt(item.dataset.smartidx, 10);
         if (isNaN(i)) return;
+
 
         if (e.key === 'Enter' || e.key === ' ' || e.keyCode === 13 || e.keyCode === 23 || e.keyCode === 66) {
             e.preventDefault(); e.stopPropagation();
@@ -5739,6 +6391,7 @@ function playAudioDirect(video, url, token) {
         }
     }, true);
 
+
     function tvVolume(d) {
         const ytc = document.getElementById('ytContainer'); let vol;
         if (ytc.style.display === 'block' && typeof ytPlayer !== 'undefined' && ytPlayer && ytPlayer.getVolume) {
@@ -5752,6 +6405,7 @@ function playAudioDirect(video, url, token) {
         const n = Math.round(vol / 10);
         showOSD('Ses ' + vol + '%', '█'.repeat(n) + '░'.repeat(10 - n));
     }
+
 
     window.addEventListener('DOMContentLoaded', () => {
         applyGridColumns();
