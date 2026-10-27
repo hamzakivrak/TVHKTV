@@ -4786,15 +4786,25 @@ async function resetQuarantine() {
         tvSendTo(i, { cmd: 'play', url: String(ch.url), name: ch.name || 'Yayın', logo: ch.logo || '' });
         closeInfoModal();
     }
-    function tvRemoteKey(i, cmd) { tvSendTo(i, { cmd }); }
+    function tvRemoteKey(i, cmd, d) { const p = { cmd }; if (d !== undefined) p.d = d; tvSendTo(i, p); }
     function openTvTargetModal(ch) {
         modalOpenedAt = Date.now();
         const ts = tvTargets();
         let html = '<div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">';
         if (!ts.length) html += '<div class="info-row"><span style="text-align:left;">Kayıtlı TV yok. Ayarlar → "TV\'ye Gönder / Uzaktan" bölümünden TV\'nin adresini ve kodunu ekleyin.</span></div>';
         ts.forEach((t, i) => {
+            const linkedHere = tvLinkIdx() === i;
             html += `<div style="border:1px solid var(--border); border-radius:12px; padding:10px;">
                 <div style="font-weight:600; margin-bottom:8px; text-align:left;">📺 ${esc(t.name)} <small style="color:#888">${esc(t.ip)}</small></div>
+                <button type="button" class="tv-modal-btn" style="width:100%; margin-bottom:6px; ${linkedHere ? 'background:rgba(0,206,201,0.25); border-color:var(--accent2);' : ''}" onclick="tvLinkToggle(${i})"><i class="material-icons-round" style="color:var(--accent2)">${linkedHere ? 'link_off' : 'link'}</i> ${linkedHere ? 'Bağlı — kesmek için bas' : 'Bu TV\'yi bağlı kontrol et'}</button>
+                ${linkedHere ? '<div style="font-size:0.74rem; color:#aaa; margin-bottom:6px; text-align:left;">Telefonda seçtiğin kanal ve film/video TV\'de açılır; alt çubuktaki düğmeler TV\'yi kumanda eder.</div>' : ''}
+                <div style="display:flex; gap:6px; margin-bottom:6px;">
+                    <button type="button" class="tv-modal-btn" style="flex:1; padding:8px;" onclick="tvRemoteKey(${i},'vol',-0.1)" title="Ses -"><i class="material-icons-round">volume_down</i></button>
+                    <button type="button" class="tv-modal-btn" style="flex:1; padding:8px;" onclick="tvRemoteKey(${i},'vol',0.1)" title="Ses +"><i class="material-icons-round">volume_up</i></button>
+                    <button type="button" class="tv-modal-btn" style="flex:1; padding:8px;" onclick="tvRemoteKey(${i},'mute')" title="Sessiz"><i class="material-icons-round">volume_off</i></button>
+                    <button type="button" class="tv-modal-btn" style="flex:1; padding:8px;" onclick="tvRemoteKey(${i},'seek',-10)" title="10 sn geri"><i class="material-icons-round">replay_10</i></button>
+                    <button type="button" class="tv-modal-btn" style="flex:1; padding:8px;" onclick="tvRemoteKey(${i},'seek',10)" title="10 sn ileri"><i class="material-icons-round">forward_10</i></button>
+                </div>
                 <div style="display:flex; gap:6px;">
                     <button type="button" class="tv-modal-btn" style="flex:2;" onclick="tvCastCurrent(${i})"><i class="material-icons-round" style="color:var(--accent2)">cast</i> Gönder</button>
                     <button type="button" class="tv-modal-btn" style="flex:1; padding:8px;" onclick="tvRemoteKey(${i},'prev')" title="Önceki kanal"><i class="material-icons-round">skip_previous</i></button>
@@ -4831,7 +4841,60 @@ async function resetQuarantine() {
         } else if (o.cmd === 'next') { nextCh(); }
         else if (o.cmd === 'prev') { prevCh(); }
         else if (o.cmd === 'toggle') { togglePlayPause(); }
+        else if (o.cmd === 'vol') { tvVolume(Number(o.d) || 0); }
+        else if (o.cmd === 'mute') { toggleMute(); }
+        else if (o.cmd === 'seek') { seekRelative(Number(o.d) || 0, 1); }
     }
+
+    /* ===== TELEFON -> TV BAĞLI KONTROL MODU ===== */
+    function tvLinkIdx() { let ip = ''; try { ip = localStorage.getItem('tv_link_ip') || ''; } catch (e) {} if (!ip) return -1; return tvTargets().findIndex(t => t.ip === ip); }
+    function tvLinked() { return tvNative() && tvLinkIdx() >= 0; }
+    function tvLinkToggle(i) {
+        const t = tvTargets()[i]; if (!t) return;
+        let cur = ''; try { cur = localStorage.getItem('tv_link_ip') || ''; } catch (e) {}
+        const on = cur !== t.ip;
+        try { if (on) localStorage.setItem('tv_link_ip', t.ip); else localStorage.removeItem('tv_link_ip'); } catch (e) {}
+        if (on) { try { document.querySelectorAll('video').forEach(v => v.pause()); if (typeof ytPlayer !== 'undefined' && ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo(); } catch (e) {} }
+        tvLinkPaint();
+        showOSD(on ? 'TV\'ye bağlandı: ' + t.name : 'Bağlantı kesildi', on ? 'Seçtiğin kanal / video TV\'de açılır' : '');
+        closeInfoModal(); setTimeout(() => { try { castStart(); } catch (e) {} }, 150);
+    }
+    function tvLinkPaint() {
+        const b = document.getElementById('castBtn'); if (!b) return;
+        b.style.color = tvLinked() ? 'var(--accent2)' : '';
+        b.style.borderColor = tvLinked() ? 'var(--accent2)' : '';
+    }
+    (function () {
+        const send = (p) => { const i = tvLinkIdx(); if (i >= 0) tvSendTo(i, p); };
+        const _play = play;
+        play = function (idx, dir) {
+            if (!tvLinked()) return _play.apply(this, arguments);
+            const ch = allChannels[idx]; if (!ch) return Promise.resolve();
+            curIdx = idx;
+            send({ cmd: 'play', url: String(ch.url), name: ch.name || 'Yayın', logo: ch.logo || '' });
+            showOSD('TV\'de açılıyor', ch.name || '');
+            return Promise.resolve();
+        };
+        const wrap = (name, fn) => { const o = window[name]; if (typeof o !== 'function') return; window[name] = function () { if (tvLinked()) { fn.apply(this, arguments); return; } return o.apply(this, arguments); }; };
+        nextCh = (function (o) { return function () { if (tvLinked()) { send({ cmd: 'next' }); return; } return o.apply(this, arguments); }; })(nextCh);
+        prevCh = (function (o) { return function () { if (tvLinked()) { send({ cmd: 'prev' }); return; } return o.apply(this, arguments); }; })(prevCh);
+        togglePlayPause = (function (o) { return function () { if (tvLinked()) { send({ cmd: 'toggle' }); return; } return o.apply(this, arguments); }; })(togglePlayPause);
+        toggleMute = (function (o) { return function () { if (tvLinked()) { send({ cmd: 'mute' }); return; } return o.apply(this, arguments); }; })(toggleMute);
+        triggerSingleSeek = (function (o) { return function (dir) { if (tvLinked()) { send({ cmd: 'seek', d: (dir < 0 ? -10 : 10) }); return; } return o.apply(this, arguments); }; })(triggerSingleSeek);
+        const _mw = movieWatch;
+        movieWatch = async function (i) {
+            if (!tvLinked()) return _mw.apply(this, arguments);
+            const r0 = movieResults[i]; if (!r0) return;
+            const st = document.getElementById('movieStatus');
+            try {
+                const res = await resolveMovieStreamUrl(r0, st);
+                if (res.type === 'embed') { st.style.color = '#e67e22'; st.innerText = 'Bu video gömülü oynatıcı kullanıyor, TV\'ye gönderilemez.'; return; }
+                send({ cmd: 'play', url: res.url, name: r0.title, logo: r0.thumb || '' });
+                st.style.color = '#2ecc71'; st.innerText = 'TV\'ye gönderildi: ' + r0.title;
+                showOSD('TV\'ye gönderildi', r0.title);
+            } catch (e) { st.style.color = '#e74c3c'; st.innerText = 'Gönderilemedi: ' + (e.message || e); }
+        };
+    })();
 
     /* ===== CAST (yayını TV'ye gönder - APK, WebView, RemotePlayback & DLNA/Intent Destekli) ===== */
     var castShown = false;
@@ -4970,8 +5033,8 @@ async function resetQuarantine() {
     async function castStart() {
         if (castShown) { castStop(); return; }
         const ch = allChannels[curIdx];
+        if (tvNative() || castNative()) { openTvTargetModal(ch || { name: 'Uzaktan Kumanda', logo: '' }); return; }
         if (!ch) { showOSD('Önce bir kanal seçin'); return; }
-        if (tvNative() || castNative()) { openTvTargetModal(ch); return; }
 
 
         if (window.castReady && typeof cast !== 'undefined' && cast.framework) {
@@ -6703,6 +6766,7 @@ function playAudioDirect(video, url, token) {
             applyEasyMode(); updateYtToggleBtn();
             try { tvRenderTargets(); tvRemoteInfoRefresh(); } catch (e) {}
             try { initSettingsTabs(); } catch (e) {}
+            try { tvLinkPaint(); } catch (e) {}
             try { document.getElementById('cloudBaseInput').value = localStorage.getItem('tv_cloud_base') || ''; } catch (e) {}
             startupSyncCheck();
             if (window.Android && typeof Android.saveRules === 'function') {
