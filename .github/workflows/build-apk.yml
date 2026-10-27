@@ -806,7 +806,7 @@ jobs:
               public void onBackPressed() {
                   if (customView != null) { hideCustom(); return; }
                   String js = "(function(){var l=document.getElementById('leftSidebar'),r=document.getElementById('rightSidebar');"
-                          + "if((l&&l.classList.contains('open'))||(r&&r.classList.contains('open'))){closeAllDrawers();return 1}return 0})()";
+                          + "if((l&&l.classList.contains('open'))||(r&&r.classList.contains('open'))){if(window.drawerBack&&drawerBack())return 1;closeAllDrawers();return 1}return 0})()";
                   web.evaluateJavascript(js, value -> {
                       if ("1".equals(value)) return;
                       long now = System.currentTimeMillis();
