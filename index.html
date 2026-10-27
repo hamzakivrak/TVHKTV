@@ -108,6 +108,8 @@
         .movie-card .mc-btns { display:flex; gap:4px; padding:4px 6px 6px; justify-content:flex-end; }
         .movie-card .preview-mini-btn { min-width:0 !important; width:34px !important; height:30px !important; padding:0 !important; display:flex; align-items:center; justify-content:center; }
         .movie-card .preview-mini-btn i { font-size:18px !important; width:18px; height:18px; overflow:hidden; }
+        .movie-card:focus, .movie-card.holding { outline:none; border-color:var(--accent2); box-shadow:0 0 0 2px var(--accent2); }
+        .movie-card.holding { border-color:var(--fav); box-shadow:0 0 0 3px var(--fav); }
         .movie-sec { font-weight:700; color:#fdcb6e; font-size:0.82rem; margin:6px 0; }
         #moviePanel { display:none; flex:1; overflow-y:auto; padding:14px 22px 40px; }
         #rightSidebar.movie-mode #moviePanel { display:block; }
@@ -542,7 +544,7 @@
     <div id="moviePanel">
         <div style="font-weight:700; color:#fdcb6e; margin-bottom:8px;">🎬 Film / Video Ara (Web + YouTube + Archive)</div>
         <button type="button" class="btn" id="movieSearchBtn" style="width:100%; background:#fdcb6e; border-color:#fdcb6e; color:#000; font-weight:700; margin-bottom:8px;" onclick="movieSearch()"><i class="material-icons-round">search</i> Ara</button>
-        <div id="movieStatus" style="font-size:0.8rem; color:#aaa; text-align:center; margin-bottom:8px;">Yukarıdaki kutuya film adı yazın; web, YouTube ve Archive birlikte taranır. ▶ ile izlenir, ➕ ile listeye eklenir.</div>
+        <div id="movieStatus" style="font-size:0.8rem; color:#aaa; text-align:center; margin-bottom:8px;">Yukarıdaki kutuya film adı yazın; web, YouTube ve Archive birlikte taranır. OK / dokunma ile izlenir, 3 sn basılı tutunca Eklenenler listesine eklenir.</div>
         <div id="movieSavedHdr" class="movie-sec" style="display:none;"></div>
         <div id="movieSaved" class="movie-grid" style="display:none;"></div>
         <div id="movieResHdr" class="movie-sec" style="display:none;">🔎 Arama Sonuçları</div>
@@ -4936,7 +4938,7 @@ async function resetQuarantine() {
             try {
                 const res = await resolveMovieStreamUrl(r0, st);
                 if (res.type === 'embed') { st.style.color = '#e67e22'; st.innerText = 'Bu video gömülü oynatıcı kullanıyor, TV\'ye gönderilemez.'; return; }
-                send({ cmd: 'play', url: res.url, name: r0.title, logo: r0.thumb || '' });
+                send({ cmd: 'play', url: res.raw || res.url, name: r0.title, logo: r0.thumb || '' });
                 st.style.color = '#2ecc71'; st.innerText = 'TV\'ye gönderildi: ' + r0.title;
                 showOSD('TV\'ye gönderildi', r0.title);
             } catch (e) { st.style.color = '#e74c3c'; st.innerText = 'Gönderilemedi: ' + (e.message || e); }
@@ -5369,7 +5371,7 @@ async function resetQuarantine() {
             return;
         }
         st.style.color = '#2ecc71';
-        st.innerText = `${good.length} video bulundu (eşleşmeye göre sıralı).` + (errs.length ? ' (' + errs[0] + ')' : '') + ' İzlemek için ▶, listeye eklemek için ➕.';
+        st.innerText = `${good.length} video bulundu (eşleşmeye göre sıralı).` + (errs.length ? ' (' + errs[0] + ')' : '') + ' İzlemek için OK, eklemek için 3 sn basılı tutun.';
         renderMovies();
     }
 
@@ -5419,12 +5421,11 @@ async function resetQuarantine() {
 
 
     function mvCols() { return window.innerWidth < 600 ? 3 : 6; }
-    function mvCard(thumb, title, sub, playJs, btns) {
-        return `<div class="movie-card">
-            <div class="mc-thumb" onclick="${playJs}">${thumb ? `<img loading="lazy" decoding="async" src="${esc(thumb)}" onerror="this.style.display='none'">` : '<i class="material-icons-round" style="font-size:30px; color:#555; pointer-events:none; width:30px; height:30px; overflow:hidden;">movie</i>'}</div>
+    function mvCard(thumb, title, sub, kind, i) {
+        return `<div class="movie-card" tabindex="0" data-kind="${kind}" data-i="${i}">
+            <div class="mc-thumb">${thumb ? `<img loading="lazy" decoding="async" src="${esc(thumb)}" onerror="this.style.display='none'">` : '<i class="material-icons-round" style="font-size:30px; color:#555; pointer-events:none; width:30px; height:30px; overflow:hidden;">movie</i>'}</div>
             <div class="mc-title">${esc(title)}</div>
-            <div class="mc-sub">${esc(sub)}</div>
-            <div class="mc-btns">${btns}</div></div>`;
+            <div class="mc-sub">${esc(sub)}</div></div>`;
     }
     function renderMovies() {
         invalidateLeftNav();
@@ -5432,9 +5433,7 @@ async function resetQuarantine() {
         document.getElementById('moviePanel').style.setProperty('--movie-cols', mvCols());
         if (!movieResults.length) { box.style.display = 'none'; box.innerHTML = ''; if (hdr) hdr.style.display = 'none'; return; }
         box.style.display = 'grid'; if (hdr) hdr.style.display = 'block';
-        box.innerHTML = movieResults.map((r, i) => mvCard(r.thumb, r.title, r.sub + (r.dur ? ' · ' + mvDur(r.dur) : ''), `movieWatch(${i})`,
-            `<button type="button" class="preview-mini-btn" onclick="event.stopPropagation(); movieAddToList(${i})" title="Eklenenler listesine ekle" style="border-color:var(--fav); color:var(--fav);"><i class="material-icons-round">add</i></button>
-             <button type="button" class="preview-mini-btn" onclick="event.stopPropagation(); movieWatch(${i})" title="İzle (OK)"><i class="material-icons-round">play_arrow</i></button>`)).join('');
+        box.innerHTML = movieResults.map((r, i) => mvCard(r.thumb, r.title, r.sub + (r.dur ? ' · ' + mvDur(r.dur) : ''), 'res', i)).join('');
     }
     // ---- Eklenenler (film / video listesi; aktif kanal listesinden ayrı)
     var movieSaved = (function () { try { const a = JSON.parse(localStorage.getItem('tv_movie_saved') || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } })();
@@ -5446,10 +5445,50 @@ async function resetQuarantine() {
         if (!movieSaved.length) { box.style.display = 'none'; box.innerHTML = ''; hdr.style.display = 'none'; return; }
         hdr.style.display = 'block'; hdr.innerText = '⭐ Eklenenler (' + movieSaved.length + ')';
         box.style.display = 'grid';
-        box.innerHTML = movieSaved.map((e, i) => mvCard(e.thumb, e.title, e.sub || '', `movieSavedPlay(${i})`,
-            `<button type="button" class="preview-mini-btn" onclick="event.stopPropagation(); movieSavedDel(${i})" title="Eklenenlerden sil" style="border-color:var(--red); color:var(--red);"><i class="material-icons-round">delete</i></button>
-             <button type="button" class="preview-mini-btn" onclick="event.stopPropagation(); movieSavedPlay(${i})" title="İzle (OK)"><i class="material-icons-round">play_arrow</i></button>`)).join('');
+        box.innerHTML = movieSaved.map((e, i) => mvCard(e.thumb, e.title, e.sub || '', 'sav', i)).join('');
     }
+    // Kart davranışı: OK / dokunma = oynat, 3 sn basılı tut = Eklenenlere ekle (Eklenenlerdeyse sil)
+    var mvHold = { timer: null, fired: false, card: null };
+    function mvCardAction(card, long) {
+        if (!card) return;
+        const i = parseInt(card.dataset.i, 10), kind = card.dataset.kind;
+        if (long) {
+            if (kind === 'res') movieAddToList(i); else { const t = (movieSaved[i] || {}).title || ''; movieSavedDel(i); showOSD('Eklenenlerden silindi', t); }
+        } else {
+            if (kind === 'res') movieWatch(i); else movieSavedPlay(i);
+        }
+    }
+    function mvHoldStart(card) {
+        mvHoldCancel(); mvHold.fired = false; mvHold.card = card;
+        card.classList.add('holding');
+        mvHold.timer = setTimeout(() => {
+            mvHold.fired = true; card.classList.remove('holding');
+            try { navigator.vibrate && navigator.vibrate(60); } catch (e) {}
+            mvCardAction(card, true);
+        }, 3000);
+    }
+    function mvHoldCancel() { clearTimeout(mvHold.timer); mvHold.timer = null; if (mvHold.card) mvHold.card.classList.remove('holding'); }
+    (function () {
+        const panel = document.getElementById('moviePanel');
+        const cardOf = (e) => e.target && e.target.closest ? e.target.closest('.movie-card') : null;
+        panel.addEventListener('pointerdown', (e) => { const c = cardOf(e); if (c && e.pointerType !== 'mouse' || (c && e.button === 0)) mvHoldStart(c); });
+        ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => panel.addEventListener(ev, () => { mvHoldCancel(); }));
+        panel.addEventListener('contextmenu', (e) => { if (cardOf(e)) e.preventDefault(); });
+        panel.addEventListener('click', (e) => {
+            const c = cardOf(e); if (!c) return;
+            if (mvHold.fired) { mvHold.fired = false; return; }
+            mvCardAction(c, false);
+        });
+        window.addEventListener('keyup', (e) => {
+            const kc = e.keyCode || 0;
+            if (!(e.key === 'Enter' || e.key === ' ' || kc === 23 || kc === 13 || kc === 66)) return;
+            if (!mvHold.card || !mvHold.timer && !mvHold.fired) return;
+            const c = mvHold.card, wasFired = mvHold.fired;
+            mvHoldCancel(); mvHold.fired = false; mvHold.card = null;
+            e.preventDefault(); e.stopImmediatePropagation();
+            if (!wasFired) mvCardAction(c, false);
+        }, true);
+    })();
     function movieSavedDel(i) { movieSaved.splice(i, 1); movieSavedSave(); renderMovieSaved(); }
     function rememberVideo(ch) { try { localStorage.setItem('tv_last_video', JSON.stringify({ name: ch.name, url: ch.url, logo: ch.logo || '' })); } catch (e) {} }
     function playTempVideo(name, url, logo) {
@@ -5460,7 +5499,7 @@ async function resetQuarantine() {
     function movieSavedPlay(i) {
         const e = movieSaved[i]; if (!e) return;
         if (e.kind === 'embed') { openWebEmbedPlayer(e.title, e.url); return; }
-        if (typeof tvLinked === 'function' && tvLinked()) { tvSendTo(tvLinkIdx(), { cmd: 'play', url: e.url, name: e.title, logo: e.thumb || '' }); showOSD('TV\'ye gönderildi', e.title); return; }
+        if (typeof tvLinked === 'function' && tvLinked()) { tvSendTo(tvLinkIdx(), { cmd: 'play', url: e.raw || e.url, name: e.title, logo: e.thumb || '' }); showOSD('TV\'ye gönderildi', e.title); return; }
         playTempVideo(e.title, e.url, e.thumb);
     }
     async function movieAddToList(i) {
@@ -5469,7 +5508,7 @@ async function resetQuarantine() {
         try {
             const res = await resolveMovieStreamUrl(r0, st);
             if (movieSaved.some(x => x.url === res.url)) { st.style.color = '#f1c40f'; st.innerText = 'Bu video zaten Eklenenler listesinde.'; return; }
-            movieSaved.push({ title: r0.title, thumb: r0.thumb || '', sub: String(r0.sub || '').replace(/^%\d+ · /, ''), kind: res.type, url: res.url });
+            movieSaved.push({ title: r0.title, thumb: r0.thumb || '', sub: String(r0.sub || '').replace(/^%\d+ · /, ''), kind: res.type, url: res.url, raw: res.raw || '', ref: res.ref || '' });
             movieSavedSave(); renderMovieSaved();
             st.style.color = '#2ecc71'; st.innerText = `✅ "${r0.title}" Eklenenler listesine eklendi.`;
             showOSD('Eklenenlere eklendi', r0.title);
@@ -5503,7 +5542,57 @@ async function resetQuarantine() {
         return found;
     }
 
+    // Web video yakalama: gizli tarayıcı sayfayı açar, ağdaki video adreslerini yakalar (yalnız APK v2.0+)
+    window.__sn = window.__sn || {};
+    window.__sniffDone = function (id, arr) { const f = window.__sn[id]; if (f) { delete window.__sn[id]; f(arr || []); } };
+    function mvSniff(pageUrl, ms) {
+        return new Promise(res => {
+            if (!(window.Android && typeof Android.sniff === 'function')) return res([]);
+            const id = 's' + Date.now() + Math.floor(Math.random() * 1000);
+            const to = setTimeout(() => { delete window.__sn[id]; res([]); }, ms || 24000);
+            window.__sn[id] = (arr) => { clearTimeout(to); res(arr); };
+            try { Android.sniff(pageUrl, id); } catch (e) { clearTimeout(to); delete window.__sn[id]; res([]); }
+        });
+    }
+    function mvPick(list) {
+        if (!list || !list.length) return null;
+        const m3 = list.filter(x => /\.m3u8/i.test(x.url));
+        const master = m3.find(x => /master|playlist|index/i.test(x.url));
+        return master || m3[m3.length - 1] || list.find(x => /\.mp4/i.test(x.url)) || list[0];
+    }
+    function mvProxy(url, ref) {
+        if (window.Android && typeof Android.proxyUrl === 'function') { try { return Android.proxyUrl(url, ref || ''); } catch (e) {} }
+        return url;
+    }
     async function resolveMovieStreamUrl(r, st) {
+        const res = await resolveMovieStreamUrl0(r, st);
+        if (res && res.type === 'stream' && !res.raw && !/youtube\.com|youtu\.be/i.test(res.url) && (r.src === 'web' || r.src === 'dm') && window.Android && typeof Android.proxyUrl === 'function') {
+            const ref = r.src === 'dm' ? 'https://www.dailymotion.com/' : (r.pageUrl || r.id || '');
+            res.raw = res.url; res.ref = ref; res.url = mvProxy(res.url, ref);
+        }
+        return res;
+    }
+    async function resolveMovieStreamUrl0(r, st) {
+        const sniffFallback = async (pageUrl) => {
+            if (!(window.Android && typeof Android.sniff === 'function')) return null;
+            if (st) { st.style.color = '#f1c40f'; st.innerText = 'Sayfadaki video yakalanıyor (birkaç saniye sürebilir)...'; }
+            const list = await mvSniff(pageUrl, 24000);
+            const pick = mvPick(list);
+            if (!pick) return null;
+            return { type: 'stream', url: mvProxy(pick.url, pick.ref || pageUrl), raw: pick.url, ref: pick.ref || pageUrl };
+        };
+        let res0 = null, err0 = null;
+        try { res0 = await resolveMovieStreamUrlBase(r, st); } catch (e) { err0 = e; }
+        if (res0 && res0.type === 'stream') return res0;
+        if (r.src === 'web' || r.src === 'dm') {
+            const page = r.src === 'dm' ? `https://www.dailymotion.com/video/${r.id}` : (r.pageUrl || r.id);
+            const sn = await sniffFallback(page);
+            if (sn) return sn;
+        }
+        if (res0) return res0;
+        throw err0 || new Error('Video bulunamadı');
+    }
+    async function resolveMovieStreamUrlBase(r, st) {
         if (r.src === 'direct') return { type: 'stream', url: r.pageUrl || r.id };
         if (r.src === 'yt') return { type: 'stream', url: 'https://www.youtube.com/watch?v=' + r.id };
         if (r.src === 'dm') {
@@ -6552,41 +6641,40 @@ function playAudioDirect(video, url, token) {
             }
             if (movieMode && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', ' '].includes(k) && !isTypingMode) {
                 const hdrM = ['filterInput', 'clearFilterBtn', 'rightCountrySelect', 'rightSettingsBtn'].map(id => document.getElementById(id)).filter(Boolean);
-                const flatM = Array.from(document.querySelectorAll('#movieSaved .preview-mini-btn, #movieResults .preview-mini-btn'));
+                const cardsM = Array.from(document.querySelectorAll('#movieSaved .movie-card, #movieResults .movie-card'));
                 const sbM = document.getElementById('movieSearchBtn');
                 const focusM = (el) => { if (el) { try { el.focus({ preventScroll: true }); } catch (err) { el.focus(); } try { el.scrollIntoView({ block: 'nearest' }); } catch (err) {} } };
                 const colsM = Math.max(1, parseInt(getComputedStyle(document.getElementById('moviePanel')).getPropertyValue('--movie-cols'), 10) || 3);
                 e.preventDefault(); e.stopImmediatePropagation();
                 if (k === 'Enter' || k === ' ') {
                     if (e.repeat) return;
+                    if (ae && ae.classList && ae.classList.contains('movie-card')) { mvHoldStart(ae); return; }
                     if (ae && ae.tagName === 'SELECT') tvOpenPicker(ae);
                     else if (ae && ae.tagName === 'INPUT') unlockInputForTyping(ae);
                     else if (ae && ae.click) ae.click();
                     return;
                 }
                 const hi = hdrM.indexOf(ae);
-                const ri = flatM.indexOf(ae);
+                const ri = cardsM.indexOf(ae);
                 if (hi >= 0) {
                     if (k === 'ArrowLeft') focusM(hdrM[Math.max(0, hi - 1)]);
                     else if (k === 'ArrowRight') focusM(hdrM[Math.min(hdrM.length - 1, hi + 1)]);
                     else if (k === 'ArrowDown') focusM(sbM);
                 } else if (ae === sbM) {
                     if (k === 'ArrowUp') focusM(hdrM[0]);
-                    else if (k === 'ArrowDown' && flatM.length) focusM(flatM[Math.min(1, flatM.length - 1)]);
+                    else if (k === 'ArrowDown' && cardsM.length) focusM(cardsM[0]);
                 } else if (ri >= 0) {
                     const grid = ae.closest('.movie-grid');
-                    const loc = Array.from(grid.querySelectorAll('.preview-mini-btn'));
-                    const li = loc.indexOf(ae), card = Math.floor(li / 2), slot = li % 2, nCards = Math.ceil(loc.length / 2);
-                    const col = card % colsM;
-                    if (k === 'ArrowLeft') {
-                        if (slot === 0 && col === 0) focusM(document.getElementById('filterInput'));
-                        else focusM(flatM[Math.max(0, ri - 1)]);
-                    } else if (k === 'ArrowRight') {
-                        if (slot === 1 && (col === colsM - 1 || card === nCards - 1)) focusM(document.getElementById('rightCountrySelect'));
-                        else focusM(flatM[Math.min(flatM.length - 1, ri + 1)]);
+                    const loc = Array.from(grid.querySelectorAll('.movie-card'));
+                    const li = loc.indexOf(ae), col = li % colsM;
+                    if (k === 'ArrowLeft') { if (col === 0) focusM(document.getElementById('filterInput')); else focusM(cardsM[ri - 1]); }
+                    else if (k === 'ArrowRight') { if (col === colsM - 1 || li === loc.length - 1) focusM(document.getElementById('rightCountrySelect')); else focusM(cardsM[ri + 1]); }
+                    else if (k === 'ArrowUp') { if (li - colsM >= 0) focusM(loc[li - colsM]); else if (ri - 1 >= 0 && grid.id === 'movieResults' && document.querySelectorAll('#movieSaved .movie-card').length) { const sv = Array.from(document.querySelectorAll('#movieSaved .movie-card')); focusM(sv[Math.min(sv.length - 1, col + Math.floor((sv.length - 1) / colsM) * colsM)] || sv[sv.length - 1]); } else focusM(sbM); }
+                    else if (k === 'ArrowDown') {
+                        if (li + colsM < loc.length) focusM(loc[li + colsM]);
+                        else if (grid.id === 'movieSaved') { const rs = document.querySelectorAll('#movieResults .movie-card'); if (rs.length) focusM(rs[Math.min(col, rs.length - 1)]); }
+                        else if (li + colsM >= loc.length && Math.floor(li / colsM) < Math.floor((loc.length - 1) / colsM)) focusM(loc[loc.length - 1]);
                     }
-                    else if (k === 'ArrowUp') { const t = ri - 2 * colsM; if (t >= 0) focusM(flatM[t]); else focusM(sbM); }
-                    else if (k === 'ArrowDown') { const t = ri + 2 * colsM; if (t < flatM.length) focusM(flatM[t]); }
                 } else { focusM(hdrM[0]); }
                 return;
             }
