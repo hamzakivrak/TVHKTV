@@ -99,6 +99,10 @@
         .btn-icon { padding:0 16px; min-height:44px; background:#32343e; color:white; border-radius:8px; cursor:pointer; border:2px solid var(--border); display:flex; align-items:center; justify-content:center; font-weight:600; gap:6px; font-size:0.92rem; }
         .sub-module { margin-bottom:16px; padding-bottom:16px; border-bottom:1px solid rgba(255,255,255,0.07); }
         .sub-module:last-child { margin-bottom:0; padding-bottom:0; border-bottom:none; }
+        .stab-hide { display:none !important; }
+        .settings-tab { flex:1 1 30%; gap:6px; padding:0 8px; font-size:0.88rem; white-space:nowrap; }
+        .settings-tab i { font-size:20px; width:20px; height:20px; overflow:hidden; flex-shrink:0; pointer-events:none; }
+        .settings-tab.on { background:var(--primary); border-color:var(--primary); font-weight:700; }
         .sub-module-title { font-size:0.82rem; color:#bbb; text-transform:uppercase; font-weight:700; margin-bottom:10px; display:block; }
         .yt-search-results { max-height:220px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; background:#121212; display:none; margin-bottom:10px; }
         .yt-search-item { padding:8px; border-bottom:1px solid rgba(255,255,255,0.05); display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.85rem; }
@@ -282,7 +286,14 @@
         </div>
         <div id="unlockedSettingsArea" style="display:none;">
             <div id="normalSettingsWrapper">
-                <div class="module" style="margin-bottom:18px;">
+            <div id="settingsTabs" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:16px;">
+                <button type="button" class="btn settings-tab" data-tab="list" onclick="setSettingsTab('list')"><i class="material-icons-round">format_list_bulleted</i>Listem</button>
+                <button type="button" class="btn settings-tab" data-tab="add" onclick="setSettingsTab('add')"><i class="material-icons-round">search</i>Ekle / Ara</button>
+                <button type="button" class="btn settings-tab" data-tab="tv" onclick="setSettingsTab('tv')"><i class="material-icons-round">cast</i>TV &amp; Cast</button>
+                <button type="button" class="btn settings-tab" data-tab="cloud" onclick="setSettingsTab('cloud')"><i class="material-icons-round">cloud</i>Bulut &amp; Yedek</button>
+                <button type="button" class="btn settings-tab" data-tab="sys" onclick="setSettingsTab('sys')"><i class="material-icons-round">tune</i>Sistem</button>
+            </div>
+                <div class="module" data-stab="list" style="margin-bottom:18px;">
                     <div class="module-header"><p class="module-title">Aktif Liste (Ülke / Radyo / YouTube)</p></div>
                     <div class="module-body" style="padding-top:12px;">
                         <select id="countrySelect" onchange="syncAndChangeCountry(this.value)" style="margin-bottom:0;">
@@ -314,7 +325,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="sub-module">
+                <div class="sub-module" data-stab="list">
                     <span class="sub-module-title" style="color:var(--accent2);">Kanal Listesi Görünümü (Sütun Sayısı)</span>
                     <select id="gridColsSelect" onchange="setGridColumns(this.value)" style="margin-bottom:4px;">
                         <option value="2">2 Sütun</option>
@@ -324,7 +335,7 @@
                         <option value="6">6 Sütun</option>
                     </select>
                 </div>
-                <div class="sub-module">
+                <div class="sub-module" data-stab="cloud">
                     <span class="sub-module-title" style="color:#3498db;">Bulut Senkronizasyon</span>
                     <input type="text" id="syncUserId" readonly placeholder="Gizli Kimlik ID">
                     <div class="btn-group">
@@ -338,7 +349,7 @@
                     </div>
                     <input type="file" id="importFile" accept=".json,application/json" style="display:none" onchange="importBackup(this)">
                 </div>
-                <div class="sub-module">
+                <div class="sub-module" data-stab="tv">
                     <span class="sub-module-title" style="color:#74b9ff;">TV'ye Gönder / Uzaktan (aynı Wi-Fi)</span>
                     <div style="font-size:0.78rem; color:#aaa; margin-bottom:8px;">TV'deki uygulamada aşağıdaki kutuyu açın: adres ve kod görünür. Telefondaki uygulamada bunları "TV ekle" ile kaydedin. Sonra ekran çubuğundaki Cast düğmesinden TV'ye gönderirsiniz.</div>
                     <label style="display:flex; align-items:center; gap:10px; font-size:0.9rem; margin-bottom:6px;"><input type="checkbox" style="position:static; width:22px; height:22px;" id="remoteEnabledChk" onchange="setRemoteEnabled(this.checked)"> Bu cihaz TV: telefondan komut kabul et</label>
@@ -353,24 +364,24 @@
                     <button class="btn" style="width:100%; margin-bottom:8px;" onclick="tvScanStart()">TV Ara (otomatik bul)</button>
                     <div id="tvTargetList" class="yt-search-results" style="max-height:200px;"></div>
                 </div>
-                <div class="sub-module">
+                <div class="sub-module" data-stab="list">
                     <span class="sub-module-title" style="color:#55efc4;">Kolay Kullanım Modu</span>
                     <label style="display:flex; align-items:center; gap:10px; font-size:0.9rem;"><input type="checkbox" style="position:static; width:22px; height:22px;" id="easyModeChk" onchange="setEasyMode(this.checked)"> Açık: yalnızca seçili listenin kanalları döner; kanal listesi ve alt çubuk kapanır. Çıkmak için OK / ekrana 6 sn basılı tutup ayarlara girin.</label>
                 </div>
-                <div class="sub-module">
+                <div class="sub-module" data-stab="cloud">
                     <span class="sub-module-title" style="color:#74b9ff;">Ağ & Yedekleme</span>
                     <label style="display:flex; align-items:center; gap:10px; font-size:0.9rem; margin-bottom:10px;"><input type="checkbox" style="position:static; width:22px; height:22px;" id="cellLowChk" onchange="setCellLow(this.checked)"> Mobil veri kullanılıyorsa en düşük kaliteyi seç</label>
                     <div style="margin:12px 0 4px; font-size:0.8rem; color:#aaa;">Bulut sunucu adresi (isteğe bağlı; boş = varsayılan). Operatör workers.dev'i engelliyorsa kendi alan adınızı yazın:</div>
                     <div style="display:flex; gap:8px; margin-bottom:12px;"><input type="text" id="cloudBaseInput" placeholder="https://sync.alanadiniz.com" style="flex:1; min-width:0;"><button class="btn" style="padding:0 14px;" onclick="setCloudBase()">Kaydet</button></div>
                     <label style="display:flex; align-items:center; gap:10px; font-size:0.9rem;"><input type="checkbox" style="position:static; width:22px; height:22px;" id="autoBackupChk" onchange="setAutoBackup(this.checked)"> Değişiklikleri otomatik buluta yedekle (Kimlik ID girilmişse)</label>
                 </div>
-                <div class="sub-module">
+                <div class="sub-module" data-stab="sys">
                     <span class="sub-module-title" style="color:#fd79a8;">Reklam Engelleme (yalnızca APK)</span>
                     <label style="display:flex; align-items:center; gap:10px; font-size:0.9rem; margin-bottom:10px;"><input type="checkbox" style="position:static; width:22px; height:22px;" id="adBlockChk" onchange="setAdBlock(this.checked)"> Reklam engelleme açık</label>
                     <button class="btn" style="width:100%; background:#fd79a8; border-color:#fd79a8; color:#000; font-weight:bold;" onclick="updateAdRules(true)"><i class="material-icons-round" style="font-size:18px; margin-right:6px;">system_update_alt</i> Kuralları Güncelle</button>
                     <div id="adRulesInfo" style="font-size:0.75rem; color:#aaa; margin-top:8px; text-align:center; line-height:1.4;"></div>
                 </div>
-                <div class="sub-module">
+                <div class="sub-module" data-stab="sys">
                     <span class="sub-module-title" style="color:#2ecc71;">YouTube API Anahtarı</span>
                     <input type="text" id="userApiKey" readonly placeholder="Google API Key (39 karakter)" style="font-family:monospace; font-size:0.92rem; letter-spacing:0.5px;">
                     <div class="btn-group">
@@ -379,7 +390,7 @@
                     </div>
                     <div id="apiKeyTestResult" style="font-size:0.78rem; color:#aaa; margin-top:8px; line-height:1.35; text-align:center;">Anahtarınızı girdikten sonra "API Test Et" ile doğrulayabilirsiniz.</div>
                 </div>
-                <div class="sub-module">
+                <div class="sub-module" data-stab="add">
                     <span class="sub-module-title" style="color:#fdcb6e;">Film / Video Ara (Tüm Web)</span>
                     <div style="display:flex; gap:5px; margin-bottom:8px;">
                         <input type="text" id="movieQuery" readonly placeholder="Film adı, konu veya doğrudan web linki..." style="margin:0;">
@@ -393,12 +404,12 @@
                     <div id="movieStatus" style="font-size:0.75rem; color:#aaa; text-align:center; margin-bottom:8px;">Film adı yazın; tüm web taranır, ▶ ile izlenir veya ➕ ile listeye eklenir.</div>
                     <div id="movieResults" class="yt-search-results" style="max-height:340px; display:none;"></div>
                 </div>
-                <div class="sub-module">
+                <div class="sub-module" data-stab="add">
                     <span class="sub-module-title" style="color:#e84118;">YouTube Playlist Ekle</span>
                     <input type="text" id="ytPlaylistUrl" readonly placeholder="Liste Linki">
                     <button class="btn" style="width:100%; background:#e84118; color:#fff; border-color:#e84118;" onclick="addYTPlaylist()">Listeyi Kaydet</button>
                 </div>
-                <div class="sub-module">
+                <div class="sub-module" data-stab="add">
                     <span class="sub-module-title" style="color:#e84118;">YouTube Oynatma Listesi Ara</span>
                     <div style="display:flex; gap:5px; margin-bottom:8px;">
                         <input type="text" id="ytplQuery" readonly placeholder="Aranacak kelime (örn: dizi müzikleri)" style="margin:0;">
@@ -422,7 +433,7 @@
                         <div id="ytplSaveStatus" style="display:none; margin-top:8px; padding:8px; border-radius:8px; font-size:0.8rem; text-align:center;"></div>
                     </div>
                 </div>
-                <div class="sub-module">
+                <div class="sub-module" data-stab="add">
                     <span class="sub-module-title" style="color:#00cec9;">Akıllı Kanal Ara (TV / Radyo / Web Canlı Site)</span>
                     <div style="display:flex; gap:5px; margin-bottom:8px;">
                         <input type="text" id="smartQuery" readonly placeholder="Kanal adı veya site linki" style="margin:0;">
@@ -448,7 +459,7 @@
                         <div id="smartAddStatus"></div>
                     </div>
                 </div>
-                <div class="sub-module">
+                <div class="sub-module" data-stab="add">
                     <span class="sub-module-title" style="color:var(--fav);">Tekil Kanal / YouTube Arama</span>
                     <div style="display:flex; gap:5px; margin-bottom:10px;">
                         <input type="text" id="ytSearchQuery" readonly placeholder="YouTube'da Ara" style="margin:0;">
@@ -460,7 +471,7 @@
                     <input type="text" id="singleLogo" readonly placeholder="Logo Linki (İsteğe bağlı)">
                     <button class="btn" style="width:100%; background:var(--fav); color:#000; border-color:var(--fav); font-weight:bold;" onclick="addSingleChannel()">Aktif Listeye Ekle</button>
                 </div>
-                <div class="sub-module">
+                <div class="sub-module" data-stab="add">
                     <span class="sub-module-title">Manuel M3U Linki Yükle</span>
                     <textarea id="inputData" readonly placeholder="Link veya içerik yapıştır..."></textarea>
                     <input type="text" id="presetName" readonly placeholder="Kaydetmek için isim ver">
@@ -5997,6 +6008,18 @@ function playAudioDirect(video, url, token) {
             p = p.parentElement;
         }
     }
+    /* ===== AYARLAR SEKMELERİ ===== */
+    const SETTINGS_TABS = ['list', 'add', 'tv', 'cloud', 'sys'];
+    function setSettingsTab(t, keepFocus) {
+        if (SETTINGS_TABS.indexOf(t) < 0) t = 'list';
+        document.querySelectorAll('#normalSettingsWrapper [data-stab]').forEach(el => el.classList.toggle('stab-hide', el.dataset.stab !== t));
+        document.querySelectorAll('#settingsTabs .settings-tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+        try { localStorage.setItem('settings_tab', t); } catch (e) {}
+        invalidateLeftNav();
+        if (t === 'tv') { try { tvRemoteInfoRefresh(); } catch (e) {} }
+    }
+    function initSettingsTabs() { let t = 'list'; try { t = localStorage.getItem('settings_tab') || 'list'; } catch (e) {} setSettingsTab(t); }
+
     function moveInLeftDrawer(dir, step = 1) {
         const list = getLeftNavList();
         if (!list.length) return;
@@ -6386,6 +6409,19 @@ function playAudioDirect(video, url, token) {
                 if (tgt) { try { tgt.focus({ preventScroll: true }); } catch (err) { tgt.focus(); } fastScrollIntoView(tgt); }
                 return;
             }
+            if (ae && ae.classList && ae.classList.contains('settings-tab') && (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowDown')) {
+                e.preventDefault(); e.stopImmediatePropagation();
+                if (k === 'ArrowDown') {
+                    const nl = getLeftNavList().filter(x => !x.classList.contains('settings-tab'));
+                    if (nl.length) { try { nl[0].focus({ preventScroll: true }); } catch (err) { nl[0].focus(); } fastScrollIntoView(nl[0]); }
+                } else {
+                    const i = SETTINGS_TABS.indexOf(ae.dataset.tab) + (k === 'ArrowRight' ? 1 : -1);
+                    const ni = (i + SETTINGS_TABS.length) % SETTINGS_TABS.length;
+                    setSettingsTab(SETTINGS_TABS[ni]);
+                    const nb = document.querySelector('#settingsTabs .settings-tab[data-tab="' + SETTINGS_TABS[ni] + '"]'); if (nb) nb.focus();
+                }
+                return;
+            }
             if (['ArrowDown', 'ArrowRight', 'ArrowUp', 'ArrowLeft', 'ChannelUp', 'ChannelDown', 'PageUp', 'PageDown'].includes(k)) {
                 e.preventDefault(); e.stopImmediatePropagation();
                 const nowT = performance.now();
@@ -6574,6 +6610,7 @@ function playAudioDirect(video, url, token) {
             refreshAdRulesInfo();
             applyEasyMode(); updateYtToggleBtn();
             try { tvRenderTargets(); tvRemoteInfoRefresh(); } catch (e) {}
+            try { initSettingsTabs(); } catch (e) {}
             try { document.getElementById('cloudBaseInput').value = localStorage.getItem('tv_cloud_base') || ''; } catch (e) {}
             startupSyncCheck();
             if (window.Android && typeof Android.saveRules === 'function') {
