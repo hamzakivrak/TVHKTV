@@ -5586,6 +5586,19 @@ async function resetQuarantine() {
     }
 
 
+    function sortMoviesByScoreAndDur(arr) {
+        if (!Array.isArray(arr)) return arr;
+        return arr.sort((a, b) => {
+            const pa = Math.round((a.score || 0) * 100);
+            const pb = Math.round((b.score || 0) * 100);
+            if (pb !== pa) return pb - pa;
+            const da = mvParseLen(a.dur || 0);
+            const db = mvParseLen(b.dur || 0);
+            if (db !== da) return db - da;
+            return (b.score || 0) - (a.score || 0);
+        });
+    }
+
     function updateMovieCardBadgeDOM(kind, idx, durSec) {
         const txt = mvDur(durSec);
         if (!txt) return;
@@ -5602,6 +5615,27 @@ async function resetQuarantine() {
         b.textContent = '⏱ ' + txt;
     }
 
+    function resortAndRenderMovieResultsPreservingFocus() {
+        if (!Array.isArray(movieResults) || !movieResults.length) return;
+        const activeEl = document.activeElement;
+        let focusedItem = null;
+        if (activeEl && activeEl.classList && activeEl.classList.contains('movie-card') && activeEl.getAttribute('data-kind') === 'res') {
+            const oldIdx = parseInt(activeEl.getAttribute('data-i'), 10);
+            if (!isNaN(oldIdx) && movieResults[oldIdx]) focusedItem = movieResults[oldIdx];
+        }
+        sortMoviesByScoreAndDur(movieResults);
+        renderMovies();
+        if (focusedItem) {
+            const newIdx = movieResults.indexOf(focusedItem);
+            if (newIdx >= 0) {
+                const newCard = document.querySelector(`#movieResults .movie-card[data-kind="res"][data-i="${newIdx}"]`);
+                if (newCard) {
+                    try { newCard.focus({ preventScroll: true }); } catch (e) { try { newCard.focus(); } catch (e2) {} }
+                }
+            }
+        }
+    }
+
     var mvEnrichSeq = 0;
     async function enrichMissingMovieDurations(list, kind = 'res') {
         const mySeq = ++mvEnrichSeq;
@@ -5615,13 +5649,16 @@ async function resetQuarantine() {
                 const r = await fetchTO(`https://api.dailymotion.com/videos?ids=${encodeURIComponent(ids.join(','))}&fields=id,duration&limit=50`, 6000);
                 const d = await r.json();
                 const map = new Map(((d && d.list) || []).map(v => [v.id, v.duration || 0]));
+                let changed = false;
                 dmMissing.forEach(({ r, i }) => {
                     const cleanId = String(r.id).split(/[?&]/)[0];
                     if (map.get(cleanId) > 0) {
                         r.dur = map.get(cleanId);
-                        updateMovieCardBadgeDOM(kind, i, r.dur);
+                        changed = true;
+                        if (kind !== 'res' || list !== movieResults) updateMovieCardBadgeDOM(kind, i, r.dur);
                     }
                 });
+                if (changed && kind === 'res' && list === movieResults) resortAndRenderMovieResultsPreservingFocus();
             } catch (e) {}
         }
 
@@ -5635,12 +5672,15 @@ async function resetQuarantine() {
                     const r2 = await fetchTO(`https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids.join(',')}&key=${encodeURIComponent(key)}`, 6000);
                     const d2 = await r2.json();
                     const map = new Map(((d2 && d2.items) || []).map(v => [v.id, parseIso8601Duration((v.contentDetails || {}).duration)]));
+                    let changed = false;
                     ytMissing.forEach(({ r, i }) => {
                         if (map.get(r.id) > 0) {
                             r.dur = map.get(r.id);
-                            updateMovieCardBadgeDOM(kind, i, r.dur);
+                            changed = true;
+                            if (kind !== 'res' || list !== movieResults) updateMovieCardBadgeDOM(kind, i, r.dur);
                         }
                     });
+                    if (changed && kind === 'res' && list === movieResults) resortAndRenderMovieResultsPreservingFocus();
                 } catch (e) {}
             }
         }
@@ -5650,6 +5690,7 @@ async function resetQuarantine() {
         for (let bi = 0; bi < otherMissing.length; bi += 4) {
             if (mySeq !== mvEnrichSeq) return;
             const batch = otherMissing.slice(bi, bi + 4);
+            let batchChanged = false;
             await Promise.all(batch.map(async ({ r, i }) => {
                 try {
                     if (r.src === 'arc' && r.id) {
@@ -5661,13 +5702,13 @@ async function resetQuarantine() {
                                 if (fl > len) len = fl;
                             }
                         }
-                        if (len > 0) { r.dur = len; updateMovieCardBadgeDOM(kind, i, len); }
+                        if (len > 0) { r.dur = len; batchChanged = true; if (kind !== 'res' || list !== movieResults) updateMovieCardBadgeDOM(kind, i, len); }
                     } else if (r.src === 'yt' && r.id && !r.dur) {
                         const hosts = ytSortHosts(PIPED).slice(0, 2);
                         for (const h of hosts) {
                             try {
                                 const d = await ytFetchJson(`${h}/streams/${r.id}`, null, 4500);
-                                if (d && d.duration > 0) { r.dur = d.duration; updateMovieCardBadgeDOM(kind, i, r.dur); break; }
+                                if (d && d.duration > 0) { r.dur = d.duration; batchChanged = true; if (kind !== 'res' || list !== movieResults) updateMovieCardBadgeDOM(kind, i, d.duration); break; }
                             } catch (e) {}
                         }
                     } else if (r.src === 'web' && (r.pageUrl || r.id)) {
@@ -5677,11 +5718,14 @@ async function resetQuarantine() {
                                    html.match(/itemprop=["']duration["'][^>]*content=["']([^"']+)["']/i);
                         if (m1 && m1[1]) {
                             const len = mvParseLen(m1[1]);
-                            if (len > 0) { r.dur = len; updateMovieCardBadgeDOM(kind, i, len); }
+                            if (len > 0) { r.dur = len; batchChanged = true; if (kind !== 'res' || list !== movieResults) updateMovieCardBadgeDOM(kind, i, len); }
                         }
                     }
                 } catch (e) {}
             }));
+            if (batchChanged && mySeq === mvEnrichSeq && kind === 'res' && list === movieResults) {
+                resortAndRenderMovieResultsPreservingFocus();
+            }
         }
     }
 
@@ -5738,7 +5782,7 @@ async function resetQuarantine() {
         const scoreAll = () => {
             const arr = Array.from(pool.values());
             arr.forEach(x => { x.score = mvScore(q, x.title); });
-            return arr.filter(x => x.score >= 0.7).sort((a, b) => b.score - a.score);
+            return sortMoviesByScoreAndDur(arr.filter(x => x.score >= 0.7));
         };
         const qAscii = mvNorm(q);
         absorb(await runSources(q));
