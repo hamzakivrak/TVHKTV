@@ -4725,8 +4725,8 @@ async function resetQuarantine() {
         showOSD('TV aranıyor...', 'Birkaç saniye sürer');
         try { Android.tvScan((document.getElementById('tvTCode').value || '').trim()); } catch (e) {}
     }
-    window.__tvScanDone = function (arr) {
-        if (!arr || !arr.length) { showOSD('TV bulunamadı', 'TV\'de uygulama açık ve aynı Wi-Fi mi?'); return; }
+    window.__tvScanDone = function (arr, info) {
+        if (!arr || !arr.length) { showOSD('TV bulunamadı', (info ? 'Taranan: ' + info + ' · ' : '') + 'TV\'de uygulama açık mı? (v1.7 yüklü olmalı)'); return; }
         const code = (document.getElementById('tvTCode').value || '').trim();
         const okOne = arr.map(x => String(x).split('|')).filter(p => p[1] === 'true')[0];
         if (okOne && /^\d{4}$/.test(code)) {
