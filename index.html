@@ -81,6 +81,13 @@
         .ctrl-btn.main { width:55px; height:55px; background:var(--primary); }
         .ctrl-btn.small { width:40px; height:40px; }
         .ctrl-btn.fav-btn.active i { color:var(--fav); }
+        .speed-ctrl-wrap { position:relative; display:flex; align-items:center; justify-content:center; }
+        .ctrl-btn.speed-btn { width:auto !important; min-width:44px; padding:0 10px; border-radius:22px; font-size:0.82rem; font-weight:800; color:#fdcb6e; background:rgba(253,203,110,0.14); border:1px solid rgba(253,203,110,0.4); letter-spacing:0.2px; }
+        .speed-popup { position:absolute; bottom:56px; left:50%; transform:translateX(-50%); background:rgba(16,18,26,0.98); border:2px solid var(--accent2); border-radius:14px; padding:6px; display:none; flex-direction:row; gap:6px; z-index:30; box-shadow:0 8px 26px rgba(0,0,0,0.85); pointer-events:auto; }
+        .speed-popup.show { display:flex; }
+        .speed-opt { background:#222533; border:2px solid rgba(255,255,255,0.12); color:#ddd; border-radius:10px; padding:7px 11px; font-size:0.82rem; font-weight:700; cursor:pointer; white-space:nowrap; transition:all 0.15s ease; }
+        .speed-opt.active { background:rgba(253,203,110,0.22); border-color:#fdcb6e; color:#fdcb6e; }
+        .speed-opt:focus, .speed-opt:focus-visible { outline:3px solid var(--accent2) !important; background:#163638 !important; color:#fff; transform:scale(1.06); }
         .ctrl-btn i { font-size:28px; }
         .drawer { position:absolute; top:0; bottom:0; background:#101116; z-index:50; transition:transform 0.2s ease-out; display:flex; flex-direction:column; border:1px solid rgba(255,255,255,0.08); will-change:transform; }
         #leftSidebar { left:0; width:min(560px,94vw); transform:translateX(-102%); border-right:2px solid var(--border); overflow-y:auto; z-index:60; }
@@ -267,7 +274,15 @@
             <button class="ctrl-btn main" id="playPauseBtn" onclick="togglePlayPause()" title="Oynat / Duraklat"><i class="material-icons-round" id="playIcon">play_arrow</i></button>
             <button class="ctrl-btn" id="forwardBtn" onclick="triggerSingleSeek(1)" title="10 Saniye İleri Sar"><i class="material-icons-round">forward_10</i></button>
             <button class="ctrl-btn small" id="muteBtn" onclick="toggleMute()" title="Sesi Kapat / Aç"><i class="material-icons-round" id="muteIcon">volume_up</i></button>
-            <button class="ctrl-btn small fav-btn" id="mainFavBtn" onclick="toggleMainFavorite()" title="Favorilere Ekle / Çıkar"><i class="material-icons-round" id="mainFavIcon">star_border</i></button>
+            <div class="speed-ctrl-wrap" id="speedCtrlWrap">
+                <button class="ctrl-btn small speed-btn" id="speedBtn" onclick="toggleSpeedMenu(event)" title="Oynatma Hızı (0.5x / 1.0x / 1.5x / 2x)"><span id="speedBtnTxt">1.0x</span></button>
+                <div class="speed-popup" id="speedPopup">
+                    <button type="button" class="speed-opt" data-rate="0.5" onclick="selectPlaybackSpeed(0.5, event)">0.5x</button>
+                    <button type="button" class="speed-opt active" data-rate="1" onclick="selectPlaybackSpeed(1.0, event)">1.0x</button>
+                    <button type="button" class="speed-opt" data-rate="1.5" onclick="selectPlaybackSpeed(1.5, event)">1.5x</button>
+                    <button type="button" class="speed-opt" data-rate="2" onclick="selectPlaybackSpeed(2.0, event)">2x</button>
+                </div>
+            </div>
             <button class="ctrl-btn small" id="infoBtn" onclick="openInfoModal()" title="Bilgi"><i class="material-icons-round">info</i></button>
             <button class="ctrl-btn small" id="castBtn" onclick="castStart()" title="Yayını TV'ye gönder (Cast)"><i class="material-icons-round">cast</i></button>
         </div>
@@ -1342,14 +1357,19 @@
         const bottomBar = document.getElementById('bottomControlBar');
         if (ae && bottomBar && bottomBar.contains(ae)) {
             pill.classList.add('screen-active');
-            pill.innerHTML = '◀ ▶ Buton Seç · <b>OK (Basılı Tut): 2x İvmeli Sar (Max 20dk)</b> · ▲ ▼ Kanal Değiştir';
+            pill.innerHTML = '◀ ▶ Buton Seç · <b>Hız (0.5x-2x)</b> · <b>İleri/Geri OK Basılı: İvmeli Sar</b> · ▲ ▼ Kanal Değiştir';
         } else {
             pill.classList.remove('screen-active');
-            pill.innerHTML = '◀ ▶ Alt Kontroller &amp; Sarma · ▲ ▼ Kanal Değiştir · OK: Kanal Rehberi';
+            pill.innerHTML = '◀ ▶ Alt Kontroller &amp; Hız · ▲ ▼ Kanal Değiştir · OK: Rehber (Basılı Tut: 2x Hız)';
         }
+    }
+    function closeSpeedMenu() {
+        const sp = document.getElementById('speedPopup');
+        if (sp) sp.classList.remove('show');
     }
     function hideControlsNow() {
         clearTimeout(controlsTimer);
+        closeSpeedMenu();
         const c = document.getElementById('controlsOverlay');
         const pw = document.getElementById('playerWrapper');
         if (c.contains(document.activeElement) && pw) pw.focus();
@@ -1390,10 +1410,90 @@
     }
 
 
+    let userPlaybackRate = 1.0;
+    let hold2xActive = false;
+    function formatRateLabel(r) {
+        const n = Number(r) || 1;
+        return n === 2 ? '2x' : n === 1 ? '1.0x' : (n.toFixed(1) + 'x');
+    }
+    function applyPlaybackRateToActiveMedia(rate) {
+        const r = Number(rate) || 1.0;
+        const ytc = document.getElementById('ytContainer');
+        const vid = document.getElementById('localPlayer');
+        const webEmb = document.getElementById('webEmbedContainer');
+        let applied = false;
+        if (ytc && ytc.style.display === 'block' && isYtApiReady && ytPlayer && typeof ytPlayer.setPlaybackRate === 'function') {
+            try { ytPlayer.setPlaybackRate(r); applied = true; } catch (e) {}
+        }
+        if (vid && vid.style.display !== 'none') {
+            try { vid.playbackRate = r; applied = true; } catch (e) {}
+        }
+        if (webEmb && webEmb.style.display === 'block') {
+            const ifr = webEmb.querySelector('iframe');
+            if (ifr && ifr.contentWindow) {
+                try {
+                    ifr.contentWindow.postMessage(JSON.stringify({ command: 'playbackRate', parameters: [r] }), '*');
+                    ifr.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setPlaybackRate', args: [r] }), '*');
+                } catch (e) {}
+            }
+        }
+        return applied;
+    }
+    function updateSpeedBtnUI() {
+        const txt = document.getElementById('speedBtnTxt');
+        if (txt) txt.innerText = formatRateLabel(userPlaybackRate);
+        document.querySelectorAll('#speedPopup .speed-opt').forEach(btn => {
+            const br = parseFloat(btn.getAttribute('data-rate') || '1');
+            btn.classList.toggle('active', Math.abs(br - userPlaybackRate) < 0.05);
+        });
+    }
+    function toggleSpeedMenu(ev) {
+        if (ev) ev.stopPropagation();
+        const sp = document.getElementById('speedPopup');
+        if (!sp) return;
+        const open = !sp.classList.contains('show');
+        sp.classList.toggle('show', open);
+        resetControlsTimer();
+        if (open) {
+            const act = sp.querySelector('.speed-opt.active') || sp.querySelector('.speed-opt');
+            if (act) { try { act.focus({ preventScroll: true }); } catch (e) { act.focus(); } }
+        } else {
+            const sb = document.getElementById('speedBtn');
+            if (sb) { try { sb.focus({ preventScroll: true }); } catch (e) { sb.focus(); } }
+        }
+    }
+    function selectPlaybackSpeed(rate, ev) {
+        if (ev) ev.stopPropagation();
+        userPlaybackRate = Number(rate) || 1.0;
+        hold2xActive = false;
+        const ok = applyPlaybackRateToActiveMedia(userPlaybackRate);
+        updateSpeedBtnUI();
+        closeSpeedMenu();
+        const sb = document.getElementById('speedBtn');
+        if (sb && !document.getElementById('controlsOverlay').classList.contains('hide')) {
+            try { sb.focus({ preventScroll: true }); } catch (e) { sb.focus(); }
+        }
+        resetControlsTimer();
+        showOSD(`Oynatma Hızı: ${formatRateLabel(userPlaybackRate)}`, ok ? "Video hızı güncellendi" : "Bu kaynak hız değişimine izin vermeyebilir");
+    }
+    function startHold2xSpeed() {
+        if (hold2xActive) return;
+        const ok = applyPlaybackRateToActiveMedia(2.0);
+        hold2xActive = true;
+        if (ok) {
+            showOSD("⏩ 2x Hızlı Oynatılıyor", "OK basılı tutuluyor · bırakınca " + formatRateLabel(userPlaybackRate) + " hızına döner");
+        } else {
+            showOSD("⏩ 2x Hız İstendi", "Bu gömülü oynatıcı dışarıdan hız değişimine izin vermeyebilir");
+        }
+    }
+    function stopHold2xSpeed() {
+        if (!hold2xActive) return;
+        hold2xActive = false;
+        applyPlaybackRateToActiveMedia(userPlaybackRate);
+        showOSD(`▶️ Hız: ${formatRateLabel(userPlaybackRate)}`, "Normal oynatma hızına dönüldü");
+    }
     function updateMainFavBtn() {
-        if (curIdx === -1 || !allChannels[curIdx]) return;
-        const btn = document.getElementById('mainFavBtn'); const icon = document.getElementById('mainFavIcon');
-        if (allChannels[curIdx].isFavorite) { btn.classList.add('active'); icon.innerText = 'star'; } else { btn.classList.remove('active'); icon.innerText = 'star_border'; }
+        updateSpeedBtnUI();
     }
     function toggleMainFavorite() { if (curIdx === -1) return; const ch = allChannels[curIdx]; toggleFavorite(new Event('click'), ch.id); updateMainFavBtn(); showOSD(ch.isFavorite ? "Favorilere Eklendi" : "Favorilerden Çıkarıldı", ch.name); }
     function toggleFavorite(event, id) {
@@ -3764,16 +3864,35 @@ async function resetQuarantine() {
 
 
     async function fetchHtmlViaProxy(pageUrl, timeoutMs = 9500) {
-        const proxies = [
-            MY_CLOUD_PROXY + encodeURIComponent(pageUrl),
-            'https://api.allorigins.win/raw?url=' + encodeURIComponent(pageUrl),
-            'https://corsproxy.io/?' + encodeURIComponent(pageUrl),
-            pageUrl
-        ];
-        const jobs = proxies.map(p => fetchTO(p, timeoutMs).then(async r => {
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            const txt = await r.text();
-            if (!txt || txt.length < 80) throw new Error('Bos sayfa');
+        const candidates = [];
+        if (window.Android && typeof Android.proxyUrl === 'function') {
+            try {
+                const org = new URL(pageUrl).origin + '/';
+                candidates.push({ url: Android.proxyUrl(pageUrl, org), mode: 'raw' });
+            } catch (e) {}
+        }
+        candidates.push(
+            { url: MY_CLOUD_PROXY + encodeURIComponent(pageUrl), mode: 'raw' },
+            { url: 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(pageUrl), mode: 'raw' },
+            { url: 'https://api.allorigins.win/get?url=' + encodeURIComponent(pageUrl), mode: 'allorigins_json' },
+            { url: 'https://api.allorigins.win/raw?url=' + encodeURIComponent(pageUrl), mode: 'raw' },
+            { url: 'https://corsproxy.io/?' + encodeURIComponent(pageUrl), mode: 'raw' },
+            { url: pageUrl, mode: 'raw' }
+        );
+        const isChallengePage = (t) => /anomaly-modal|cc=botnet|Unfortunately,\s*bots\s*use\s*DuckDuckGo|cf-browser-verification|Attention Required! \| Cloudflare|<title>Just a moment\.\.\.<\/title>/i.test(t);
+        const jobs = candidates.map(c => fetchTO(c.url, timeoutMs).then(async r => {
+            // DuckDuckGo bot engeli HTTP 202 döndürür (r.ok true olur ama içerik boştur); yalnızca 200 kabul et
+            if (r.status !== 200) throw new Error('HTTP ' + r.status);
+            let txt = '';
+            if (c.mode === 'allorigins_json') {
+                const j = await r.json();
+                if (j && j.status && j.status.http_code && j.status.http_code !== 200) throw new Error('AO HTTP ' + j.status.http_code);
+                txt = (j && j.contents) || '';
+            } else {
+                txt = await r.text();
+            }
+            if (!txt || txt.length < 120) throw new Error('Bos sayfa');
+            if (isChallengePage(txt)) throw new Error('Bot engeli');
             return txt;
         }));
         return await Promise.any(jobs);
@@ -5836,7 +5955,28 @@ async function resetQuarantine() {
         }));
     }
 
-    async function mvSearchWebEngine(q, siteHints = []) {
+    async function searchDuckDuckGoVideosJson(q, excludeYtDm, addResult) {
+        try {
+            const vQuery = excludeYtDm ? `${q} -site:youtube.com -site:youtu.be -site:dailymotion.com` : `${q} izle`;
+            const initHtml = await fetchHtmlViaProxy(`https://duckduckgo.com/?q=${encodeURIComponent(vQuery)}&iax=videos&ia=videos`, 7500);
+            const vqdM = initHtml.match(/vqd=['"]?([0-9-]+)['"]?/i);
+            if (!vqdM || !vqdM[1]) return;
+            const vqd = vqdM[1];
+            const vUrl = `https://duckduckgo.com/v.js?l=tr-tr&o=json&q=${encodeURIComponent(vQuery)}&vqd=${encodeURIComponent(vqd)}&p=-1`;
+            const jsonTxt = await fetchHtmlViaProxy(vUrl, 8000);
+            const data = JSON.parse(jsonTxt);
+            ((data && data.results) || []).forEach(it => {
+                if (!it || !it.content) return;
+                const thumb = (it.images && (it.images.medium || it.images.small || it.images.large)) || '';
+                const dur = mvParseLen(it.duration || 0);
+                addResult(it.content, it.title || 'Web Video', thumb, dur);
+            });
+        } catch (e) {}
+    }
+
+    async function mvSearchWebEngine(q, siteHints = [], opts = {}) {
+        const excludeYt = !!opts.excludeYt;
+        const excludeDm = !!opts.excludeDm;
         const results = [];
         const seen = new Set();
         const addResult = (href, title, thumbUrl = '', durSec = 0) => {
@@ -5844,6 +5984,8 @@ async function resetQuarantine() {
             const cleanT = cleanMovieCandidateTitle(title, href);
             const item = classifyWebVideoUrl(href, cleanT, thumbUrl, durSec);
             if (!item) return;
+            if (excludeYt && item.src === 'yt') return;
+            if (excludeDm && item.src === 'dm') return;
             // Sitenin ana sayfası veya arama/kategori sayfasıysa atla
             if (item.src === 'web') {
                 try {
@@ -5865,6 +6007,9 @@ async function resetQuarantine() {
             results.push(item);
         };
 
+        // Sorguda baştaki "The " ekini de alternatif olarak hazırla (Örn: "The Matrix" -> "Matrix")
+        const qNoThe = q.replace(/^\s*the\s+/i, '').trim() || q;
+
         // 1. Kullanıcının ';' sonrasında belirttiği siteler (veya genel aramada popüler Türk film siteleri)
         const targetCatalogSites = [];
         const customSiteKeywords = [];
@@ -5875,39 +6020,40 @@ async function resetQuarantine() {
                 customSiteKeywords.push(sh);
             });
         } else {
-            // Genel aramada en popüler film sitelerini doğrudan da tara
-            targetCatalogSites.push(...MOVIE_SITE_CATALOG.slice(0, 5));
+            targetCatalogSites.push(...MOVIE_SITE_CATALOG.slice(0, 6));
         }
 
+        const negSites = (excludeYt ? ' -site:youtube.com -site:youtu.be' : '') + (excludeDm ? ' -site:dailymotion.com' : '');
         const searchQueries = [];
         const bingVideoQueries = [];
         if (customSiteKeywords.length > 0) {
             customSiteKeywords.forEach(kw => {
                 const cat = matchSiteCatalogEntry(kw);
                 const siteWord = cat ? cat.key : kw;
-                searchQueries.push(`${q} ${siteWord} izle`);
+                searchQueries.push(`${qNoThe} ${siteWord} izle`);
                 searchQueries.push(`${q} ${siteWord} full hd izle`);
-                bingVideoQueries.push(`${q} ${siteWord} izle`);
+                bingVideoQueries.push(`${qNoThe} ${siteWord} izle`);
             });
         } else {
             searchQueries.push(
-                `${q} full film izle`,
-                `${q} hdfilmcehennemi OR fullhdfilmizlesene OR jetfilmizle OR filmmodu izle`,
-                `${q} türkçe dublaj tek parça izle`,
-                `${q} site:ok.ru OR site:vk.com OR site:dailymotion.com OR site:my.mail.ru`
+                `${qNoThe} full film izle${negSites}`,
+                `${qNoThe} türkçe dublaj full hd izle${negSites}`,
+                `${qNoThe} hdfilmcehennemi OR fullhdfilmizlesene OR jetfilmizle OR filmmodu izle`,
+                `${qNoThe} site:ok.ru OR site:vk.com OR site:my.mail.ru OR site:sibnet.ru`
             );
             bingVideoQueries.push(
-                `${q} full film izle`,
-                `${q} tek parça izle`,
-                `${q} izle`
+                `${qNoThe} full film izle${negSites}`,
+                `${q} full movie${negSites}`,
+                `${qNoThe} site:ok.ru OR site:vk.com OR site:my.mail.ru`,
+                `${qNoThe} tek parça izle${negSites}`
             );
         }
 
         const parseYahooHtml = (html) => {
             if (!html) return;
             const doc = new DOMParser().parseFromString(html, 'text/html');
-            doc.querySelectorAll('div.algo, div.Sr, li div.dd').forEach(el => {
-                const a = el.querySelector('h3 a, a.compTitle, a[href]');
+            doc.querySelectorAll('div.algo, div.Sr, li div.dd, div.compTitle').forEach(el => {
+                const a = el.querySelector('h3 a, a.compTitle, a[href]') || (el.tagName === 'A' ? el : null);
                 if (!a) return;
                 let href = a.getAttribute('href') || '';
                 const ruM = href.match(/\/RU=([^/]+)\/RK=/i);
@@ -5946,47 +6092,61 @@ async function resetQuarantine() {
             });
         };
 
+        const parseDdgHtml = (html) => {
+            if (!html) return;
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            doc.querySelectorAll('.result, tr').forEach(el => {
+                const a = el.querySelector('a.result__a, a.result-link');
+                if (!a) return;
+                let href = a.getAttribute('href') || '';
+                if (href.includes('uddg=')) {
+                    try { href = decodeURIComponent(new URLSearchParams(href.substring(href.indexOf('?'))).get('uddg') || href); } catch (e) {}
+                }
+                const title = (a.textContent || '').trim();
+                const snip = (el.textContent || '');
+                const dm = snip.match(/\b(\d{1,2}:\d{2}(?::\d{2})?)\b/);
+                const durSec = dm ? mvParseLen(dm[1]) : 0;
+                if (title && /^https?:\/\//i.test(href)) addResult(href, title, '', durSec);
+            });
+        };
+
         const jobs = [
-            // A) Doğrudan film sitelerinin kendi arama sayfaları
-            ...targetCatalogSites.map(entry => scrapeDirectMovieSiteSearch(entry, q, addResult)),
-            // B) Yahoo Web Arama (Proxy dostu, CAPTCHA çıkarmaz, tüm film sitelerini bulur)
+            // A) Doğrudan film sitelerinin kendi arama sayfaları (hem tam sorgu hem "The" kaldırılmış sorgu ile)
+            ...targetCatalogSites.map(entry => scrapeDirectMovieSiteSearch(entry, qNoThe, addResult)),
+            // B) DuckDuckGo Video Arama (v.js JSON API — YouTube/Dailymotion dışı web videolarını da doğrudan bulur)
+            searchDuckDuckGoVideosJson(qNoThe + ' full izle', excludeYt || excludeDm, addResult),
+            searchDuckDuckGoVideosJson(q, true, addResult),
+            // C) Yahoo Web Arama
             ...searchQueries.map(sq => (async () => {
                 try {
-                    const yUrl = `https://search.yahoo.com/search?p=${encodeURIComponent(sq)}&n=20`;
+                    const yUrl = `https://search.yahoo.com/search?p=${encodeURIComponent(sq)}&n=25`;
                     const html = await fetchHtmlViaProxy(yUrl, 8500);
                     parseYahooHtml(html);
                 } catch (e) {}
             })()),
-            // C) Bing Web Arama (Türk film sitelerinin güncel domainlerini yakalar)
+            // D) Bing Web Arama
             ...searchQueries.slice(0, 3).map(sq => (async () => {
                 try {
-                    const bwUrl = `https://www.bing.com/search?q=${encodeURIComponent(sq)}&count=20`;
+                    const bwUrl = `https://www.bing.com/search?q=${encodeURIComponent(sq)}&count=25`;
                     const html = await fetchHtmlViaProxy(bwUrl, 8500);
                     parseBingWebHtml(html);
                 } catch (e) {}
             })()),
-            // D) DuckDuckGo HTML Arama
+            // E) DuckDuckGo HTML & Lite Arama
             ...searchQueries.slice(0, 3).map(sq => (async () => {
                 try {
                     const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(sq)}`;
                     const html = await fetchHtmlViaProxy(ddgUrl, 8500);
-                    const doc = new DOMParser().parseFromString(html, 'text/html');
-                    doc.querySelectorAll('.result').forEach(el => {
-                        const a = el.querySelector('a.result__a');
-                        if (!a) return;
-                        let href = a.getAttribute('href') || '';
-                        if (href.includes('uddg=')) {
-                            try { href = decodeURIComponent(new URLSearchParams(href.substring(href.indexOf('?'))).get('uddg') || href); } catch (e) {}
-                        }
-                        const title = (a.textContent || '').trim();
-                        const snip = (el.textContent || '');
-                        const dm = snip.match(/\b(\d{1,2}:\d{2}(?::\d{2})?)\b/);
-                        const durSec = dm ? mvParseLen(dm[1]) : 0;
-                        if (title) addResult(href, title, '', durSec);
-                    });
-                } catch (e) {}
+                    parseDdgHtml(html);
+                } catch (e) {
+                    try {
+                        const liteUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(sq)}`;
+                        const lHtml = await fetchHtmlViaProxy(liteUrl, 8000);
+                        parseDdgHtml(lHtml);
+                    } catch (e2) {}
+                }
             })()),
-            // E) Bing Video Arama
+            // F) Bing Video Arama (YouTube ve Dailymotion dışı kaynakları da tarar)
             ...bingVideoQueries.map(bq => (async () => {
                 try {
                     const bingUrl = `https://www.bing.com/videos/search?q=${encodeURIComponent(bq)}`;
@@ -5996,12 +6156,14 @@ async function resetQuarantine() {
                         try {
                             const raw = el.getAttribute('vrhm') || '';
                             const murl = (raw.match(/"murl"\s*:\s*"([^"]+)"/i) || [])[1];
+                            const pUrl = (raw.match(/"purl"\s*:\s*"([^"]+)"/i) || [])[1];
                             const t = (raw.match(/"t"\s*:\s*"([^"]+)"/i) || [])[1];
                             const du = (raw.match(/"du"\s*:\s*"([^"]+)"/i) || [])[1] || (el.querySelector('.mc_bc_rc, .vrh_dur') || {}).textContent || '';
-                            if (murl) addResult(murl.replace(/\\u002f/gi, '/'), t || 'Web Video', '', mvParseLen(du));
+                            const targetU = (murl || pUrl || '').replace(/\\u002f/gi, '/');
+                            if (targetU) addResult(targetU, t || 'Web Video', '', mvParseLen(du));
                         } catch (e) {}
                     });
-                    const mRegex = /murl&quot;:&quot;(https?:\/\/[^&]+?)&quot;.*?t&quot;:&quot;([^&]+?)&quot;/gi;
+                    const mRegex = /(?:murl|purl)&quot;:&quot;(https?:\/\/[^&]+?)&quot;.*?t&quot;:&quot;([^&]+?)&quot;/gi;
                     let m;
                     while ((m = mRegex.exec(html)) !== null) {
                         const href = m[1].replace(/\\u002f/gi, '/');
@@ -6015,7 +6177,7 @@ async function resetQuarantine() {
         ];
 
         await Promise.all(jobs);
-        return results.slice(0, 100);
+        return results.slice(0, 110);
     }
 
     function sortMoviesByScoreAndDur(arr) {
@@ -6218,7 +6380,7 @@ async function resetQuarantine() {
         const errs = [];
         const runSources = async (qq) => {
             const jobs = [];
-            if (wantWeb) jobs.push(mvSearchWebEngine(qq, siteHints).catch(e => { errs.push('Web: ' + (e.message || e)); return []; }));
+            if (wantWeb) jobs.push(mvSearchWebEngine(qq, siteHints, { excludeYt: !wantYt, excludeDm: !wantDm }).catch(e => { errs.push('Web: ' + (e.message || e)); return []; }));
             if (wantDm)  jobs.push(mvSearchDailymotion(qq).catch(() => []));
             if (wantPt)  jobs.push(mvSearchPeerTube(qq).catch(() => []), mvSearchCommons(qq).catch(() => []));
             if (wantYt)  jobs.push(mvSearchYt(qq, getActiveApiKey()).catch(e => { errs.push('YouTube: ' + (e.message || e)); return []; }));
@@ -6229,11 +6391,17 @@ async function resetQuarantine() {
         const absorb = (parts) => {
             const mx = Math.max(0, ...parts.map(p => p.length));
             for (let i = 0; i < mx; i++) parts.forEach(p => {
-                if (p[i] && p[i].id) {
-                    if (hasExplicitSite && !urlMatchesSiteHints(p[i], siteHints)) return;
-                    const ex = pool.get(p[i].id);
-                    if (!ex) pool.set(p[i].id, p[i]);
-                    else if (!ex.dur && p[i].dur) ex.dur = p[i].dur;
+                const it = p[i];
+                if (it && it.id) {
+                    if (!hasExplicitSite) {
+                        if (!wantYt && it.src === 'yt') return;
+                        if (!wantDm && it.src === 'dm') return;
+                        if (!wantArc && it.src === 'arc') return;
+                    }
+                    if (hasExplicitSite && !urlMatchesSiteHints(it, siteHints)) return;
+                    const ex = pool.get(it.id);
+                    if (!ex) pool.set(it.id, it);
+                    else if (!ex.dur && it.dur) ex.dur = it.dur;
                 }
             });
         };
@@ -6292,11 +6460,17 @@ async function resetQuarantine() {
         }
         return prev[n];
     }
+    const MV_STOP_WORDS = new Set(['the', 'a', 'an', 'film', 'filmi', 'izle', 'full', 'hd', 'video', 'movie']);
     function mvScore(q, title) {
         const nq = mvNorm(q), nt = mvNorm(title);
         if (!nq || !nt) return 0;
         if (nt.indexOf(nq) >= 0) return 1;
-        const qt = nq.split(' '), tt = nt.split(' ');
+        const allQt = nq.split(' ').filter(Boolean);
+        const coreQt = allQt.filter(w => !MV_STOP_WORDS.has(w));
+        const qt = coreQt.length > 0 ? coreQt : allQt;
+        const nqCore = qt.join(' ');
+        if (nqCore && nt.indexOf(nqCore) >= 0) return allQt.length === qt.length ? 1 : 0.98;
+        const tt = nt.split(' ');
         let sum = 0;
         qt.forEach(w => {
             let best = 0;
@@ -7258,19 +7432,13 @@ function playAudioDirect(video, url, token) {
 
         clearOkTimers();
         okLongPressFired = false;
-        okHoldHintTimer = setTimeout(() => {
-            if (touchGestureState.active && !touchGestureState.moved) {
-                showOSD("Ayarlar Açılıyor...", "6 saniye dolana kadar basılı tutun");
-            }
-        }, 1600);
         okHoldTimer = setTimeout(() => {
             if (touchGestureState.active && !touchGestureState.moved) {
                 okLongPressFired = true;
-                setIgnoreKeyUntilRelease(true);
                 clearOkTimers();
-                requestSettingsOpen();
+                startHold2xSpeed();
             }
-        }, 5500);
+        }, 500);
     }, { passive: true });
 
 
@@ -7288,6 +7456,7 @@ function playAudioDirect(video, url, token) {
 
     pwEl.addEventListener('touchend', (e) => {
         clearOkTimers();
+        if (hold2xActive) stopHold2xSpeed();
         setTimeout(() => { setIgnoreKeyUntilRelease(false); }, 150);
         if (!touchGestureState.active) return;
         touchGestureState.active = false;
@@ -7381,6 +7550,7 @@ function playAudioDirect(video, url, token) {
 
     pwEl.addEventListener('touchcancel', () => {
         clearOkTimers();
+        if (hold2xActive) stopHold2xSpeed();
         touchGestureState.active = false;
         setIgnoreKeyUntilRelease(false);
     }, { passive: true });
@@ -7632,6 +7802,11 @@ function playAudioDirect(video, url, token) {
             }
             const ctx = okPressContext; const wasLong = okLongPressFired; const wasChLong = chLongPressTriggered;
             okPressContext = null; okLongPressFired = false; chLongPressTriggered = false;
+            if (hold2xActive) {
+                e.preventDefault(); e.stopImmediatePropagation();
+                stopHold2xSpeed();
+                return;
+            }
             if (ctx === 'main' && !wasLong) {
                 e.preventDefault(); e.stopImmediatePropagation();
                 openRightSidebar();
@@ -8084,10 +8259,42 @@ function playAudioDirect(video, url, token) {
 
         const ctrlOverlay = document.getElementById('controlsOverlay');
         const ctrlVisible = !ctrlOverlay.classList.contains('hide');
+        const speedPopupEl = document.getElementById('speedPopup');
+        if (ctrlVisible && speedPopupEl && speedPopupEl.classList.contains('show')) {
+            const spOpts = Array.from(speedPopupEl.querySelectorAll('.speed-opt'));
+            const spIdx = spOpts.indexOf(ae);
+            resetControlsTimer();
+            if (['Escape', 'BrowserBack', 'GoBack'].includes(k) || kc === 4 || kc === 27) {
+                e.preventDefault(); e.stopImmediatePropagation();
+                closeSpeedMenu();
+                const sb = document.getElementById('speedBtn'); if (sb) sb.focus();
+                return;
+            }
+            if (k === 'ArrowLeft' || k === 'ArrowUp') {
+                e.preventDefault(); e.stopImmediatePropagation();
+                const nextI = spIdx > 0 ? spIdx - 1 : 0;
+                if (spOpts[nextI]) spOpts[nextI].focus();
+                return;
+            }
+            if (k === 'ArrowRight' || k === 'ArrowDown') {
+                e.preventDefault(); e.stopImmediatePropagation();
+                const nextI = spIdx >= 0 && spIdx < spOpts.length - 1 ? spIdx + 1 : spOpts.length - 1;
+                if (spOpts[nextI]) spOpts[nextI].focus();
+                return;
+            }
+            if (k === 'Enter' || k === ' ' || kc === 23 || kc === 13 || kc === 66) {
+                e.preventDefault(); e.stopImmediatePropagation();
+                if (!e.repeat) {
+                    const targetOpt = spOpts[spIdx >= 0 ? spIdx : 0];
+                    if (targetOpt) targetOpt.click();
+                }
+                return;
+            }
+        }
         const bottomBtns = [
             document.getElementById('ccBtn'), document.getElementById('rewindBtn'), document.getElementById('playPauseBtn'),
             document.getElementById('forwardBtn'), document.getElementById('muteBtn'),
-            document.getElementById('mainFavBtn'), document.getElementById('infoBtn'), document.getElementById('castBtn')
+            document.getElementById('speedBtn'), document.getElementById('infoBtn'), document.getElementById('castBtn')
         ].filter(Boolean);
         const inBottomIdx = bottomBtns.indexOf(ae);
 
@@ -8180,10 +8387,13 @@ function playAudioDirect(video, url, token) {
             e.preventDefault(); e.stopImmediatePropagation();
             if (!e.repeat && okPressContext === null) {
                 okPressContext = 'main'; okLongPressFired = false; clearOkTimers();
-                okHoldHintTimer = setTimeout(() => { if (okPressContext === 'main') showOSD("Ayarlar Açılıyor...", "Basılı tutmaya devam edin"); }, 1500);
                 okHoldTimer = setTimeout(() => {
-                    if (okPressContext === 'main') { okLongPressFired = true; okPressContext = 'left'; setIgnoreKeyUntilRelease(true); clearOkTimers(); requestSettingsOpen(); }
-                }, 5500);
+                    if (okPressContext === 'main') {
+                        okLongPressFired = true;
+                        clearOkTimers();
+                        startHold2xSpeed();
+                    }
+                }, 450);
             }
             return;
         }
@@ -8266,7 +8476,7 @@ function playAudioDirect(video, url, token) {
         const sp = document.getElementById('bufSpinner');
         ['waiting','loadstart'].forEach(ev => vid.addEventListener(ev, () => sp.style.display = 'block'));
         ['playing','canplay','error','pause'].forEach(ev => vid.addEventListener(ev, () => sp.style.display = 'none'));
-        vid.addEventListener('play', () => { document.getElementById('playIcon').innerText = 'pause'; updateSeekBarUI(false); refreshNowPlaying(); });
+        vid.addEventListener('play', () => { document.getElementById('playIcon').innerText = 'pause'; if (!hold2xActive && userPlaybackRate !== 1.0) { try { vid.playbackRate = userPlaybackRate; } catch (e) {} } updateSeekBarUI(false); refreshNowPlaying(); });
         vid.addEventListener('pause', () => { document.getElementById('playIcon').innerText = 'play_arrow'; updateSeekBarUI(false); refreshNowPlaying(); });
         ['timeupdate', 'loadedmetadata', 'durationchange', 'progress'].forEach(ev => vid.addEventListener(ev, () => updateSeekBarUI(false)));
         setInterval(() => updateSeekBarUI(false), 500);
