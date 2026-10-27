@@ -2774,6 +2774,14 @@ async function resetQuarantine() {
         if (sessionToken !== undefined && sessionToken !== currentPlaySession) return;
         if (isErrorHandling || curIdx === -1 || !allChannels[curIdx]) return;
         const ch = allChannels[curIdx]; if (ch.broken) return;
+        if (ch._mvRaw && ch._mvRaw.src === 'web' && (ch._mvRaw.pageUrl || ch._mvRaw.id)) {
+            const sourceUrl = ch._mvRaw.pageUrl || ch._mvRaw.id;
+            if (mvOpenSourcePage(ch._mvRaw)) {
+                document.getElementById('pStatus').innerText = 'Uygulama içi oynatma desteklenmedi; kaynak site açıldı.';
+                showOSD('Kaynak site açıldı', ch.name || sourceUrl);
+                return;
+            }
+        }
         isErrorHandling = true;
         const isYtChannel = !!extractYTId(ch.url) || String(currentListContext).startsWith('ytpl_');
         const isCustom = ch.id.startsWith('ch_ex_') || isYtChannel;
@@ -3094,6 +3102,10 @@ async function resetQuarantine() {
                 if (ch._mvRaw && ch._mvRaw.embedFallback && isSafeEmbedUrl(ch._mvRaw.embedFallback)) {
                     ch.url = '#web_embed#' + ch._mvRaw.embedFallback;
                     playLocally(ch.url, mySession);
+                    return;
+                }
+                if (ch._mvRaw && ch._mvRaw.src === 'web' && mvOpenSourcePage(ch._mvRaw)) {
+                    document.getElementById('pStatus').innerText = 'Uygulama içi oynatma desteklenmiyor; kaynak site açıldı.';
                     return;
                 }
                 handleStreamError(mySession);
@@ -5064,7 +5076,10 @@ async function resetQuarantine() {
                 send({ cmd: 'play', url: res.raw || res.url, name: r0.title, logo: r0.thumb || '' });
                 st.style.color = '#2ecc71'; st.innerText = 'TV\'ye gönderildi: ' + r0.title;
                 showOSD('TV\'ye gönderildi', r0.title);
-            } catch (e) { st.style.color = '#e74c3c'; st.innerText = 'Gönderilemedi: ' + (e.message || e); }
+            } catch (e) {
+                if (r0.src === 'web' && mvOpenSourcePage(r0)) { st.style.color = '#e67e22'; st.innerText = 'TV aktarımı mümkün olmadı; kaynak site açıldı.'; }
+                else { st.style.color = '#e74c3c'; st.innerText = 'Gönderilemedi: ' + (e.message || e); }
+            }
         };
     })();
 
@@ -5288,70 +5303,68 @@ async function resetQuarantine() {
 
 
     async function mvSearchYt(q, key) {
-        const outAll = []; const seenIds = new Set();
-        const addYt = (it) => { if (it && it.id && !seenIds.has(it.id)) { seenIds.add(it.id); outAll.push(it); } };
+        // Kaynaklardan biri sonuç döndürdü diye diğer kaynakları durdurma; sonuç havuzunu birleştir.
+        const outAll = [];
+        const seenIds = new Set();
+        const addYt = (it) => {
+            if (!it || !it.id || seenIds.has(String(it.id))) return;
+            seenIds.add(String(it.id));
+            outAll.push(it);
+        };
+
         if (key) {
             try {
                 const [rLong, rAny] = await Promise.all([
-                    fetchTO(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoDuration=long&q=${encodeURIComponent(q)}&maxResults=35&key=${encodeURIComponent(key)}`, 9000).then(r => r.json()).catch(() => ({})),
-                    fetchTO(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(q)}&maxResults=35&key=${encodeURIComponent(key)}`, 9000).then(r => r.json()).catch(() => ({}))
+                    fetchTO(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoDuration=long&q=${encodeURIComponent(q)}&maxResults=50&key=${encodeURIComponent(key)}`, 9000).then(r => r.json()).catch(() => ({})),
+                    fetchTO(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(q)}&maxResults=50&key=${encodeURIComponent(key)}`, 9000).then(r => r.json()).catch(() => ({}))
                 ]);
-                const rawItems = [...((rLong && rLong.items) || []), ...((rAny && rAny.items) || [])];
                 const items = [];
-                rawItems.forEach(x => {
-                    if (x && x.id && x.id.videoId && !seenIds.has(x.id.videoId)) {
-                        seenIds.add(x.id.videoId);
-                        items.push({ src: 'yt', id: x.id.videoId, title: x.snippet.title, sub: (x.snippet.channelTitle || 'YouTube') + ' · YouTube', thumb: (x.snippet.thumbnails && (x.snippet.thumbnails.medium || x.snippet.thumbnails.default) || {}).url || '', dur: 0 });
-                    }
+                [...((rLong && rLong.items) || []), ...((rAny && rAny.items) || [])].forEach(x => {
+                    const id = x && x.id && x.id.videoId;
+                    if (!id || items.some(v => v.id === id)) return;
+                    items.push({ src: 'yt', id, title: (x.snippet && x.snippet.title) || 'YouTube Video', sub: ((x.snippet && x.snippet.channelTitle) || 'YouTube') + ' · YouTube', thumb: (((x.snippet || {}).thumbnails || {}).medium || ((x.snippet || {}).thumbnails || {}).default || {}).url || '', dur: 0 });
                 });
-                if (items.length) {
+                for (let bi = 0; bi < items.length; bi += 45) {
                     try {
-                        for (let bi = 0; bi < items.length; bi += 45) {
-                            const chunk = items.slice(bi, bi + 45);
-                            const r2 = await fetchTO(`https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${chunk.map(i => i.id).join(',')}&key=${encodeURIComponent(key)}`, 7000);
-                            const d2 = await r2.json();
-                            (d2.items || []).forEach(v => { const it = items.find(i => i.id === v.id); if (it) it.dur = parseIso8601Duration((v.contentDetails || {}).duration); });
-                        }
+                        const chunk = items.slice(bi, bi + 45);
+                        const r2 = await fetchTO(`https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${chunk.map(i => i.id).join(',')}&key=${encodeURIComponent(key)}`, 7000);
+                        const d2 = await r2.json();
+                        (d2.items || []).forEach(v => { const it = chunk.find(i => i.id === v.id); if (it) it.dur = parseIso8601Duration((v.contentDetails || {}).duration); });
                     } catch (e) {}
-                    return items;
                 }
+                items.forEach(addYt);
             } catch (e) {}
         }
+
         loadInstances();
         const P = ytSortHosts(PIPED).slice(0, 4), I = ytSortHosts(INVID).slice(0, 4);
         const queries = [q, q + ' full film izle'];
-        for (const host of P) {
+        const pJobs = P.map(async host => {
             try {
                 const resArr = await Promise.all(queries.map(qq => ytFetchJson(`${host}/search?q=${encodeURIComponent(qq)}&filter=videos`, null, 6000).catch(() => ({}))));
-                resArr.forEach(d => {
-                    ((d && d.items) || []).forEach(x => {
-                        if (!x || !x.url || !x.url.includes('v=')) return;
+                resArr.forEach(d => ((d && d.items) || []).forEach(x => {
+                    if (!x || !x.url || !x.url.includes('v=')) return;
+                    try {
                         const vid = new URLSearchParams(x.url.substring(x.url.indexOf('?'))).get('v');
                         if (vid) addYt({ src: 'yt', id: vid, title: x.title || 'Video', sub: (x.uploaderName || 'YouTube') + ' · YouTube', thumb: x.thumbnail || `https://i.ytimg.com/vi/${vid}/mqdefault.jpg`, dur: x.duration || 0 });
-                    });
-                });
-                if (outAll.length) return outAll;
+                    } catch (e) {}
+                }));
             } catch (e) {}
-        }
-        for (const host of I) {
+        });
+        const iJobs = I.map(async host => {
             try {
                 const [dLong, dAny] = await Promise.all([
                     ytFetchJson(`${host}/api/v1/search?q=${encodeURIComponent(q)}&type=video&duration=long`, null, 6000).catch(() => []),
                     ytFetchJson(`${host}/api/v1/search?q=${encodeURIComponent(q)}&type=video`, null, 6000).catch(() => [])
                 ]);
                 [...(Array.isArray(dLong) ? dLong : []), ...(Array.isArray(dAny) ? dAny : [])].forEach(x => {
-                    if (x && x.videoId) addYt({
-                        src: 'yt', id: x.videoId, title: x.title || 'Video', sub: (x.author || 'YouTube') + ' · YouTube',
-                        thumb: (x.videoThumbnails && x.videoThumbnails[0] && x.videoThumbnails[0].url) || `https://i.ytimg.com/vi/${x.videoId}/mqdefault.jpg`,
-                        dur: x.lengthSeconds || 0
-                    });
+                    if (x && x.videoId) addYt({ src: 'yt', id: x.videoId, title: x.title || 'Video', sub: (x.author || 'YouTube') + ' · YouTube', thumb: (x.videoThumbnails && x.videoThumbnails[0] && x.videoThumbnails[0].url) || `https://i.ytimg.com/vi/${x.videoId}/mqdefault.jpg`, dur: x.lengthSeconds || 0 });
                 });
-                if (outAll.length) return outAll;
             } catch (e) {}
-        }
+        });
+        await Promise.all([...pJobs, ...iJobs]);
         return outAll;
     }
-
 
     async function mvSearchArchive(q) {
         const query = `(${q}) AND mediatype:(movies)`;
@@ -5526,11 +5539,17 @@ async function resetQuarantine() {
         const searchQueries = [
             `${q} izle`,
             `${q} full film tek parça`,
-            `${q} site:ok.ru OR site:dailymotion.com OR site:vk.com`
+            `${q} full movie watch`,
+            `${q} official watch online`,
+            `${q} site:archive.org`,
+            `${q} site:youtube.com OR site:dailymotion.com OR site:peertube.tv`,
+            `${q} site:tabii.com OR site:trtizle.com OR site:puhutv.com`
         ];
         const bingQueries = [
             `${q} full izle`,
-            `${q} izle`
+            `${q} izle`,
+            `${q} full movie official`,
+            `${q} site:archive.org OR site:dailymotion.com OR site:youtube.com`
         ];
 
         const jobs = [
@@ -5582,7 +5601,7 @@ async function resetQuarantine() {
         ];
 
         await Promise.all(jobs);
-        return results.slice(0, 80);
+        return results.slice(0, 160);
     }
 
 
@@ -5788,15 +5807,18 @@ async function resetQuarantine() {
         absorb(await runSources(q));
         if (qAscii && qAscii !== q.toLocaleLowerCase('tr').trim()) absorb(await runSources(qAscii));
         let good = scoreAll();
-        // yeterli sonuç yoksa: sorgudan sondaki kelimeleri adım adım atarak (en az %70 kelime) yeniden tara
+        // Sonuç azsa aramayı birkaç tur genişlet; altı sonuca ulaşınca erken kesme.
         const toks = mvTokens(q);
-        if (good.length < 6 && toks.length >= 3) {
-            const minK = Math.ceil(toks.length * 0.7);
-            for (let k = toks.length - 1; k >= minK && good.length < 6; k--) {
-                st.innerText = `Eşleşme genişletiliyor (%${Math.round(k / toks.length * 100)})...`;
-                absorb(await runSources(q.split(/\s+/).slice(0, k).join(' ')));
-                if (qAscii) absorb(await runSources(qAscii.split(' ').slice(0, k).join(' ')));
+        if (good.length < 20 && toks.length >= 3) {
+            const minK = Math.max(2, Math.floor(toks.length * 0.7));
+            let rounds = 0;
+            for (let k = toks.length - 1; k >= minK && rounds < 3; k--, rounds++) {
+                const shortQ = toks.slice(0, k).join(' ');
+                if (!shortQ || shortQ === mvNorm(q)) continue;
+                st.innerText = `Arama genişletiliyor (${k}/${toks.length} anahtar kelime)...`;
+                absorb(await runSources(shortQ));
                 good = scoreAll();
+                if (good.length >= 20) break;
             }
         }
         good.forEach(x => {
@@ -6160,6 +6182,22 @@ async function resetQuarantine() {
         showOSD('Film açılıyor', title);
     }
 
+
+    function mvOpenSourcePage(r) {
+        const url = r && (r.pageUrl || (r.src === 'web' ? r.id : ''));
+        if (!url || !/^https?:\/\//i.test(url)) return false;
+        try {
+            const w = window.open(url, '_blank');
+            if (w) { try { w.opener = null; } catch (e) {} return true; }
+        } catch (e) {}
+        // WebView ortamında yeni pencere açılmıyorsa sayfa URL'sini görünür kıl; kullanıcı dokunarak açabilir.
+        const st = document.getElementById('movieStatus');
+        if (st) {
+            st.innerHTML = 'Uygulama içinde oynatılamadı. <a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" style="color:#fdcb6e;text-decoration:underline">Kaynak siteyi aç</a>';
+            return true;
+        }
+        return false;
+    }
 
     async function movieWatch(i) {
         const r = movieResults[i]; if (!r) return;
