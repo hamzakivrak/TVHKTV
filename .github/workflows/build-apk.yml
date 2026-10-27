@@ -71,8 +71,8 @@ jobs:
                   applicationId "com.tvcast.player"
                   minSdk 21
                   targetSdk 34
-                  versionCode 8
-                  versionName "1.7"
+                  versionCode 9
+                  versionName "1.8"
               }
 
               buildTypes {
@@ -221,6 +221,7 @@ jobs:
               private boolean serviceUp = false;
               private RemoteServer remote;
               private CastHelper castH;
+              private CastProxy castProxy;
 
               private CastHelper castHelper() {
                   if (castH == null) {
@@ -493,7 +494,17 @@ jobs:
                   public void castScan() { castHelper().scan(); }
 
                   @JavascriptInterface
-                  public void castPlay(String id, String url, String mime, String title, String logo) { castHelper().play(id, url, mime, title, logo); }
+                  public void castPlay(String id, String url, String mime, String title, String logo) {
+                      String u = url;
+                      try {
+                          String ip = localIp();
+                          if (ip.length() > 0 && url != null && url.startsWith("http")) {
+                              if (castProxy == null) castProxy = new CastProxy();
+                              if (castProxy.start(ip)) { castProxy.setHost(ip); u = castProxy.wrap(url); }
+                          }
+                      } catch (Throwable ignored) { }
+                      castHelper().play(id, u, mime, title, logo);
+                  }
 
                   @JavascriptInterface
                   public void castToggle() { castHelper().toggle(); }
@@ -844,6 +855,7 @@ jobs:
               protected void onDestroy() {
                   bgH.removeCallbacks(bgR);
                   stopRemote();
+                  if (castProxy != null) castProxy.stop();
                   try { if (cmdReceiver != null) unregisterReceiver(cmdReceiver); } catch (Exception ignored) { }
                   try { stopService(new Intent(this, PlaybackService.class)); } catch (Exception ignored) { }
                   if (web != null) { web.loadUrl("about:blank"); web.destroy(); }
@@ -1038,6 +1050,176 @@ jobs:
                           connectedRoute = "";
                       }
                   });
+              }
+          }
+          TVCAST_EOF
+          cat > app/src/main/java/com/tvcast/player/CastProxy.java <<'TVCAST_EOF'
+          package com.tvcast.player;
+
+          import java.io.BufferedReader;
+          import java.io.ByteArrayOutputStream;
+          import java.io.InputStream;
+          import java.io.InputStreamReader;
+          import java.io.OutputStream;
+          import java.net.HttpURLConnection;
+          import java.net.ServerSocket;
+          import java.net.Socket;
+          import java.net.URL;
+          import java.net.URLDecoder;
+          import java.net.URLEncoder;
+          import java.util.concurrent.ExecutorService;
+          import java.util.concurrent.Executors;
+          import java.util.regex.Matcher;
+          import java.util.regex.Pattern;
+
+          /** Chromecast icin CORS basligi ekleyen yerel vekil. HLS listelerini yeniden yazar. */
+          public class CastProxy {
+              public static final int PORT = 8766;
+              private ServerSocket server;
+              private volatile boolean running = false;
+              private final ExecutorService pool = Executors.newCachedThreadPool();
+              private String host = "";
+
+              public synchronized boolean start(String hostIp) {
+                  host = hostIp;
+                  if (running) return true;
+                  try {
+                      server = new ServerSocket(PORT);
+                      running = true;
+                      new Thread(new Runnable() {
+                          @Override public void run() {
+                              while (running) {
+                                  try {
+                                      final Socket s = server.accept();
+                                      pool.execute(new Runnable() { @Override public void run() { handle(s); } });
+                                  } catch (Exception e) { if (!running) break; }
+                              }
+                          }
+                      }).start();
+                      return true;
+                  } catch (Exception e) {
+                      running = false;
+                      return false;
+                  }
+              }
+
+              public synchronized void stop() {
+                  running = false;
+                  try { if (server != null) server.close(); } catch (Exception ignored) { }
+                  server = null;
+              }
+
+              public void setHost(String h) { host = h; }
+
+              public String wrap(String url) {
+                  try { return "http://" + host + ":" + PORT + "/p?u=" + URLEncoder.encode(url, "UTF-8"); } catch (Exception e) { return url; }
+              }
+
+              private static final String CORS = "Access-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: *\r\nAccess-Control-Allow-Methods: GET, HEAD, OPTIONS\r\nAccess-Control-Expose-Headers: *\r\n";
+
+              private void handle(Socket s) {
+                  try {
+                      s.setSoTimeout(15000);
+                      InputStream in = s.getInputStream();
+                      OutputStream out = s.getOutputStream();
+                      BufferedReader br = new BufferedReader(new InputStreamReader(in, "UTF-8"));
+                      String req = br.readLine();
+                      if (req == null) { s.close(); return; }
+                      String range = null;
+                      String line;
+                      while ((line = br.readLine()) != null && line.length() > 0) {
+                          if (line.toLowerCase().startsWith("range:")) range = line.substring(6).trim();
+                      }
+                      String[] parts = req.split(" ");
+                      String method = parts.length > 0 ? parts[0] : "GET";
+                      String path = parts.length > 1 ? parts[1] : "/";
+                      if (method.equals("OPTIONS")) {
+                          out.write(("HTTP/1.1 204 No Content\r\n" + CORS + "Connection: close\r\n\r\n").getBytes("UTF-8"));
+                          out.flush(); s.close(); return;
+                      }
+                      int i = path.indexOf("/p?u=");
+                      if (i != 0) { out.write(("HTTP/1.1 404 Not Found\r\n" + CORS + "Connection: close\r\n\r\n").getBytes("UTF-8")); out.flush(); s.close(); return; }
+                      String target = URLDecoder.decode(path.substring(5), "UTF-8");
+                      HttpURLConnection c = null;
+                      URL cur = new URL(target);
+                      for (int hop = 0; hop < 6; hop++) {
+                          c = (HttpURLConnection) cur.openConnection();
+                          c.setInstanceFollowRedirects(false);
+                          c.setConnectTimeout(8000);
+                          c.setReadTimeout(15000);
+                          c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 Chrome/120 Safari/537.36");
+                          if (range != null) c.setRequestProperty("Range", range);
+                          int rc = c.getResponseCode();
+                          if (rc >= 300 && rc < 400 && c.getHeaderField("Location") != null) {
+                              cur = new URL(cur, c.getHeaderField("Location"));
+                              c.disconnect();
+                              continue;
+                          }
+                          break;
+                      }
+                      int code = c.getResponseCode();
+                      String ctype = c.getContentType();
+                      if (ctype == null) ctype = "application/octet-stream";
+                      boolean isM3u8 = cur.getPath().toLowerCase().contains(".m3u8") || ctype.toLowerCase().contains("mpegurl");
+                      InputStream body = code >= 400 ? c.getErrorStream() : c.getInputStream();
+                      if (body == null) body = new java.io.ByteArrayInputStream(new byte[0]);
+                      if (isM3u8 && code < 400) {
+                          ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                          byte[] buf = new byte[8192];
+                          int n;
+                          while ((n = body.read(buf)) > 0) bo.write(buf, 0, n);
+                          String text = new String(bo.toByteArray(), "UTF-8");
+                          byte[] res = rewrite(text, cur).getBytes("UTF-8");
+                          out.write(("HTTP/1.1 200 OK\r\n" + CORS + "Content-Type: application/vnd.apple.mpegurl\r\nContent-Length: " + res.length + "\r\nConnection: close\r\n\r\n").getBytes("UTF-8"));
+                          out.write(res);
+                      } else {
+                          StringBuilder h = new StringBuilder("HTTP/1.1 " + code + " " + (code == 206 ? "Partial Content" : code == 200 ? "OK" : "Error") + "\r\n" + CORS);
+                          h.append("Content-Type: ").append(ctype).append("\r\n");
+                          String cl = c.getHeaderField("Content-Length");
+                          if (cl != null) h.append("Content-Length: ").append(cl).append("\r\n");
+                          String cr = c.getHeaderField("Content-Range");
+                          if (cr != null) h.append("Content-Range: ").append(cr).append("\r\n");
+                          h.append("Accept-Ranges: bytes\r\nConnection: close\r\n\r\n");
+                          out.write(h.toString().getBytes("UTF-8"));
+                          if (!method.equals("HEAD")) {
+                              byte[] buf = new byte[16384];
+                              int n;
+                              while ((n = body.read(buf)) > 0) out.write(buf, 0, n);
+                          }
+                      }
+                      out.flush();
+                      try { c.disconnect(); } catch (Exception ignored) { }
+                      s.close();
+                  } catch (Exception e) {
+                      try { s.close(); } catch (Exception ignored) { }
+                  }
+              }
+
+              private static final Pattern URI_ATTR = Pattern.compile("URI=\"([^\"]+)\"");
+
+              private String rewrite(String text, URL base) {
+                  StringBuilder sb = new StringBuilder();
+                  String[] lines = text.split("\r?\n");
+                  for (String l : lines) {
+                      String t = l.trim();
+                      if (t.length() == 0) { sb.append("\n"); continue; }
+                      if (t.startsWith("#")) {
+                          Matcher m = URI_ATTR.matcher(t);
+                          StringBuffer o = new StringBuffer();
+                          while (m.find()) {
+                              m.appendReplacement(o, Matcher.quoteReplacement("URI=\"" + abs(base, m.group(1)) + "\""));
+                          }
+                          m.appendTail(o);
+                          sb.append(o).append("\n");
+                      } else {
+                          sb.append(abs(base, t)).append("\n");
+                      }
+                  }
+                  return sb.toString();
+              }
+
+              private String abs(URL base, String ref) {
+                  try { return wrap(new URL(base, ref).toString()); } catch (Exception e) { return ref; }
               }
           }
           TVCAST_EOF
