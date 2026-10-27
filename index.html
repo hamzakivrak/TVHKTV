@@ -6083,7 +6083,7 @@ function playAudioDirect(video, url, token) {
 
 
         const ae = document.activeElement;
-        const isInputTag = ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA');
+        const isInputTag = ae && ((ae.tagName === 'INPUT' && ae.type !== 'checkbox' && ae.type !== 'radio') || ae.tagName === 'TEXTAREA');
         const isTypingMode = isInputTag && !ae.hasAttribute('readonly');
 
 
@@ -6412,7 +6412,7 @@ function playAudioDirect(video, url, token) {
             if (ae && ae.classList && ae.classList.contains('settings-tab') && (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowDown')) {
                 e.preventDefault(); e.stopImmediatePropagation();
                 if (k === 'ArrowDown') {
-                    const nl = getLeftNavList().filter(x => !x.classList.contains('settings-tab'));
+                    const tb = document.getElementById('settingsTabs'); const nl = getLeftNavList().filter(x => !x.classList.contains('settings-tab') && (tb.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_FOLLOWING));
                     if (nl.length) { try { nl[0].focus({ preventScroll: true }); } catch (err) { nl[0].focus(); } fastScrollIntoView(nl[0]); }
                 } else {
                     const i = SETTINGS_TABS.indexOf(ae.dataset.tab) + (k === 'ArrowRight' ? 1 : -1);
@@ -6421,6 +6421,15 @@ function playAudioDirect(video, url, token) {
                     const nb = document.querySelector('#settingsTabs .settings-tab[data-tab="' + SETTINGS_TABS[ni] + '"]'); if (nb) nb.focus();
                 }
                 return;
+            }
+            if (k === 'ArrowUp' && ae && L.contains(ae) && !ae.classList.contains('settings-tab')) {
+                const tb2 = document.getElementById('settingsTabs');
+                const cl = getLeftNavList().filter(x => !x.classList.contains('settings-tab') && (tb2.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_FOLLOWING));
+                if (cl.length && cl[0] === ae) {
+                    e.preventDefault(); e.stopImmediatePropagation();
+                    const on = tb2.querySelector('.settings-tab.on') || tb2.querySelector('.settings-tab'); if (on) on.focus();
+                    return;
+                }
             }
             if (['ArrowDown', 'ArrowRight', 'ArrowUp', 'ArrowLeft', 'ChannelUp', 'ChannelDown', 'PageUp', 'PageDown'].includes(k)) {
                 e.preventDefault(); e.stopImmediatePropagation();
