@@ -99,8 +99,11 @@
         .btn-icon { padding:0 16px; min-height:44px; background:#32343e; color:white; border-radius:8px; cursor:pointer; border:2px solid var(--border); display:flex; align-items:center; justify-content:center; font-weight:600; gap:6px; font-size:0.92rem; }
         .sub-module { margin-bottom:16px; padding-bottom:16px; border-bottom:1px solid rgba(255,255,255,0.07); }
         .sub-module:last-child { margin-bottom:0; padding-bottom:0; border-bottom:none; }
+        #moviePanel { display:none; flex:1; overflow-y:auto; padding:14px 22px 40px; }
+        #rightSidebar.movie-mode #moviePanel { display:block; }
+        #rightSidebar.movie-mode #channelList, #rightSidebar.movie-mode .subtle-count-strip { display:none !important; }
         .stab-hide { display:none !important; }
-        .settings-tab { flex:1 1 30%; gap:6px; padding:0 8px; font-size:0.88rem; white-space:nowrap; }
+        .settings-tab { flex:1 1 0; min-width:0; flex-direction:column; gap:2px; padding:6px 2px; min-height:56px; font-size:clamp(0.66rem,1.7vw,0.9rem); line-height:1.1; white-space:normal; text-align:center; }
         .settings-tab i { font-size:20px; width:20px; height:20px; overflow:hidden; flex-shrink:0; pointer-events:none; }
         .settings-tab.on { background:var(--primary); border-color:var(--primary); font-weight:700; }
         .sub-module-title { font-size:0.82rem; color:#bbb; text-transform:uppercase; font-weight:700; margin-bottom:10px; display:block; }
@@ -286,11 +289,11 @@
         </div>
         <div id="unlockedSettingsArea" style="display:none;">
             <div id="normalSettingsWrapper">
-            <div id="settingsTabs" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:16px;">
+            <div id="settingsTabs" style="display:flex; flex-wrap:nowrap; gap:4px; margin-bottom:16px;">
                 <button type="button" class="btn settings-tab" data-tab="list" onclick="setSettingsTab('list')"><i class="material-icons-round">format_list_bulleted</i>Listem</button>
-                <button type="button" class="btn settings-tab" data-tab="add" onclick="setSettingsTab('add')"><i class="material-icons-round">search</i>Ekle / Ara</button>
-                <button type="button" class="btn settings-tab" data-tab="tv" onclick="setSettingsTab('tv')"><i class="material-icons-round">cast</i>TV &amp; Cast</button>
-                <button type="button" class="btn settings-tab" data-tab="cloud" onclick="setSettingsTab('cloud')"><i class="material-icons-round">cloud</i>Bulut &amp; Yedek</button>
+                <button type="button" class="btn settings-tab" data-tab="add" onclick="setSettingsTab('add')"><i class="material-icons-round">search</i>Ekle/Ara</button>
+                <button type="button" class="btn settings-tab" data-tab="tv" onclick="setSettingsTab('tv')"><i class="material-icons-round">cast</i>TV/Cast</button>
+                <button type="button" class="btn settings-tab" data-tab="cloud" onclick="setSettingsTab('cloud')"><i class="material-icons-round">cloud</i>Bulut</button>
                 <button type="button" class="btn settings-tab" data-tab="sys" onclick="setSettingsTab('sys')"><i class="material-icons-round">tune</i>Sistem</button>
             </div>
                 <div class="module" data-stab="list" style="margin-bottom:18px;">
@@ -391,20 +394,6 @@
                     <div id="apiKeyTestResult" style="font-size:0.78rem; color:#aaa; margin-top:8px; line-height:1.35; text-align:center;">Anahtarınızı girdikten sonra "API Test Et" ile doğrulayabilirsiniz.</div>
                 </div>
                 <div class="sub-module" data-stab="add">
-                    <span class="sub-module-title" style="color:#fdcb6e;">Film / Video Ara (Tüm Web)</span>
-                    <div style="display:flex; gap:5px; margin-bottom:8px;">
-                        <input type="text" id="movieQuery" readonly placeholder="Film adı, konu veya doğrudan web linki..." style="margin:0;">
-                        <button class="btn" style="flex:0.4; background:#fdcb6e; border-color:#fdcb6e; color:#000; margin:0;" onclick="movieSearch()"><i class="material-icons-round">search</i></button>
-                    </div>
-                    <div style="display:flex; gap:14px; font-size:0.84rem; margin-bottom:8px; align-items:center; flex-wrap:wrap;">
-                        <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" style="position:static; width:20px; height:20px;" id="srcMvWeb" checked> 🌐 Tüm Web (Film Siteleri / Dailymotion / Genel)</label>
-                        <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" style="position:static; width:20px; height:20px;" id="srcMvYt" checked> YouTube (API'li / API'siz)</label>
-                        <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" style="position:static; width:20px; height:20px;" id="srcMvArc" checked> Internet Archive (telifsiz)</label>
-                    </div>
-                    <div id="movieStatus" style="font-size:0.75rem; color:#aaa; text-align:center; margin-bottom:8px;">Film adı yazın; tüm web taranır, ▶ ile izlenir veya ➕ ile listeye eklenir.</div>
-                    <div id="movieResults" class="yt-search-results" style="max-height:340px; display:none;"></div>
-                </div>
-                <div class="sub-module" data-stab="add">
                     <span class="sub-module-title" style="color:#e84118;">YouTube Playlist Ekle</span>
                     <input type="text" id="ytPlaylistUrl" readonly placeholder="Liste Linki">
                     <button class="btn" style="width:100%; background:#e84118; color:#fff; border-color:#e84118;" onclick="addYTPlaylist()">Listeyi Kaydet</button>
@@ -495,7 +484,7 @@
                     <i class="material-icons-round" style="font-size:22px;">cleaning_services</i>
                 </button>
             </div>
-            <select id="rightCountrySelect" onchange="syncAndChangeCountry(this.value)" style="flex:1; max-width:340px; min-width:140px; min-height:44px; padding:8px 12px; font-size:0.95rem; font-weight:600; border-color:rgba(108,92,231,0.55); background:#1a1c24; margin:0; cursor:pointer;">
+            <select id="rightCountrySelect" onchange="rightListChange(this.value)" style="flex:1; max-width:340px; min-width:140px; min-height:44px; padding:8px 12px; font-size:0.95rem; font-weight:600; border-color:rgba(108,92,231,0.55); background:#1a1c24; margin:0; cursor:pointer;">
                 <optgroup label="Filtre (Seçili Liste)" id="favFilterGroupRight"></optgroup>
                 <optgroup label="Varsayılan Listeler">
                     <option value="tr" selected>🇹🇷 Türkiye</option>
@@ -503,6 +492,7 @@
                     <option value="uk">🇬🇧 İngiltere</option>
                     <option value="de">🇩🇪 Almanya</option>
                 </optgroup>
+                <optgroup label="Film / Video"><option value="__movie__">🎬 Film / Video Ara</option></optgroup>
                 <optgroup label="Kişisel Listelerim" id="personalPresetsRight"></optgroup>
                 <optgroup label="YouTube Listeleri" id="ytPlaylistsGroupRight"></optgroup>
             </select>
@@ -539,6 +529,12 @@
     </div>
     <div id="quarantineBar" style="display:none;"></div>
     <div id="channelList" class="channel-list"></div>
+    <div id="moviePanel">
+        <div style="font-weight:700; color:#fdcb6e; margin-bottom:8px;">🎬 Film / Video Ara (Web + YouTube + Archive)</div>
+        <button type="button" class="btn" id="movieSearchBtn" style="width:100%; background:#fdcb6e; border-color:#fdcb6e; color:#000; font-weight:700; margin-bottom:8px;" onclick="movieSearch()"><i class="material-icons-round">search</i> Ara</button>
+        <div id="movieStatus" style="font-size:0.8rem; color:#aaa; text-align:center; margin-bottom:8px;">Yukarıdaki kutuya film adı yazın; web, YouTube ve Archive birlikte taranır. ▶ ile izlenir, ➕ ile listeye eklenir.</div>
+        <div id="movieResults" class="yt-search-results" style="max-height:none; display:none;"></div>
+    </div>
 </div>
 
 
@@ -1256,6 +1252,7 @@
         const leftOpen = document.getElementById('leftSidebar').classList.contains('open');
         const rightOpen = document.getElementById('rightSidebar').classList.contains('open');
         if (leftOpen || rightOpen) {
+            if (leftOpen && drawerBack()) { pushDrawerHistoryState(); return; }
             closeAllDrawers();
         }
     });
@@ -1786,6 +1783,7 @@
 
     function clearSearchFilter() {
         const inp = document.getElementById('filterInput'); if (!inp) return;
+        if (movieMode) { inp.value = ''; inp.setAttribute('readonly', 'readonly'); inp.classList.remove('kb-unlocked'); movieResults = []; renderMovies(); return; }
         inp.value = ''; inp.setAttribute('readonly', 'readonly'); inp.classList.remove('kb-unlocked');
         performSearch();
         showOSD("Arama Temizlendi", "Tüm kanallar gösteriliyor");
@@ -1806,6 +1804,7 @@
 
 
     function performSearch() {
+        if (movieMode) return;
         const inp = document.getElementById('filterInput');
         const term = (inp ? inp.value : '').toLocaleLowerCase('tr').trim();
         const items = document.querySelectorAll('#channelList .channel-item');
@@ -5190,7 +5189,7 @@ async function resetQuarantine() {
 
 
     async function movieSearch() {
-        const q = document.getElementById('movieQuery').value.trim(); if (!q) return;
+        const q = (document.getElementById('filterInput').value || '').trim(); if (!q) { const st0 = document.getElementById('movieStatus'); if (st0) st0.innerText = 'Önce üstteki kutuya aranacak film / video adını yazın.'; return; }
         lockAllInputs();
         const st = document.getElementById('movieStatus');
         movieResults = []; renderMovies();
@@ -6008,6 +6007,54 @@ function playAudioDirect(video, url, token) {
             p = p.parentElement;
         }
     }
+    /* ===== FİLM / VİDEO ARA (kanal listesi açılır menüsü) ===== */
+    var movieMode = false;
+    function enterMovieMode() {
+        movieMode = true;
+        document.getElementById('rightSidebar').classList.add('movie-mode');
+        const inp = document.getElementById('filterInput');
+        if (inp) { inp.value = ''; inp.placeholder = 'Film / video ara...'; inp.setAttribute('readonly', 'readonly'); }
+        invalidateLeftNav();
+        setTimeout(() => { if (inp) try { inp.focus(); } catch (e) {} }, 60);
+    }
+    function exitMovieMode() {
+        movieMode = false;
+        document.getElementById('rightSidebar').classList.remove('movie-mode');
+        const inp = document.getElementById('filterInput');
+        if (inp) { inp.value = ''; inp.placeholder = 'Kanal ara...'; }
+        try { performSearch(); } catch (e) {}
+    }
+    function rightListChange(v) {
+        if (v === '__movie__') { enterMovieMode(); return; }
+        if (movieMode) exitMovieMode();
+        syncAndChangeCountry(v);
+    }
+    (function () {
+        const orig = updatePresetDropdown;
+        updatePresetDropdown = function () {
+            orig.apply(this, arguments);
+            if (movieMode) { const sel = document.getElementById('rightCountrySelect'); if (sel) sel.value = '__movie__'; }
+        };
+    })();
+    // Geri: önce yazı kutusu, sonra sekmeler, sonra menü kapanır. 1 dönerse işlendi.
+    function drawerBack() {
+        const L = document.getElementById('leftSidebar');
+        if (!L || !L.classList.contains('open')) return 0;
+        const ae = document.activeElement;
+        if (ae && (ae.tagName === 'TEXTAREA' || (ae.tagName === 'INPUT' && ae.type !== 'checkbox' && ae.type !== 'radio')) && !ae.hasAttribute('readonly')) {
+            ae.setAttribute('readonly', 'readonly'); ae.classList.remove('kb-unlocked'); try { ae.blur(); ae.focus(); } catch (e) {}
+            return 1;
+        }
+        const pin = document.getElementById('pinLockBox');
+        if (pin && pin.style.display !== 'none') return 0;
+        const tb = document.getElementById('settingsTabs');
+        if (tb && !(ae && ae.classList && ae.classList.contains('settings-tab'))) {
+            const on = tb.querySelector('.settings-tab.on') || tb.querySelector('.settings-tab');
+            if (on) { try { on.focus(); } catch (e) {} L.scrollTop = 0; return 1; }
+        }
+        return 0;
+    }
+
     /* ===== AYARLAR SEKMELERİ ===== */
     const SETTINGS_TABS = ['list', 'add', 'tv', 'cloud', 'sys'];
     function setSettingsTab(t, keepFocus) {
@@ -6098,13 +6145,16 @@ function playAudioDirect(video, url, token) {
             if (k === 'Enter' || kc === 13 || kc === 23 || kc === 66) {
                 e.preventDefault();
                 ae.setAttribute('readonly', 'readonly'); ae.classList.remove('kb-unlocked');
-                if (ae.id === 'filterInput') {
+                if (ae.id === 'filterInput' && movieMode) {
+                    movieSearch();
+                    const fr = document.querySelector('#movieSearchBtn'); if (fr) fr.focus();
+                }
+                else if (ae.id === 'filterInput') {
                     performSearch();
                     const items = getVisibleGridItems();
                     if (items.length > 0) focusGridElement(items[0]); else ae.focus();
                 }
                 else if (ae.id === 'pinInput') verifyPin();
-                else if (ae.id === 'movieQuery') movieSearch();
                 else if (ae.id === 'smartQuery') smartSearch();
                 else if (ae.id === 'ytSearchQuery') searchYouTube();
                 else if (ae.id === 'userApiKey') saveApiKey();
@@ -6246,6 +6296,39 @@ function playAudioDirect(video, url, token) {
                 if (isMultiSel) { toggleMultiSel(false); return; }
                 closeAllDrawers(); return;
             }
+            if (movieMode && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', ' '].includes(k) && !isTypingMode) {
+                const hdrM = ['filterInput', 'clearFilterBtn', 'rightCountrySelect', 'rightSettingsBtn'].map(id => document.getElementById(id)).filter(Boolean);
+                const rowsM = Array.from(document.querySelectorAll('#movieResults .yt-search-item'));
+                const sbM = document.getElementById('movieSearchBtn');
+                const focusM = (el) => { if (el) { try { el.focus({ preventScroll: true }); } catch (err) { el.focus(); } try { el.scrollIntoView({ block: 'nearest' }); } catch (err) {} } };
+                const btnsOf = (row) => Array.from(row.querySelectorAll('.preview-mini-btn'));
+                const playOf = (row) => { const b = btnsOf(row); return b[b.length - 1]; };
+                e.preventDefault(); e.stopImmediatePropagation();
+                if (k === 'Enter' || k === ' ') {
+                    if (e.repeat) return;
+                    if (ae && ae.tagName === 'SELECT') tvOpenPicker(ae);
+                    else if (ae && ae.tagName === 'INPUT') unlockInputForTyping(ae);
+                    else if (ae && ae.click) ae.click();
+                    return;
+                }
+                const hi = hdrM.indexOf(ae);
+                const ri = rowsM.findIndex(rw => rw.contains(ae));
+                if (hi >= 0) {
+                    if (k === 'ArrowLeft') focusM(hdrM[Math.max(0, hi - 1)]);
+                    else if (k === 'ArrowRight') focusM(hdrM[Math.min(hdrM.length - 1, hi + 1)]);
+                    else if (k === 'ArrowDown') focusM(sbM);
+                } else if (ae === sbM) {
+                    if (k === 'ArrowUp') focusM(hdrM[0]);
+                    else if (k === 'ArrowDown' && rowsM.length) focusM(playOf(rowsM[0]));
+                } else if (ri >= 0) {
+                    const bs = btnsOf(rowsM[ri]);
+                    if (k === 'ArrowUp') focusM(ri > 0 ? playOf(rowsM[ri - 1]) : sbM);
+                    else if (k === 'ArrowDown') { if (ri + 1 < rowsM.length) focusM(playOf(rowsM[ri + 1])); }
+                    else if (k === 'ArrowLeft') focusM(bs[0]);
+                    else if (k === 'ArrowRight') focusM(bs[bs.length - 1]);
+                } else { focusM(hdrM[0]); }
+                return;
+            }
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(k)) {
                 clearChannelHoldTimers();
                 if (e.repeat) {
@@ -6384,7 +6467,7 @@ function playAudioDirect(video, url, token) {
 
         if (leftOpen) {
             if (['Escape', 'BrowserBack', 'GoBack'].includes(k) || kc === 4 || kc === 27) {
-                e.preventDefault(); e.stopImmediatePropagation(); closeAllDrawers(); return;
+                e.preventDefault(); e.stopImmediatePropagation(); if (!drawerBack()) closeAllDrawers(); return;
             }
             if (document.getElementById('pinLockBox').style.display !== 'none' && /^[0-9]$/.test(k)) {
                 e.preventDefault(); e.stopImmediatePropagation();
