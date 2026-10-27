@@ -349,6 +349,7 @@
                     <input type="text" id="tvTIp" readonly placeholder="TV adresi (örn: 192.168.1.20)" inputmode="decimal">
                     <input type="text" id="tvTCode" readonly placeholder="Kod (4 hane)" inputmode="numeric">
                     <button class="btn" style="width:100%; background:#74b9ff; border-color:#74b9ff; color:#000; font-weight:bold; margin-bottom:8px;" onclick="tvAddTarget()">TV Ekle</button>
+                    <button class="btn" style="width:100%; margin-bottom:8px;" onclick="tvScanStart()">TV Ara (otomatik bul)</button>
                     <div id="tvTargetList" class="yt-search-results" style="max-height:200px;"></div>
                 </div>
                 <div class="sub-module">
@@ -4718,6 +4719,48 @@ async function resetQuarantine() {
         tvRenderTargets(); showOSD('TV kaydedildi', name + ' · ' + ip);
         if (tvNative() && typeof Android.tvPing === 'function') { try { Android.tvPing(ip, code); } catch (e) {} }
     }
+    function tvScanStart() {
+        if (!(window.Android && typeof Android.tvScan === 'function')) { showOSD('Yalnızca APK içinde çalışır'); return; }
+        lockAllInputs();
+        showOSD('TV aranıyor...', 'Birkaç saniye sürer');
+        try { Android.tvScan((document.getElementById('tvTCode').value || '').trim()); } catch (e) {}
+    }
+    window.__tvScanDone = function (arr) {
+        if (!arr || !arr.length) { showOSD('TV bulunamadı', 'TV\'de uygulama açık ve aynı Wi-Fi mi?'); return; }
+        const code = (document.getElementById('tvTCode').value || '').trim();
+        const okOne = arr.map(x => String(x).split('|')).filter(p => p[1] === 'true')[0];
+        if (okOne && /^\d{4}$/.test(code)) {
+            const a = tvTargets().filter(t => t.ip !== okOne[0]); a.push({ name: (document.getElementById('tvTName').value || '').trim() || 'TV', ip: okOne[0], code }); tvSaveTargets(a);
+            tvRenderTargets(); showOSD('TV bulundu ve eklendi', okOne[0]); return;
+        }
+        const ip = String(arr[0]).split('|')[0];
+        document.getElementById('tvTIp').value = ip;
+        showOSD('TV bulundu: ' + ip, 'Kodu girip TV Ekle\'ye basın');
+    };
+    function castNative() { return !!(window.Android && typeof Android.castScan === 'function'); }
+    let castDevs = [];
+    function castScanStart() {
+        const b = document.getElementById('castDevList');
+        if (b) b.innerHTML = '<div style="font-size:0.8rem; color:#888; text-align:center; padding:6px;">Chromecast aranıyor...</div>';
+        try { Android.castScan(); } catch (e) {}
+    }
+    window.__castScanDone = function (arr, err) {
+        castDevs = arr || [];
+        const b = document.getElementById('castDevList'); if (!b) return;
+        if (err) { b.innerHTML = '<div style="font-size:0.8rem; color:#e17055; padding:6px;">' + esc(err) + '</div>'; return; }
+        b.innerHTML = castDevs.length ? castDevs.map((d, i) => `<div style="display:flex; align-items:center; gap:8px; padding:6px 0;"><span style="flex:1; text-align:left;">📡 ${esc(d.name)}</span><button type="button" class="tv-modal-btn" style="padding:8px 14px;" onclick="castSendTo(${i})"><i class="material-icons-round" style="color:var(--accent2)">cast</i> Gönder</button></div>`).join('')
+            : '<div style="font-size:0.8rem; color:#888; padding:6px;">Cihaz bulunamadı (aynı Wi-Fi mi?).</div>';
+    };
+    window.__castState = function (ok, msg) { showOSD(ok ? 'Chromecast\'e gönderildi' : 'Cast başarısız', msg || ''); };
+    async function castSendTo(i) {
+        const d = castDevs[i], ch = allChannels[curIdx]; if (!d || !ch) return;
+        showOSD('Hazırlanıyor...', d.name);
+        const r = await resolveCastableUrl(ch);
+        if (r.isYt && r.mime === 'text/html') { showOSD('Bu YouTube videosu Chromecast\'e gönderilemedi'); return; }
+        try { Android.castPlay(d.id, r.url, /mpegurl/i.test(r.mime || '') ? 'application/x-mpegURL' : (r.mime || ''), ch.name || 'Yayın', ch.logo || ''); } catch (e) { showOSD('Cast başarısız', String(e)); }
+        closeInfoModal();
+    }
+    function castCtl(c) { try { if (c === 'stop') Android.castStop(); else Android.castToggle(); } catch (e) {} }
     function tvRemoveTarget(i) { const a = tvTargets(); a.splice(i, 1); tvSaveTargets(a); tvRenderTargets(); }
     function tvTest(i) { const t = tvTargets()[i]; if (t && tvNative()) { showOSD('Deneniyor...', t.ip); try { Android.tvPing(t.ip, t.code); } catch (e) {} } }
     window.__tvPingDone = function (ip, ok, msg) { showOSD(ok ? 'TV bulundu' : 'TV bulunamadı', ip + (msg ? ' · ' + msg : '')); };
@@ -4747,11 +4790,13 @@ async function resetQuarantine() {
                     <button type="button" class="tv-modal-btn" style="flex:1; padding:8px;" onclick="tvRemoteKey(${i},'next')" title="Sonraki kanal"><i class="material-icons-round">skip_next</i></button>
                 </div></div>`;
         });
+        if (castNative()) html += `<div style="border:1px solid var(--border); border-radius:12px; padding:10px;"><div style="font-weight:600; text-align:left;">Chromecast / Google Cast</div><div id="castDevList"></div><div style="display:flex; gap:6px; margin-top:6px;"><button type="button" class="tv-modal-btn" style="flex:1;" onclick="castScanStart()"><i class="material-icons-round">refresh</i> Yenile</button><button type="button" class="tv-modal-btn" style="flex:1;" onclick="castCtl('toggle')"><i class="material-icons-round">play_arrow</i></button><button type="button" class="tv-modal-btn" style="flex:1;" onclick="castCtl('stop')"><i class="material-icons-round">stop</i></button></div></div>`;
         html += `<button type="button" class="tv-modal-btn" onclick="closeInfoModal(); tvOtherCastOptions()"><i class="material-icons-round" style="color:var(--fav)">tv</i> Diğer seçenekler (sistem menüsü)</button></div>`;
         infoOpen(html, ch.logo, "TV'ye Gönder", ch.name);
         document.getElementById('infoDesc').innerHTML = '';
         document.getElementById('infoQuality').innerHTML = '';
         document.getElementById('infoModal').classList.add('show');
+        if (castNative()) castScanStart();
         setTimeout(() => { const b = document.querySelector('#infoBody .tv-modal-btn'); if (b) try { b.focus(); } catch (e) {} }, 60);
     }
     async function tvOtherCastOptions() {
@@ -4914,7 +4959,7 @@ async function resetQuarantine() {
         if (castShown) { castStop(); return; }
         const ch = allChannels[curIdx];
         if (!ch) { showOSD('Önce bir kanal seçin'); return; }
-        if (tvNative()) { openTvTargetModal(ch); return; }
+        if (tvNative() || castNative()) { openTvTargetModal(ch); return; }
 
 
         if (window.castReady && typeof cast !== 'undefined' && cast.framework) {
