@@ -2432,8 +2432,18 @@
 
     function createHlsForStream(streamUrl, useProxy = false, extraConfig = {}) {
         const cleanUrl = String(streamUrl || '').split('#')[0];
+        const isLocalProxy = /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//i.test(cleanUrl);
         const workerOrigin = new URL(MY_CLOUD_PROXY).origin;
         let lastPlaylistUrl = cleanUrl;
+        let localProxyRealBase = '';
+        let localProxyRef = '';
+        if (isLocalProxy) {
+            try {
+                const uObj = new URL(cleanUrl);
+                localProxyRealBase = uObj.searchParams.get('u') || uObj.searchParams.get('url') || '';
+                localProxyRef = uObj.searchParams.get('r') || uObj.searchParams.get('ref') || uObj.searchParams.get('referer') || '';
+            } catch (e) {}
+        }
         const baseCfg = Object.assign({
             debug: false,
             enableWorker: true,
@@ -2443,11 +2453,11 @@
             maxMaxBufferLength: 16,
             startFragPrefetch: true,
             startLevel: -1,
-            manifestLoadingTimeOut: 4800,
+            manifestLoadingTimeOut: 6000,
             manifestLoadingMaxRetry: 1,
-            levelLoadingTimeOut: 4800,
+            levelLoadingTimeOut: 6000,
             levelLoadingMaxRetry: 1,
-            fragLoadingTimeOut: 6500,
+            fragLoadingTimeOut: 8000,
             fragLoadingMaxRetry: 1
         }, extraConfig);
         if (useLowQuality()) {
@@ -2455,7 +2465,30 @@
             baseCfg.startLevel = 0;
             baseCfg.capLevelToPlayerSize = true;
         }
-        if (useProxy) {
+        if (isLocalProxy && window.Android && typeof Android.proxyUrl === 'function') {
+            baseCfg.xhrSetup = function(xhr, reqUrl) {
+                try {
+                    if (/^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//i.test(reqUrl)) {
+                        const rObj = new URL(reqUrl);
+                        if (rObj.searchParams.get('u') || rObj.searchParams.get('url')) {
+                            const inner = rObj.searchParams.get('u') || rObj.searchParams.get('url');
+                            if (inner && inner.includes('.m3u8')) lastPlaylistUrl = inner;
+                            return;
+                        }
+                        if (localProxyRealBase) {
+                            const resolved = new URL(rObj.pathname + rObj.search, localProxyRealBase).toString();
+                            if (resolved.includes('.m3u8')) lastPlaylistUrl = resolved;
+                            xhr.open('GET', Android.proxyUrl(resolved, localProxyRef), true);
+                        }
+                        return;
+                    }
+                    if (/^https?:\/\//i.test(reqUrl)) {
+                        if (reqUrl.includes('.m3u8')) lastPlaylistUrl = reqUrl;
+                        xhr.open('GET', Android.proxyUrl(reqUrl, localProxyRef), true);
+                    }
+                } catch (e) {}
+            };
+        } else if (useProxy && !isLocalProxy) {
             baseCfg.xhrSetup = function(xhr, reqUrl) {
                 try {
                     let targetUrl = reqUrl;
@@ -2469,7 +2502,7 @@
                             targetUrl = baseObj.origin + dirPath + relPath.replace(/^\//, '');
                         }
                     }
-                    if (/^https?:\/\//i.test(targetUrl) && !targetUrl.startsWith(MY_CLOUD_PROXY)) {
+                    if (/^https?:\/\//i.test(targetUrl) && !targetUrl.startsWith(MY_CLOUD_PROXY) && !/^https?:\/\/(?:127\.0\.0\.1|localhost)/i.test(targetUrl)) {
                         if (targetUrl.includes('.m3u8')) lastPlaylistUrl = targetUrl;
                         xhr.open('GET', MY_CLOUD_PROXY + encodeURIComponent(targetUrl), true);
                     }
@@ -3209,7 +3242,7 @@ async function resetQuarantine() {
 
     function isSafeEmbedUrl(u) {
         if (!u || !/^https?:\/\//i.test(u)) return false;
-        return /(?:dailymotion\.com\/embed\/|ok\.ru\/videoembed\/|vk\.com\/video_ext\.php|archive\.org\/embed\/|player\.vimeo\.com\/video\/|youtube(?:-nocookie)?\.com\/embed\/|\/videos\/embed\/)/i.test(u);
+        return /(?:dailymotion\.com\/embed\/|geo\.dailymotion\.com\/player|ok\.ru\/videoembed\/|vk\.(?:com|ru|video)\/video_ext\.php|my\.mail\.ru\/video\/embed\/|sibnet\.ru\/shell\.php|vidmoly\.|voe\.sx\/e\/|streamtape\.com\/e\/|dood[a-z]*\.[a-z]+\/e\/|filemoon\.[a-z]+\/e\/|mixdrop\.[a-z]+\/e\/|uqload\.[a-z]+\/embed-|upstream\.to\/embed-|vtube\.[a-z]+\/embed-|sendvid\.com\/embed\/|archive\.org\/embed\/|player\.vimeo\.com\/video\/|youtube(?:-nocookie)?\.com\/embed\/|\/videos\/embed\/|\/embed\/[a-zA-Z0-9_\-]{4,})/i.test(u);
     }
 
     async function playLocally(url, sessionToken, isRetryAfterHeal = false) {
@@ -3236,7 +3269,8 @@ async function resetQuarantine() {
             document.getElementById('bufSpinner').style.display = 'none';
             if (webEmbedContainer) {
                 webEmbedContainer.style.display = 'block';
-                const refPol = /dailymotion\.com|ok\.ru|vk\.com|vimeo\.com|archive\.org/i.test(embedUrl) ? 'strict-origin-when-cross-origin' : 'no-referrer';
+                const isDmEmbed = /dailymotion\.com/i.test(embedUrl);
+                const refPol = isDmEmbed ? 'origin' : (/ok\.ru|vk\.|vimeo\.com|archive\.org|mail\.ru/i.test(embedUrl) ? 'strict-origin-when-cross-origin' : 'no-referrer');
                 webEmbedContainer.innerHTML = `<iframe tabindex="-1" src="${esc(embedUrl)}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="${refPol}"></iframe>`;
             }
             document.getElementById('pStatus').innerText = "Cihazda İzleniyor (Web Player)";
@@ -3353,7 +3387,8 @@ async function resetQuarantine() {
                 }
             });
         } else if (Hls.isSupported()) {
-            let triedProxyFallback = forceProxyFirst;
+            const isLocalApkProxy = /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//i.test(cleanStreamUrl);
+            let triedProxyFallback = forceProxyFirst || isLocalApkProxy;
             const startHlsPlayback = (useProxyMode) => {
                 if (sessionToken !== currentPlaySession) return;
                 if (hls) { try { hls.destroy(); } catch (e) {} hls = null; }
@@ -3400,7 +3435,7 @@ async function resetQuarantine() {
                     });
                 });
             };
-            startHlsPlayback(forceProxyFirst);
+            startHlsPlayback(forceProxyFirst && !isLocalApkProxy);
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = cleanStreamUrl;
             video.onerror = function() { handleStreamError(sessionToken); };
@@ -3775,14 +3810,23 @@ async function resetQuarantine() {
         }
 
 
-        const iframes = [];
-        const iframeRegex = /<iframe[^>]+src=["']([^"']+)["']/gi;
-        while ((m = iframeRegex.exec(unescaped)) !== null) {
-            let iUrl = m[1].trim();
+        const iframes = []; const seenIfr = new Set();
+        const addIfr = (rawU) => {
+            if (!rawU) return;
+            let iUrl = String(rawU).trim().replace(/['"\)\]>\\\s]+$/, '');
             if (iUrl.startsWith('//')) iUrl = 'https:' + iUrl;
             else if (iUrl.startsWith('/') && sourceUrl) { try { iUrl = new URL(sourceUrl).origin + iUrl; } catch (e) {} }
-            if (/^https?:\/\//i.test(iUrl) && !/doubleclick|googlesyndication|facebook|twitter|analytics|gtm/i.test(iUrl)) iframes.push(iUrl);
-        }
+            if (/^https?:\/\//i.test(iUrl) && !/doubleclick|googlesyndication|facebook|twitter|analytics|gtm|chat|comment|disqus|recaptcha|cloudflare/i.test(iUrl) && !seenIfr.has(iUrl)) {
+                seenIfr.add(iUrl);
+                iframes.push(iUrl);
+            }
+        };
+        const iframeRegex = /<(?:iframe|embed)[^>]+(?:src|data-src|data-lazy-src|data-litespeed-src)=["']([^"']+)["']/gi;
+        while ((m = iframeRegex.exec(unescaped)) !== null) addIfr(m[1]);
+        const dataFrameRegex = /data-(?:frame|iframe|embed|video|src|player|url)=["'](https?:\/\/[^"']+|\/\/[^"']+)["']/gi;
+        while ((m = dataFrameRegex.exec(unescaped)) !== null) addIfr(m[1]);
+        const knownPlayerRegex = /(https?:\/\/(?:www\.)?(?:ok\.ru\/videoembed\/|vk\.(?:com|ru|video)\/video_ext\.php|my\.mail\.ru\/video\/embed\/|video\.sibnet\.ru\/shell\.php|vidmoly\.[a-z]+\/embed-|voe\.sx\/e\/|streamtape\.com\/e\/|dood[a-z]*\.[a-z]+\/e\/|filemoon\.[a-z]+\/e\/|mixdrop\.[a-z]+\/e\/|uqload\.[a-z]+\/embed-|upstream\.to\/embed-|vtube\.[a-z]+\/embed-|sendvid\.com\/embed\/|player\.vimeo\.com\/video\/|dailymotion\.com\/embed\/video\/|geo\.dailymotion\.com\/player)[^"'\s<>\\]*)/gi;
+        while ((m = knownPlayerRegex.exec(unescaped)) !== null) addIfr(m[1]);
         return { m3u8, yt, dm, title, logo, iframes };
     }
 
@@ -3791,20 +3835,33 @@ async function resetQuarantine() {
         const cleanId = String(dmId || '').split(/[?&]/)[0].trim();
         if (!cleanId) return null;
         const metaUrl = `https://www.dailymotion.com/player/metadata/video/${cleanId}?embedder=${encodeURIComponent('https://www.dailymotion.com/video/' + cleanId)}&app=com.dailymotion.neon`;
-        // Önce doğrudan cihazdan veya APK proxy üzerinden çekmeyi dene ki Dailymotion HLS token'ı cihazın kendi IP'sine üretilsin
-        const tries = [{ u: metaUrl, proxy: false }];
-        if (window.Android && typeof Android.proxyUrl === 'function') {
-            try { tries.push({ u: Android.proxyUrl(metaUrl, 'https://www.dailymotion.com/'), proxy: false }); } catch (e) {}
+        const hasApkProxy = !!(window.Android && typeof Android.proxyUrl === 'function');
+        const tries = [];
+        if (hasApkProxy) {
+            try { tries.push({ u: Android.proxyUrl(metaUrl, 'https://www.dailymotion.com/'), viaWorker: false, viaApk: true }); } catch (e) {}
         }
-        tries.push({ u: MY_CLOUD_PROXY + encodeURIComponent(metaUrl), proxy: true });
+        tries.push({ u: metaUrl, viaWorker: false, viaApk: false });
+        if (!hasApkProxy) {
+            tries.push({ u: MY_CLOUD_PROXY + encodeURIComponent(metaUrl), viaWorker: true, viaApk: false });
+        }
         for (const t of tries) {
             try {
-                const d = await fastJsonFetch(t.u, 5500);
+                const d = await fastJsonFetch(t.u, 5000);
                 const q = d && d.qualities;
                 const arr = q && ((q.auto && q.auto[0]) || (q['720'] && q['720'][0]) || (q['480'] && q['480'][0]) || (q['380'] && q['380'][0]));
                 if (arr && arr.url) {
-                    // Eğer metadata Cloudflare Worker (MY_CLOUD_PROXY) üzerinden alındıysa, Dailymotion token'ı Worker IP'sine kilitlidir; oynatırken de #cors_proxy ile aynı Worker üzerinden oynat ki 403 Forbidden vermesin
-                    return (t.proxy && !(window.Android && typeof Android.proxyUrl === 'function')) ? (arr.url + '#cors_proxy') : arr.url;
+                    if (t.viaApk && hasApkProxy) {
+                        return Android.proxyUrl(arr.url, 'https://www.dailymotion.com/');
+                    }
+                    if (!t.viaWorker) {
+                        return hasApkProxy ? Android.proxyUrl(arr.url, 'https://www.dailymotion.com/') : arr.url;
+                    }
+                    // Worker üzerinden alındıysa manifestin 403 Forbidden vermediğini doğrula
+                    const checkRes = await fetchTO(MY_CLOUD_PROXY + encodeURIComponent(arr.url), 3500);
+                    if (checkRes && checkRes.ok) {
+                        const m3uTxt = await checkRes.text();
+                        if (m3uTxt && m3uTxt.includes('#EXTM3U')) return arr.url + '#cors_proxy';
+                    }
                 }
             } catch (e) {}
         }
@@ -5390,7 +5447,7 @@ async function resetQuarantine() {
                         thumb: x.thumbnail_240_url || '',
                         dur: x.duration || 0,
                         pageUrl: `https://www.dailymotion.com/video/${x.id}`,
-                        embedFallback: `https://www.dailymotion.com/embed/video/${x.id}?autoplay=1&queue-enable=false&ui-logo=false`
+                        embedFallback: `https://geo.dailymotion.com/player.html?video=${x.id}&autoplay=true`
                     });
                 });
             } catch (e) {}
@@ -5424,7 +5481,7 @@ async function resetQuarantine() {
         if (!href || !/^https?:\/\//i.test(href)) return null;
         let host = '';
         try { host = new URL(href).hostname.replace(/^www\./, ''); } catch (e) { return null; }
-        if (!host || /google\.|duckduckgo\.|bing\.com|yahoo\.com|wikipedia\.|imdb\.com|sinemalar\.com|beyazperde\.com|eksisozluk\.|twitter\.|x\.com|instagram\.|facebook\.|tiktok\./i.test(host)) return null;
+        if (!host || /google\.|duckduckgo\.|bing\.com|yahoo\.com|wikipedia\.|imdb\.com|sinemalar\.com|beyazperde\.com|eksisozluk\.|twitter\.|x\.com|instagram\.|facebook\.|tiktok\.|pinterest\.|linkedin\.|reddit\.com|amazon\.|heidiklum|netflix\.com|disneyplus\.com|blutv\.com|exxen\.com|gain\.tv|mubi\.com|apple\.com|spotify\.com/i.test(host)) return null;
 
         const ytId = extractYTId(href);
         if (ytId) {
@@ -5448,7 +5505,7 @@ async function resetQuarantine() {
                 thumb: thumbUrl || `https://www.dailymotion.com/thumbnail/video/${dmId}`,
                 dur: durSec || 0,
                 pageUrl: `https://www.dailymotion.com/video/${dmId}`,
-                embedFallback: `https://www.dailymotion.com/embed/video/${dmId}?autoplay=1&queue-enable=false&ui-logo=false`
+                embedFallback: `https://geo.dailymotion.com/player.html?video=${dmId}&autoplay=true`
             };
         }
         const okMatch = href.match(/(?:ok\.ru|odnoklassniki\.ru)\/(?:video|videoembed|live)\/(\d+)/i);
@@ -5466,7 +5523,7 @@ async function resetQuarantine() {
                 dur: durSec || 0
             };
         }
-        const vkMatch = href.match(/vk\.(?:com|ru|video)\/video(-?\d+)_(\d+)/i);
+        const vkMatch = href.match(/vk\.(?:com|ru|video)\/(?:video|clip)(-?\d+)_(\d+)/i);
         if (vkMatch) {
             const emb = `https://vk.com/video_ext.php?oid=${vkMatch[1]}&id=${vkMatch[2]}&hd=2&autoplay=1`;
             return {
@@ -5478,6 +5535,36 @@ async function resetQuarantine() {
                 title: title || 'VK Video',
                 sub: `🎬 VK Video (${host})`,
                 thumb: thumbUrl || `https://www.google.com/s2/favicons?sz=64&domain_url=vk.com`,
+                dur: durSec || 0
+            };
+        }
+        const mailMatch = href.match(/my\.mail\.ru\/([^/]+)\/([^/]+)\/video\/([^/]+)\/(\d+)\.html/i);
+        if (mailMatch) {
+            const emb = `https://my.mail.ru/video/embed/${mailMatch[1]}/${mailMatch[2]}/${mailMatch[3]}/${mailMatch[4]}`;
+            return {
+                src: 'web',
+                id: href,
+                pageUrl: href,
+                embedUrl: emb,
+                embedFallback: emb,
+                title: title || 'Mail.ru Video',
+                sub: `🎬 Mail.ru (${host})`,
+                thumb: thumbUrl || `https://www.google.com/s2/favicons?sz=64&domain_url=mail.ru`,
+                dur: durSec || 0
+            };
+        }
+        const sibMatch = href.match(/video\.sibnet\.ru\/(?:video|shell\.php\?videoid=)(\d+)/i);
+        if (sibMatch && sibMatch[1]) {
+            const emb = `https://video.sibnet.ru/shell.php?videoid=${sibMatch[1]}`;
+            return {
+                src: 'web',
+                id: href,
+                pageUrl: href,
+                embedUrl: emb,
+                embedFallback: emb,
+                title: title || 'Sibnet Video',
+                sub: `🎬 Sibnet (${host})`,
+                thumb: thumbUrl || `https://www.google.com/s2/favicons?sz=64&domain_url=sibnet.ru`,
                 dur: durSec || 0
             };
         }
@@ -5524,12 +5611,14 @@ async function resetQuarantine() {
             results.push(item);
         };
         const searchQueries = [
-            `${q} izle`,
-            `${q} full film tek parça`,
-            `${q} site:ok.ru OR site:dailymotion.com OR site:vk.com`
+            `${q} full film izle`,
+            `${q} tek parça izle`,
+            `${q} türkçe dublaj full izle`,
+            `${q} site:ok.ru OR site:vk.com OR site:dailymotion.com OR site:my.mail.ru`
         ];
         const bingQueries = [
-            `${q} full izle`,
+            `${q} full film izle`,
+            `${q} tek parça izle`,
             `${q} izle`
         ];
 
@@ -5989,28 +6078,62 @@ async function resetQuarantine() {
     }
 
 
+    function unpackJsEval(html) {
+        if (!html || !html.includes('eval(function(p,a,c,k,e,')) return '';
+        let out = '';
+        const re = /eval\(function\(p,a,c,k,e,[dr]\)\{[\s\S]*?\}\('([\s\S]*?)',\s*(\d+),\s*(\d+),\s*'([^']*)'\.split\('\|'\)/g;
+        let m;
+        while ((m = re.exec(html)) !== null) {
+            try {
+                let p = m[1], a = parseInt(m[2], 10), c = parseInt(m[3], 10), k = m[4].split('|');
+                const enc = (num) => (num < a ? '' : enc(Math.floor(num / a))) + ((num = num % a) > 35 ? String.fromCharCode(num + 29) : num.toString(36));
+                while (c--) {
+                    if (k[c]) p = p.replace(new RegExp('\\b' + enc(c) + '\\b', 'g'), k[c]);
+                }
+                out += '\n' + p;
+            } catch (e) {}
+        }
+        return out;
+    }
+
     function mvExtraVideoUrls(html, base) {
         if (!html) return [];
-        const t = html.split('\\/').join('/').split('\\u002F').join('/').split('\\u0026').join('&').replace(/&amp;/gi, '&');
+        const unpacked = unpackJsEval(html);
+        const combined = (html + '\n' + unpacked)
+            .split('\\/').join('/')
+            .split('\u002F').join('/')
+            .split('\u002f').join('/')
+            .split('\u0026').join('&')
+            .replace(/&amp;/gi, '&');
         const found = [], seen = new Set();
         const add = (u) => {
             if (!u) return;
             let abs = u.trim().replace(/['"\)\]>\\\s]+$/, '');
+            if (abs.startsWith('//')) abs = 'https:' + abs;
             try { abs = new URL(abs, base).toString(); } catch (e) { return; }
-            if (!/^https?:/i.test(abs) || /\.(mpd|jpg|jpeg|png|gif|vtt|srt)(\?|$)/i.test(abs)) return;
+            if (!/^https?:/i.test(abs) || /\.(mpd|jpg|jpeg|png|gif|webp|svg|vtt|srt|css|js|woff|ttf)(\?|$)/i.test(abs)) return;
+            if (/doubleclick|googlesyndication|analytics|facebook|twitter/i.test(abs)) return;
             if (!seen.has(abs)) { seen.add(abs); found.push(abs); }
         };
         let m;
+        // atob("...") içindeki gizli .m3u8 / .mp4 linklerini çöz
+        const atobRe = /atob\(\s*["']([A-Za-z0-9+/=]{16,})["']\s*\)/g;
+        while ((m = atobRe.exec(combined)) !== null) {
+            try {
+                const dec = atob(m[1]);
+                if (/https?:\/\/.*\.(?:m3u8|mp4)/i.test(dec)) add(dec);
+            } catch (e) {}
+        }
         const pats = [
-            /property=["']og:video(?::secure_url|:url)?["'][^>]*content=["']([^"']+)["']/gi,
-            /content=["']([^"']+)["'][^>]*property=["']og:video(?::secure_url|:url)?["']/gi,
+            /property=["']og:video(?::secure_url|:url)?["'][^>]*content=["']([^"']+\.(?:m3u8|mp4|webm)[^"']*)["']/gi,
             /<source[^>]+src=["']([^"']+)["']/gi,
             /<video[^>]+src=["']([^"']+)["']/gi,
-            /"contentUrl"\s*:\s*"([^"]+)"/gi,
-            /["']?file["']?\s*:\s*["']([^"']+\.(?:mp4|m3u8|webm|m4v|mov)[^"']*)["']/gi,
-            /["'](https?:\/\/[^"'\s<>]+\.(?:mp4|webm|m4v|mov)(?:\?[^"'\s<>]*)?)["']/gi
+            /"contentUrl"\s*:\s*"([^"]+\.(?:m3u8|mp4|webm)[^"]*)"/gi,
+            /["']?(?:file|hls|src|video_url|stream_url|videoUrl|hlsUrl|manifest)["']?\s*:\s*["']((?:https?:)?\/\/[^"']+\.(?:m3u8|mp4|webm|m4v|mov)[^"']*)["']/gi,
+            /["']((?:https?:)?\/\/[^"'\s<>\\]+\.m3u8(?:\?[^"'\s<>\\]*)?)["']/gi,
+            /["']((?:https?:)?\/\/[^"'\s<>\\]+\.(?:mp4|webm|m4v|mov)(?:\?[^"'\s<>\\]*)?)["']/gi
         ];
-        pats.forEach(re => { while ((m = re.exec(t)) !== null) add(m[1]); });
+        pats.forEach(re => { while ((m = re.exec(combined)) !== null) add(m[1]); });
         found.sort((a, b) => (/\.m3u8/i.test(b) ? 1 : 0) - (/\.m3u8/i.test(a) ? 1 : 0));
         return found;
     }
@@ -6034,14 +6157,17 @@ async function resetQuarantine() {
         return master || m3[m3.length - 1] || list.find(x => /\.mp4/i.test(x.url)) || list[0];
     }
     function mvProxy(url, ref) {
-        if (window.Android && typeof Android.proxyUrl === 'function') { try { return Android.proxyUrl(url, ref || ''); } catch (e) {} }
+        if (window.Android && typeof Android.proxyUrl === 'function') {
+            if (/^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//i.test(url)) return url;
+            try { return Android.proxyUrl(url, ref || ''); } catch (e) {}
+        }
         return url;
     }
     async function resolveMovieStreamUrl(r, st) {
         if (r && r._cachedResolved) return r._cachedResolved;
         const res = await resolveMovieStreamUrl0(r, st);
-        if (res && res.type === 'stream' && !res.raw && !/youtube\.com|youtu\.be/i.test(res.url) && (r.src === 'web' || r.src === 'dm') && window.Android && typeof Android.proxyUrl === 'function') {
-            const ref = r.src === 'dm' ? 'https://www.dailymotion.com/' : (r.pageUrl || r.id || '');
+        if (res && res.type === 'stream' && !res.raw && !/youtube\.com|youtu\.be/i.test(res.url) && !/^https?:\/\/(?:127\.0\.0\.1|localhost)/i.test(res.url) && (r.src === 'web' || r.src === 'dm') && window.Android && typeof Android.proxyUrl === 'function') {
+            const ref = res.ref || (r.src === 'dm' ? 'https://www.dailymotion.com/' : (r.pageUrl || r.id || ''));
             const cleanU = String(res.url).split('#')[0];
             res.raw = cleanU; res.ref = ref; res.url = mvProxy(cleanU, ref);
         }
@@ -6052,12 +6178,11 @@ async function resetQuarantine() {
         const sniffFallback = async (pageUrl) => {
             if (!(window.Android && typeof Android.sniff === 'function')) return null;
             if (st) { st.style.color = '#f1c40f'; st.innerText = 'Sayfadaki video yakalanıyor (birkaç saniye sürebilir)...'; }
-            const list = await mvSniff(pageUrl, 24000);
+            const list = await mvSniff(pageUrl, 20000);
             const pick = mvPick(list);
             if (!pick) return null;
             return { type: 'stream', url: mvProxy(pick.url, pick.ref || pageUrl), raw: pick.url, ref: pick.ref || pageUrl, embedFallback: r.embedFallback || '' };
         };
-        // Dailymotion veya Web kaynaklarında önce doğrudan akış (.m3u8 / .mp4) çözmeyi dene, olmazsa APK sniff çalıştır
         let res0 = null, err0 = null;
         try { res0 = await resolveMovieStreamUrlBase(r, st); } catch (e) { err0 = e; }
         if (res0 && res0.type === 'stream') return res0;
@@ -6074,10 +6199,10 @@ async function resetQuarantine() {
         if (r.src === 'yt') return { type: 'stream', url: 'https://www.youtube.com/watch?v=' + r.id };
         if (r.src === 'dm') {
             if (st) { st.style.color = '#f1c40f'; st.innerText = 'Dailymotion video akışı çözülüyor...'; }
-            const dmEmbed = `https://www.dailymotion.com/embed/video/${r.id}?autoplay=1&queue-enable=false&ui-logo=false`;
+            const dmEmbed = `https://geo.dailymotion.com/player.html?video=${r.id}&autoplay=true`;
             const dmM3u8 = await resolveDailymotionM3u8(r.id);
-            if (dmM3u8) return { type: 'stream', url: dmM3u8, embedFallback: dmEmbed };
-            return { type: 'embed', url: dmEmbed };
+            if (dmM3u8) return { type: 'stream', url: dmM3u8, ref: 'https://www.dailymotion.com/', embedFallback: dmEmbed };
+            return { type: 'embed', url: dmEmbed, embedFallback: dmEmbed };
         }
         if (r.src === 'arc') {
             if (st) { st.style.color = '#f1c40f'; st.innerText = 'Archive.org film dosyası aranıyor...'; }
@@ -6103,45 +6228,69 @@ async function resetQuarantine() {
             try {
                 const html = await fetchHtmlViaProxy(pageUrl, 9000);
                 const ext = extractStreamsFromHtml(html, pageUrl);
-                if (ext.m3u8 && ext.m3u8.length > 0) return { type: 'stream', url: ext.m3u8[0] };
+                if (ext.m3u8 && ext.m3u8.length > 0) return { type: 'stream', url: ext.m3u8[0], ref: pageUrl };
 
 
-                const mp4Match = html.replace(/\\\//g, '/').match(/https?:\/\/[A-Za-z0-9_\-\.\/:%\?=&~+#]+\.mp4(?:\?[A-Za-z0-9_\-\.\/:%=&~+#]*)?/i);
-                if (mp4Match && mp4Match[0]) return { type: 'stream', url: mp4Match[0] };
-                const extraU = mvExtraVideoUrls(html, pageUrl); if (extraU.length) return { type: 'stream', url: extraU[0] };
+                const extraU = mvExtraVideoUrls(html, pageUrl);
+                if (extraU.length) return { type: 'stream', url: extraU[0], ref: pageUrl };
 
 
                 if (ext.yt && ext.yt.length > 0) return { type: 'stream', url: ext.yt[0] };
                 if (ext.dm && ext.dm.length > 0) {
+                    const dmEmb = `https://geo.dailymotion.com/player.html?video=${ext.dm[0]}&autoplay=true`;
                     const dmUrl = await resolveDailymotionM3u8(ext.dm[0]);
-                    if (dmUrl) return { type: 'stream', url: dmUrl, embedFallback: `https://www.dailymotion.com/embed/video/${ext.dm[0]}?autoplay=1&queue-enable=false&ui-logo=false` };
-                    return { type: 'embed', url: `https://www.dailymotion.com/embed/video/${ext.dm[0]}?autoplay=1&queue-enable=false&ui-logo=false` };
+                    if (dmUrl) return { type: 'stream', url: dmUrl, ref: 'https://www.dailymotion.com/', embedFallback: dmEmb };
+                    return { type: 'embed', url: dmEmb, embedFallback: dmEmb };
                 }
 
 
-                if (ext.iframes && ext.iframes.length > 0) {
-                    for (const ifr of ext.iframes.slice(0, 5)) {
+                // Türk film sitelerinde alternatif player sekmeleri (?p=2, /2/ vb.) ve gömülü iframe'leri tara
+                const candidateIframes = [...(ext.iframes || [])];
+                if (!candidateIframes.length) {
+                    const subPageRe = /href=["']([^"']*?(?:\?p=\d+|part=\d+|alternatif|player)[^"']*)["']/gi;
+                    let sm;
+                    while ((sm = subPageRe.exec(html)) !== null && candidateIframes.length < 3) {
                         try {
-                            const ifrHtml = await fetchHtmlViaProxy(ifr, 6000);
-                            const ifrExt = extractStreamsFromHtml(ifrHtml, ifr);
-                            const safeIfr = isSafeEmbedUrl(ifr) ? ifr : '';
-                            if (ifrExt.m3u8 && ifrExt.m3u8.length > 0) return { type: 'stream', url: ifrExt.m3u8[0], embedFallback: safeIfr };
-                            const ifrMp4 = ifrHtml.replace(/\\\//g, '/').match(/https?:\/\/[A-Za-z0-9_\-\.\/:%\?=&~+#]+\.mp4(?:\?[A-Za-z0-9_\-\.\/:%=&~+#]*)?/i);
-                            if (ifrMp4 && ifrMp4[0]) return { type: 'stream', url: ifrMp4[0], embedFallback: safeIfr };
-                            const ifrExtra = mvExtraVideoUrls(ifrHtml, ifr); if (ifrExtra.length) return { type: 'stream', url: ifrExtra[0], embedFallback: safeIfr };
-                            if (ifrExt.dm && ifrExt.dm.length > 0) {
-                                const dmUrl2 = await resolveDailymotionM3u8(ifrExt.dm[0]);
-                                const dmEmb2 = `https://www.dailymotion.com/embed/video/${ifrExt.dm[0]}?autoplay=1&queue-enable=false&ui-logo=false`;
-                                if (dmUrl2) return { type: 'stream', url: dmUrl2, embedFallback: dmEmb2 };
-                                return { type: 'embed', url: dmEmb2 };
-                            }
+                            const subU = new URL(sm[1], pageUrl).toString();
+                            if (subU !== pageUrl) candidateIframes.push(subU);
                         } catch (e) {}
                     }
-                    const validEmbedIfr = ext.iframes.find(u => isSafeEmbedUrl(u));
-                    if (validEmbedIfr) return { type: 'embed', url: validEmbedIfr };
+                }
+
+
+                if (candidateIframes.length > 0) {
+                    for (const ifr of candidateIframes.slice(0, 6)) {
+                        try {
+                            const ifrHtml = await fetchHtmlViaProxy(ifr, 6500);
+                            const ifrExt = extractStreamsFromHtml(ifrHtml, ifr);
+                            const safeIfr = isSafeEmbedUrl(ifr) ? ifr : (ifrExt.iframes.find(u => isSafeEmbedUrl(u)) || '');
+                            if (ifrExt.m3u8 && ifrExt.m3u8.length > 0) return { type: 'stream', url: ifrExt.m3u8[0], ref: ifr, embedFallback: safeIfr };
+                            const ifrExtra = mvExtraVideoUrls(ifrHtml, ifr);
+                            if (ifrExtra.length) return { type: 'stream', url: ifrExtra[0], ref: ifr, embedFallback: safeIfr };
+                            if (ifrExt.yt && ifrExt.yt.length > 0) return { type: 'stream', url: ifrExt.yt[0] };
+                            if (ifrExt.dm && ifrExt.dm.length > 0) {
+                                const dmEmb2 = `https://geo.dailymotion.com/player.html?video=${ifrExt.dm[0]}&autoplay=true`;
+                                const dmUrl2 = await resolveDailymotionM3u8(ifrExt.dm[0]);
+                                if (dmUrl2) return { type: 'stream', url: dmUrl2, ref: 'https://www.dailymotion.com/', embedFallback: dmEmb2 };
+                                return { type: 'embed', url: dmEmb2, embedFallback: dmEmb2 };
+                            }
+                            // Iframe içinde ikinci seviye player iframe varsa (örn: film sitesi -> aracı -> vidmoly/ok.ru/voe)
+                            for (const nestedIfr of (ifrExt.iframes || []).slice(0, 3)) {
+                                try {
+                                    const nHtml = await fetchHtmlViaProxy(nestedIfr, 5500);
+                                    const nExtra = mvExtraVideoUrls(nHtml, nestedIfr);
+                                    const safeNested = isSafeEmbedUrl(nestedIfr) ? nestedIfr : safeIfr;
+                                    if (nExtra.length) return { type: 'stream', url: nExtra[0], ref: nestedIfr, embedFallback: safeNested };
+                                } catch (e) {}
+                            }
+                            if (safeIfr) return { type: 'embed', url: safeIfr, embedFallback: safeIfr };
+                        } catch (e) {}
+                    }
+                    const validEmbedIfr = candidateIframes.find(u => isSafeEmbedUrl(u));
+                    if (validEmbedIfr) return { type: 'embed', url: validEmbedIfr, embedFallback: validEmbedIfr };
                 }
             } catch (e) {}
-            if (r.embedUrl && isSafeEmbedUrl(r.embedUrl)) return { type: 'embed', url: r.embedUrl };
+            if (r.embedUrl && isSafeEmbedUrl(r.embedUrl)) return { type: 'embed', url: r.embedUrl, embedFallback: r.embedUrl };
             throw new Error('Bu web sayfasında doğrudan oynatılabilir video akışı bulunamadı');
         }
         throw new Error('Desteklenmeyen kaynak');
