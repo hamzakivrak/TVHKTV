@@ -5523,22 +5523,14 @@ async function resetQuarantine() {
             seen.add(k); seen.add(href);
             results.push(item);
         };
-        // Genel video aramasını koru; ayrıca yaygın film sitelerindeki sonuçları
-        // arama motorlarından bulmaya çalış. Oynatma korumalarını aşmaya çalışmaz.
         const searchQueries = [
             `${q} izle`,
             `${q} full film tek parça`,
-            `${q} site:ok.ru OR site:dailymotion.com OR site:vk.com`,
-            `${q} site:hdfilmcehennemi.nl OR site:hdfilmcehennemi.com`,
-            `${q} site:fullhdfilmizlesene.de OR site:fullhdfilmizlesene.pw`,
-            `${q} site:720pizle.org OR site:filmizle.to OR site:film izle`,
-            `${q} film izle online Türkçe dublaj altyazılı`
+            `${q} site:ok.ru OR site:dailymotion.com OR site:vk.com`
         ];
         const bingQueries = [
             `${q} full izle`,
-            `${q} izle`,
-            `${q} site:hdfilmcehennemi.nl OR site:hdfilmcehennemi.com`,
-            `${q} site:fullhdfilmizlesene.de OR site:720pizle.org OR site:filmizle.to`
+            `${q} izle`
         ];
 
         const jobs = [
@@ -5596,9 +5588,10 @@ async function resetQuarantine() {
 
     function sortMoviesByScoreAndDur(arr) {
         if (!Array.isArray(arr)) return arr;
-        // Önce en uzun süre; sadece mvScore >= 0.70 olan sonuçlar bu sıralamaya gelir.
-        // Süresi bilinmeyenler (0) süre bilgisi bulunan videoların arkasında kalır.
         return arr.sort((a, b) => {
+            const pa = Math.round((a.score || 0) * 100);
+            const pb = Math.round((b.score || 0) * 100);
+            if (pb !== pa) return pb - pa;
             const da = mvParseLen(a.dur || 0);
             const db = mvParseLen(b.dur || 0);
             if (db !== da) return db - da;
@@ -5818,7 +5811,7 @@ async function resetQuarantine() {
             return;
         }
         st.style.color = '#2ecc71';
-        st.innerText = `${good.length} video bulundu (%70 ve üzeri eşleşenler, süreye göre uzun→kısa sıralı).` + (errs.length ? ' (' + errs[0] + ')' : '') + ' İzlemek için OK, oynarken ▲ ▼ ile kanal gibi gezebilirsiniz.';
+        st.innerText = `${good.length} video bulundu (eşleşmeye göre sıralı).` + (errs.length ? ' (' + errs[0] + ')' : '') + ' İzlemek için OK, oynarken ▲ ▼ ile kanal gibi gezebilirsiniz.';
         renderMovies();
         enrichMissingMovieDurations(movieResults, 'res');
     }
