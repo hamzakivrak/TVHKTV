@@ -54,7 +54,7 @@ jobs:
           TVCAST_EOF
           cat > gradle.properties <<'TVCAST_EOF'
           org.gradle.jvmargs=-Xmx2g
-          android.useAndroidX=false
+          android.useAndroidX=true
           android.nonTransitiveRClass=true
           TVCAST_EOF
           mkdir -p app
@@ -71,8 +71,8 @@ jobs:
                   applicationId "com.tvcast.player"
                   minSdk 21
                   targetSdk 34
-                  versionCode 5
-                  versionName "1.4"
+                  versionCode 7
+                  versionName "1.6"
               }
 
               buildTypes {
@@ -84,6 +84,11 @@ jobs:
                   sourceCompatibility JavaVersion.VERSION_1_8
                   targetCompatibility JavaVersion.VERSION_1_8
               }
+          }
+
+          dependencies {
+              implementation 'com.google.android.gms:play-services-cast-framework:21.5.0'
+              implementation 'androidx.mediarouter:mediarouter:1.7.0'
           }
           TVCAST_EOF
           mkdir -p app/src/main/res/xml
@@ -128,6 +133,9 @@ jobs:
                           <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
                       </intent-filter>
                   </activity>
+                  <meta-data
+                      android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+                      android:value="com.tvcast.player.CastOptionsProvider" />
                   <meta-data
                       android:name="com.google.android.gms.car.application"
                       android:resource="@xml/automotive_app_desc" />
@@ -212,6 +220,17 @@ jobs:
               private BroadcastReceiver cmdReceiver;
               private boolean serviceUp = false;
               private RemoteServer remote;
+              private CastHelper castH;
+
+              private CastHelper castHelper() {
+                  if (castH == null) {
+                      castH = new CastHelper(this, new CastHelper.Out() {
+                          @Override
+                          public void js(String s) { jsCb(s); }
+                      });
+                  }
+                  return castH;
+              }
               private static final int REMOTE_PORT = 8765;
               private ValueCallback<Uri[]> fileCb;
               private static final int REQ_FILE = 7421;
@@ -466,6 +485,55 @@ jobs:
                                   msg = "Ulaşılamadı (TV açık mı, uygulama çalışıyor mu, aynı Wi-Fi mi?)";
                               }
                               jsCb("window.__tvPingDone&&__tvPingDone(" + JSONObject.quote(ip) + "," + ok + "," + JSONObject.quote(msg) + ")");
+                          }
+                      }).start();
+                  }
+
+                  @JavascriptInterface
+                  public void castScan() { castHelper().scan(); }
+
+                  @JavascriptInterface
+                  public void castPlay(String id, String url, String mime, String title, String logo) { castHelper().play(id, url, mime, title, logo); }
+
+                  @JavascriptInterface
+                  public void castToggle() { castHelper().toggle(); }
+
+                  @JavascriptInterface
+                  public void castStop() { castHelper().stop(); }
+
+                  @JavascriptInterface
+                  public void tvScan(final String code) {
+                      final String me = localIp();
+                      if (me.length() == 0) { jsCb("window.__tvScanDone&&__tvScanDone([])"); return; }
+                      final String prefix = me.substring(0, me.lastIndexOf('.') + 1);
+                      final String cd = (code == null || code.length() != 4) ? "0000" : code;
+                      new Thread(new Runnable() {
+                          @Override
+                          public void run() {
+                              final java.util.List<String> found = java.util.Collections.synchronizedList(new java.util.ArrayList<String>());
+                              java.util.concurrent.ExecutorService ex = java.util.concurrent.Executors.newFixedThreadPool(48);
+                              for (int i = 1; i < 255; i++) {
+                                  final String ip = prefix + i;
+                                  if (ip.equals(me)) continue;
+                                  ex.execute(new Runnable() {
+                                      @Override
+                                      public void run() {
+                                          try {
+                                              HttpURLConnection c = (HttpURLConnection) new URL("http://" + ip + ":" + REMOTE_PORT + "/ping?code=" + cd).openConnection();
+                                              c.setConnectTimeout(700);
+                                              c.setReadTimeout(1500);
+                                              int rc = c.getResponseCode();
+                                              if (rc == 200 || rc == 403) found.add(ip + "|" + (rc == 200));
+                                              c.disconnect();
+                                          } catch (Exception ignored) { }
+                                      }
+                                  });
+                              }
+                              ex.shutdown();
+                              try { ex.awaitTermination(25, java.util.concurrent.TimeUnit.SECONDS); } catch (Exception ignored) { }
+                              org.json.JSONArray arr = new org.json.JSONArray();
+                              synchronized (found) { for (String f : found) arr.put(f); }
+                              jsCb("window.__tvScanDone&&__tvScanDone(" + arr.toString() + ")");
                           }
                       }).start();
                   }
@@ -762,6 +830,180 @@ jobs:
                   try { stopService(new Intent(this, PlaybackService.class)); } catch (Exception ignored) { }
                   if (web != null) { web.loadUrl("about:blank"); web.destroy(); }
                   super.onDestroy();
+              }
+          }
+          TVCAST_EOF
+          cat > app/src/main/java/com/tvcast/player/CastHelper.java <<'TVCAST_EOF'
+          package com.tvcast.player;
+
+          import android.app.Activity;
+          import android.os.Handler;
+          import android.os.Looper;
+          import androidx.mediarouter.media.MediaRouteSelector;
+          import androidx.mediarouter.media.MediaRouter;
+          import com.google.android.gms.cast.MediaInfo;
+          import com.google.android.gms.cast.MediaLoadRequestData;
+          import com.google.android.gms.cast.MediaMetadata;
+          import com.google.android.gms.cast.framework.CastContext;
+          import com.google.android.gms.cast.framework.CastSession;
+          import com.google.android.gms.cast.framework.SessionManagerListener;
+          import com.google.android.gms.cast.framework.media.RemoteMediaClient;
+          import com.google.android.gms.cast.CastMediaControlIntent;
+          import org.json.JSONArray;
+          import org.json.JSONObject;
+
+          public class CastHelper {
+              public interface Out { void js(String s); }
+
+              private final Activity act;
+              private final Out out;
+              private final Handler h = new Handler(Looper.getMainLooper());
+              private CastContext ctx;
+              private MediaRouter router;
+              private MediaRouteSelector sel;
+              private boolean ready = false;
+              private String pendUrl, pendMime, pendTitle, pendLogo;
+              private String connectedRoute = "";
+
+              private final MediaRouter.Callback cb = new MediaRouter.Callback() { };
+
+              private final SessionManagerListener<CastSession> sl = new SessionManagerListener<CastSession>() {
+                  @Override public void onSessionStarting(CastSession s) { }
+                  @Override public void onSessionStarted(CastSession s, String id) { loadPending(); }
+                  @Override public void onSessionStartFailed(CastSession s, int e) { out.js("window.__castState&&__castState(false,'Bağlanılamadı (kod " + e + ")')"); }
+                  @Override public void onSessionEnding(CastSession s) { }
+                  @Override public void onSessionEnded(CastSession s, int e) { connectedRoute = ""; }
+                  @Override public void onSessionResuming(CastSession s, String id) { }
+                  @Override public void onSessionResumed(CastSession s, boolean w) { loadPending(); }
+                  @Override public void onSessionResumeFailed(CastSession s, int e) { }
+                  @Override public void onSessionSuspended(CastSession s, int e) { }
+              };
+
+              public CastHelper(Activity a, Out o) { act = a; out = o; }
+
+              private boolean ensure() {
+                  if (ready) return true;
+                  try {
+                      ctx = CastContext.getSharedInstance(act);
+                      router = MediaRouter.getInstance(act);
+                      sel = new MediaRouteSelector.Builder()
+                              .addControlCategory(CastMediaControlIntent.categoryForCast(CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID))
+                              .build();
+                      ctx.getSessionManager().addSessionManagerListener(sl, CastSession.class);
+                      ready = true;
+                  } catch (Throwable t) {
+                      ready = false;
+                  }
+                  return ready;
+              }
+
+              public void scan() {
+                  h.post(new Runnable() {
+                      @Override public void run() {
+                          if (!ensure()) {
+                              out.js("window.__castScanDone&&__castScanDone([]," + JSONObject.quote("Google Play Hizmetleri / Cast bu cihazda yok") + ")");
+                              return;
+                          }
+                          router.addCallback(sel, cb, MediaRouter.CALLBACK_FLAG_REQUEST_DISCOVERY | MediaRouter.CALLBACK_FLAG_PERFORM_ACTIVE_SCAN);
+                          h.postDelayed(new Runnable() {
+                              @Override public void run() {
+                                  JSONArray arr = new JSONArray();
+                                  try {
+                                      for (MediaRouter.RouteInfo r : router.getRoutes()) {
+                                          if (r.isDefaultOrBluetooth() || !r.matchesSelector(sel)) continue;
+                                          JSONObject o = new JSONObject();
+                                          o.put("id", r.getId());
+                                          o.put("name", r.getName());
+                                          arr.put(o);
+                                      }
+                                  } catch (Throwable ignored) { }
+                                  out.js("window.__castScanDone&&__castScanDone(" + arr.toString() + ",'')");
+                              }
+                          }, 4000);
+                      }
+                  });
+              }
+
+              public void play(final String id, final String url, final String mime, final String title, final String logo) {
+                  h.post(new Runnable() {
+                      @Override public void run() {
+                          if (!ensure()) { out.js("window.__castState&&__castState(false,'Cast kullanılamıyor')"); return; }
+                          pendUrl = url; pendMime = mime; pendTitle = title; pendLogo = logo;
+                          CastSession cs = ctx.getSessionManager().getCurrentCastSession();
+                          if (cs != null && cs.isConnected() && id.equals(connectedRoute)) { loadPending(); return; }
+                          MediaRouter.RouteInfo target = null;
+                          for (MediaRouter.RouteInfo r : router.getRoutes()) { if (r.getId().equals(id)) { target = r; break; } }
+                          if (target == null) { out.js("window.__castState&&__castState(false,'Cihaz artık görünmüyor, yeniden arayın')"); return; }
+                          connectedRoute = id;
+                          router.selectRoute(target);
+                      }
+                  });
+              }
+
+              private void loadPending() {
+                  try {
+                      CastSession cs = ctx.getSessionManager().getCurrentCastSession();
+                      RemoteMediaClient rmc = cs == null ? null : cs.getRemoteMediaClient();
+                      if (rmc == null || pendUrl == null) { out.js("window.__castState&&__castState(false,'Oturum hazır değil')"); return; }
+                      MediaMetadata md = new MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE);
+                      md.putString(MediaMetadata.KEY_TITLE, pendTitle == null ? "" : pendTitle);
+                      if (pendLogo != null && pendLogo.startsWith("http")) md.addImage(new com.google.android.gms.common.images.WebImage(android.net.Uri.parse(pendLogo)));
+                      boolean live = pendUrl.contains(".m3u8");
+                      MediaInfo info = new MediaInfo.Builder(pendUrl)
+                              .setStreamType(live ? MediaInfo.STREAM_TYPE_LIVE : MediaInfo.STREAM_TYPE_BUFFERED)
+                              .setContentType(pendMime == null || pendMime.length() == 0 ? "video/mp4" : pendMime)
+                              .setMetadata(md)
+                              .build();
+                      rmc.load(new MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(true).build());
+                      pendUrl = null;
+                      out.js("window.__castState&&__castState(true,'')");
+                  } catch (Throwable t) {
+                      out.js("window.__castState&&__castState(false," + JSONObject.quote(String.valueOf(t.getMessage())) + ")");
+                  }
+              }
+
+              public void toggle() {
+                  h.post(new Runnable() {
+                      @Override public void run() {
+                          try {
+                              CastSession cs = ctx.getSessionManager().getCurrentCastSession();
+                              if (cs != null && cs.getRemoteMediaClient() != null) cs.getRemoteMediaClient().togglePlayback();
+                          } catch (Throwable ignored) { }
+                      }
+                  });
+              }
+
+              public void stop() {
+                  h.post(new Runnable() {
+                      @Override public void run() {
+                          try { if (ctx != null) ctx.getSessionManager().endCurrentSession(true); } catch (Throwable ignored) { }
+                          connectedRoute = "";
+                      }
+                  });
+              }
+          }
+          TVCAST_EOF
+          cat > app/src/main/java/com/tvcast/player/CastOptionsProvider.java <<'TVCAST_EOF'
+          package com.tvcast.player;
+
+          import android.content.Context;
+          import com.google.android.gms.cast.CastMediaControlIntent;
+          import com.google.android.gms.cast.framework.CastOptions;
+          import com.google.android.gms.cast.framework.OptionsProvider;
+          import com.google.android.gms.cast.framework.SessionProvider;
+          import java.util.List;
+
+          public class CastOptionsProvider implements OptionsProvider {
+              @Override
+              public CastOptions getCastOptions(Context context) {
+                  return new CastOptions.Builder()
+                          .setReceiverApplicationId(CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID)
+                          .build();
+              }
+
+              @Override
+              public List<SessionProvider> getAdditionalSessionProviders(Context context) {
+                  return null;
               }
           }
           TVCAST_EOF
