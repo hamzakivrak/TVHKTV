@@ -100,12 +100,15 @@
         .sub-module { margin-bottom:16px; padding-bottom:16px; border-bottom:1px solid rgba(255,255,255,0.07); }
         .sub-module:last-child { margin-bottom:0; padding-bottom:0; border-bottom:none; }
         .movie-grid { grid-template-columns:repeat(var(--movie-cols,2),minmax(0,1fr)); gap:10px; margin-bottom:10px; }
-        .movie-card { background:#1c1e26; border:2px solid rgba(255,255,255,0.07); border-radius:12px; overflow:hidden; display:flex; flex-direction:column; min-width:0; }
+        .movie-card { background:#1c1e26; border:2px solid rgba(255,255,255,0.07); border-radius:10px; overflow:hidden; display:flex; flex-direction:column; min-width:0; }
         .movie-card .mc-thumb { aspect-ratio:16/9; background:#0c0d12; display:flex; align-items:center; justify-content:center; cursor:pointer; overflow:hidden; }
         .movie-card .mc-thumb img { width:100%; height:100%; object-fit:cover; }
-        .movie-card .mc-title { font-size:0.82rem; font-weight:600; padding:6px 8px 0; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-height:1.25; min-height:2.5em; }
-        .movie-card .mc-sub { font-size:0.7rem; color:#888; padding:2px 8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .movie-card .mc-btns { display:flex; gap:6px; padding:6px 8px 8px; justify-content:flex-end; }
+        .movie-card .mc-title { font-size:0.68rem; font-weight:600; padding:4px 6px 0; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-height:1.2; min-height:2.4em; }
+        .movie-card .mc-sub { font-size:0.6rem; color:#888; padding:1px 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .movie-card .mc-btns { display:flex; gap:4px; padding:4px 6px 6px; justify-content:flex-end; }
+        .movie-card .preview-mini-btn { min-width:0 !important; width:34px !important; height:30px !important; padding:0 !important; display:flex; align-items:center; justify-content:center; }
+        .movie-card .preview-mini-btn i { font-size:18px !important; width:18px; height:18px; overflow:hidden; }
+        .movie-sec { font-weight:700; color:#fdcb6e; font-size:0.82rem; margin:6px 0; }
         #moviePanel { display:none; flex:1; overflow-y:auto; padding:14px 22px 40px; }
         #rightSidebar.movie-mode #moviePanel { display:block; }
         #rightSidebar.movie-mode #channelList, #rightSidebar.movie-mode .subtle-count-strip { display:none !important; }
@@ -540,6 +543,9 @@
         <div style="font-weight:700; color:#fdcb6e; margin-bottom:8px;">🎬 Film / Video Ara (Web + YouTube + Archive)</div>
         <button type="button" class="btn" id="movieSearchBtn" style="width:100%; background:#fdcb6e; border-color:#fdcb6e; color:#000; font-weight:700; margin-bottom:8px;" onclick="movieSearch()"><i class="material-icons-round">search</i> Ara</button>
         <div id="movieStatus" style="font-size:0.8rem; color:#aaa; text-align:center; margin-bottom:8px;">Yukarıdaki kutuya film adı yazın; web, YouTube ve Archive birlikte taranır. ▶ ile izlenir, ➕ ile listeye eklenir.</div>
+        <div id="movieSavedHdr" class="movie-sec" style="display:none;"></div>
+        <div id="movieSaved" class="movie-grid" style="display:none;"></div>
+        <div id="movieResHdr" class="movie-sec" style="display:none;">🔎 Arama Sonuçları</div>
         <div id="movieResults" class="movie-grid" style="display:none;"></div>
     </div>
 </div>
@@ -3667,13 +3673,16 @@ async function resetQuarantine() {
 
 
     async function resolveDailymotionM3u8(dmId) {
-        try {
-            const metaUrl = `https://www.dailymotion.com/player/metadata/video/${dmId}`;
-            const d = await fastJsonFetch(metaUrl, 4500);
-            if (d && d.qualities && d.qualities.auto && d.qualities.auto[0] && d.qualities.auto[0].url) {
-                return d.qualities.auto[0].url;
-            }
-        } catch (e) {}
+        const metaUrl = `https://www.dailymotion.com/player/metadata/video/${dmId}?embedder=${encodeURIComponent('https://www.dailymotion.com/video/' + dmId)}&app=com.dailymotion.neon`;
+        const tries = [metaUrl, MY_CLOUD_PROXY + encodeURIComponent(metaUrl), 'https://api.allorigins.win/raw?url=' + encodeURIComponent(metaUrl), 'https://corsproxy.io/?' + encodeURIComponent(metaUrl)];
+        for (const u of tries) {
+            try {
+                const d = await fastJsonFetch(u, 6000);
+                const q = d && d.qualities;
+                const arr = q && ((q.auto && q.auto[0]) || (q['720'] && q['720'][0]) || (q['480'] && q['480'][0]) || (q['380'] && q['380'][0]));
+                if (arr && arr.url) return arr.url;
+            } catch (e) {}
+        }
         return null;
     }
 
@@ -5409,21 +5418,62 @@ async function resetQuarantine() {
     }
 
 
+    function mvCols() { return window.innerWidth < 600 ? 3 : 6; }
+    function mvCard(thumb, title, sub, playJs, btns) {
+        return `<div class="movie-card">
+            <div class="mc-thumb" onclick="${playJs}">${thumb ? `<img loading="lazy" decoding="async" src="${esc(thumb)}" onerror="this.style.display='none'">` : '<i class="material-icons-round" style="font-size:30px; color:#555; pointer-events:none; width:30px; height:30px; overflow:hidden;">movie</i>'}</div>
+            <div class="mc-title">${esc(title)}</div>
+            <div class="mc-sub">${esc(sub)}</div>
+            <div class="mc-btns">${btns}</div></div>`;
+    }
     function renderMovies() {
         invalidateLeftNav();
-        const box = document.getElementById('movieResults');
-        if (!movieResults.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+        const box = document.getElementById('movieResults'), hdr = document.getElementById('movieResHdr');
+        document.getElementById('moviePanel').style.setProperty('--movie-cols', mvCols());
+        if (!movieResults.length) { box.style.display = 'none'; box.innerHTML = ''; if (hdr) hdr.style.display = 'none'; return; }
+        box.style.display = 'grid'; if (hdr) hdr.style.display = 'block';
+        box.innerHTML = movieResults.map((r, i) => mvCard(r.thumb, r.title, r.sub + (r.dur ? ' · ' + mvDur(r.dur) : ''), `movieWatch(${i})`,
+            `<button type="button" class="preview-mini-btn" onclick="event.stopPropagation(); movieAddToList(${i})" title="Eklenenler listesine ekle" style="border-color:var(--fav); color:var(--fav);"><i class="material-icons-round">add</i></button>
+             <button type="button" class="preview-mini-btn" onclick="event.stopPropagation(); movieWatch(${i})" title="İzle (OK)"><i class="material-icons-round">play_arrow</i></button>`)).join('');
+    }
+    // ---- Eklenenler (film / video listesi; aktif kanal listesinden ayrı)
+    var movieSaved = (function () { try { const a = JSON.parse(localStorage.getItem('tv_movie_saved') || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } })();
+    function movieSavedSave() { try { localStorage.setItem('tv_movie_saved', JSON.stringify(movieSaved)); } catch (e) {} }
+    function renderMovieSaved() {
+        invalidateLeftNav();
+        const box = document.getElementById('movieSaved'), hdr = document.getElementById('movieSavedHdr'); if (!box) return;
+        document.getElementById('moviePanel').style.setProperty('--movie-cols', mvCols());
+        if (!movieSaved.length) { box.style.display = 'none'; box.innerHTML = ''; hdr.style.display = 'none'; return; }
+        hdr.style.display = 'block'; hdr.innerText = '⭐ Eklenenler (' + movieSaved.length + ')';
         box.style.display = 'grid';
-        const cols = window.innerWidth < 600 ? 2 : Math.max(3, Math.min(5, gridColumns));
-        box.style.setProperty('--movie-cols', cols);
-        box.innerHTML = movieResults.map((r, i) => `<div class="movie-card">
-            <div class="mc-thumb" onclick="movieWatch(${i})">${r.thumb ? `<img loading="lazy" decoding="async" src="${esc(r.thumb)}" onerror="this.style.display='none'">` : '<i class="material-icons-round" style="font-size:40px; color:#555; pointer-events:none;">movie</i>'}</div>
-            <div class="mc-title">${esc(r.title)}</div>
-            <div class="mc-sub">${esc(r.sub)}${r.dur ? ' · ' + esc(mvDur(r.dur)) : ''}</div>
-            <div class="mc-btns">
-                <button type="button" class="preview-mini-btn" onclick="event.stopPropagation(); movieAddToList(${i})" title="Listeye Ekle" style="border-color:var(--fav); color:var(--fav);"><i class="material-icons-round" style="font-size:24px;">add</i></button>
-                <button type="button" class="preview-mini-btn" onclick="event.stopPropagation(); movieWatch(${i})" title="İzle (OK)"><i class="material-icons-round" style="font-size:24px;">play_arrow</i></button>
-            </div></div>`).join('');
+        box.innerHTML = movieSaved.map((e, i) => mvCard(e.thumb, e.title, e.sub || '', `movieSavedPlay(${i})`,
+            `<button type="button" class="preview-mini-btn" onclick="event.stopPropagation(); movieSavedDel(${i})" title="Eklenenlerden sil" style="border-color:var(--red); color:var(--red);"><i class="material-icons-round">delete</i></button>
+             <button type="button" class="preview-mini-btn" onclick="event.stopPropagation(); movieSavedPlay(${i})" title="İzle (OK)"><i class="material-icons-round">play_arrow</i></button>`)).join('');
+    }
+    function movieSavedDel(i) { movieSaved.splice(i, 1); movieSavedSave(); renderMovieSaved(); }
+    function rememberVideo(ch) { try { localStorage.setItem('tv_last_video', JSON.stringify({ name: ch.name, url: ch.url, logo: ch.logo || '' })); } catch (e) {} }
+    function playTempVideo(name, url, logo) {
+        const ch = { id: 'ch_' + (globalIdCounter++), originalIndex: 0, name, url, logo: logo || '', broken: false, isFavorite: favUrls.includes(url) };
+        closeAllDrawers(); curIdx = -1; allChannels = [ch]; sortAndRenderList(); play(0, 0); rememberVideo(ch);
+        showOSD('Film açılıyor', name);
+    }
+    function movieSavedPlay(i) {
+        const e = movieSaved[i]; if (!e) return;
+        if (e.kind === 'embed') { openWebEmbedPlayer(e.title, e.url); return; }
+        if (typeof tvLinked === 'function' && tvLinked()) { tvSendTo(tvLinkIdx(), { cmd: 'play', url: e.url, name: e.title, logo: e.thumb || '' }); showOSD('TV\'ye gönderildi', e.title); return; }
+        playTempVideo(e.title, e.url, e.thumb);
+    }
+    async function movieAddToList(i) {
+        const r0 = movieResults[i]; if (!r0) return;
+        const st = document.getElementById('movieStatus');
+        try {
+            const res = await resolveMovieStreamUrl(r0, st);
+            if (movieSaved.some(x => x.url === res.url)) { st.style.color = '#f1c40f'; st.innerText = 'Bu video zaten Eklenenler listesinde.'; return; }
+            movieSaved.push({ title: r0.title, thumb: r0.thumb || '', sub: String(r0.sub || '').replace(/^%\d+ · /, ''), kind: res.type, url: res.url });
+            movieSavedSave(); renderMovieSaved();
+            st.style.color = '#2ecc71'; st.innerText = `✅ "${r0.title}" Eklenenler listesine eklendi.`;
+            showOSD('Eklenenlere eklendi', r0.title);
+        } catch (e) { st.style.color = '#e74c3c'; st.innerText = 'Eklenemedi: ' + (e.message || e); }
     }
 
 
@@ -5460,7 +5510,7 @@ async function resetQuarantine() {
             if (st) { st.style.color = '#f1c40f'; st.innerText = 'Dailymotion video akışı çözülüyor...'; }
             const dmM3u8 = await resolveDailymotionM3u8(r.id);
             if (dmM3u8) return { type: 'stream', url: dmM3u8 };
-            throw new Error('Bu Dailymotion videosu bölge / izin kısıtlı (Forbidden). Başka sonucu deneyin.');
+            return { type: 'embed', url: `https://www.dailymotion.com/embed/video/${r.id}?autoplay=1&queue-enable=false&ui-logo=false` };
         }
         if (r.src === 'arc') {
             if (st) { st.style.color = '#f1c40f'; st.innerText = 'Archive.org film dosyası aranıyor...'; }
@@ -5528,7 +5578,7 @@ async function resetQuarantine() {
         vid.pause(); vid.removeAttribute('src'); vid.load();
         vid.style.display = 'none';
         iframeContainer.style.display = 'block';
-        iframeContainer.innerHTML = `<iframe src="${esc(embedUrl)}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer"></iframe>`;
+        iframeContainer.innerHTML = `<iframe src="${esc(embedUrl)}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="${/dailymotion\.com/i.test(embedUrl) ? 'strict-origin-when-cross-origin' : 'no-referrer'}"></iframe>`;
         stat.innerText = "Web Oynatıcıda Açıldı. Görüntü gelmezse bu site kendi sayfası dışında oynatmaya izin vermiyor olabilir; başka bir sonuç deneyin.";
         stat.style.color = "#2ecc71";
         modal.classList.add('show');
@@ -5551,6 +5601,7 @@ async function resetQuarantine() {
             closeAllDrawers();
             curIdx = -1; allChannels = [ch]; sortAndRenderList();
             play(0, 0);
+            rememberVideo(ch);
             showOSD('Film açılıyor', r.title);
         } catch (e) {
             st.style.color = '#e74c3c'; st.innerText = 'Dosya bilgisi alınamadı: ' + (e.message || e);
@@ -5558,25 +5609,6 @@ async function resetQuarantine() {
     }
 
 
-    async function movieAddToList(i) {
-        const r = movieResults[i]; if (!r) return;
-        const st = document.getElementById('movieStatus');
-        try {
-            const res = await resolveMovieStreamUrl(r, st);
-            if (res.type === 'embed') {
-                showOSD('Bu film gömülü web oynatıcı kullanıyor', '▶ düğmesi ile doğrudan izleyebilirsiniz');
-                openWebEmbedPlayer(r.title, res.url);
-                return;
-            }
-            document.getElementById('singleName').value = r.title;
-            document.getElementById('singleUrl').value = res.url;
-            document.getElementById('singleLogo').value = r.thumb || '';
-            addSingleChannel();
-            st.style.color = '#2ecc71'; st.innerText = `✅ "${r.title}" aktif listeye eklendi!`;
-        } catch (e) {
-            st.style.color = '#e74c3c'; st.innerText = 'Listeye eklenemedi: ' + (e.message || e);
-        }
-    }
 
 
     /* ===== KOLAY KULLANIM MODU ===== */
@@ -6196,6 +6228,7 @@ function playAudioDirect(video, url, token) {
         document.getElementById('rightSidebar').classList.add('movie-mode');
         const inp = document.getElementById('filterInput');
         if (inp) { inp.value = ''; inp.placeholder = 'Film / video ara...'; inp.setAttribute('readonly', 'readonly'); }
+        renderMovieSaved(); renderMovies();
         invalidateLeftNav();
         setTimeout(() => { if (inp) try { inp.focus(); } catch (e) {} }, 60);
     }
@@ -6253,6 +6286,14 @@ function playAudioDirect(video, url, token) {
 
     /* ===== İLK AÇILIŞ: varsayılan yapı buluttaki HENCTV yedeğinden gelir ===== */
     const FIRST_RUN_CLOUD_ID = 'HENCTV';
+    var __startVideo = (function () { try { const lv = JSON.parse(localStorage.getItem('tv_last_video') || 'null'); return (lv && lv.url && localStorage.getItem('tv_last_channel') === lv.url) ? lv : null; } catch (e) { return null; } })();
+    function restoreLastVideo() {
+        const lv = __startVideo;
+        if (!lv || !lv.url) return;
+        if (allChannels.some(c => c.url === lv.url)) return;
+        const ch = { id: 'ch_' + (globalIdCounter++), originalIndex: 0, name: lv.name, url: lv.url, logo: lv.logo || '', broken: false, isFavorite: favUrls.includes(lv.url) };
+        curIdx = -1; allChannels = [ch]; sortAndRenderList(); play(0, 0);
+    }
     function firstRunDefaults() {
         let done = false; try { done = localStorage.getItem('tv_first_run_done') === '1'; } catch (e) {}
         if (done) return;
@@ -6263,7 +6304,7 @@ function playAudioDirect(video, url, token) {
             try {
                 await syncDataFromCloud();
                 const stt = (document.getElementById('syncStatus') || {}).innerText || '';
-                if (/^Eşitlendi/.test(stt)) { localStorage.setItem('tv_first_run_done', '1'); showOSD('İlk kurulum tamam', FIRST_RUN_CLOUD_ID + ' yapısı yüklendi'); } else { localStorage.removeItem('tv_sync_id'); }
+                if (/^Eşitlendi/.test(stt)) { localStorage.setItem('tv_first_run_done', '1'); showOSD('İlk kurulum tamam', FIRST_RUN_CLOUD_ID + ' yapısı yüklendi'); let tries = 0; const iv = setInterval(() => { tries++; if (allChannels.length > 0) { clearInterval(iv); if (curIdx < 0) play(0, 1); } else if (tries > 20) clearInterval(iv); }, 700); } else { localStorage.removeItem('tv_sync_id'); }
             } catch (e) {}
         }, 1800);
     }
@@ -6511,10 +6552,10 @@ function playAudioDirect(video, url, token) {
             }
             if (movieMode && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', ' '].includes(k) && !isTypingMode) {
                 const hdrM = ['filterInput', 'clearFilterBtn', 'rightCountrySelect', 'rightSettingsBtn'].map(id => document.getElementById(id)).filter(Boolean);
-                const flatM = Array.from(document.querySelectorAll('#movieResults .preview-mini-btn'));
+                const flatM = Array.from(document.querySelectorAll('#movieSaved .preview-mini-btn, #movieResults .preview-mini-btn'));
                 const sbM = document.getElementById('movieSearchBtn');
                 const focusM = (el) => { if (el) { try { el.focus({ preventScroll: true }); } catch (err) { el.focus(); } try { el.scrollIntoView({ block: 'nearest' }); } catch (err) {} } };
-                const colsM = Math.max(1, parseInt(getComputedStyle(document.getElementById('movieResults')).getPropertyValue('--movie-cols'), 10) || 2);
+                const colsM = Math.max(1, parseInt(getComputedStyle(document.getElementById('moviePanel')).getPropertyValue('--movie-cols'), 10) || 3);
                 e.preventDefault(); e.stopImmediatePropagation();
                 if (k === 'Enter' || k === ' ') {
                     if (e.repeat) return;
@@ -6533,8 +6574,17 @@ function playAudioDirect(video, url, token) {
                     if (k === 'ArrowUp') focusM(hdrM[0]);
                     else if (k === 'ArrowDown' && flatM.length) focusM(flatM[Math.min(1, flatM.length - 1)]);
                 } else if (ri >= 0) {
-                    if (k === 'ArrowLeft') focusM(flatM[Math.max(0, ri - 1)]);
-                    else if (k === 'ArrowRight') focusM(flatM[Math.min(flatM.length - 1, ri + 1)]);
+                    const grid = ae.closest('.movie-grid');
+                    const loc = Array.from(grid.querySelectorAll('.preview-mini-btn'));
+                    const li = loc.indexOf(ae), card = Math.floor(li / 2), slot = li % 2, nCards = Math.ceil(loc.length / 2);
+                    const col = card % colsM;
+                    if (k === 'ArrowLeft') {
+                        if (slot === 0 && col === 0) focusM(document.getElementById('filterInput'));
+                        else focusM(flatM[Math.max(0, ri - 1)]);
+                    } else if (k === 'ArrowRight') {
+                        if (slot === 1 && (col === colsM - 1 || card === nCards - 1)) focusM(document.getElementById('rightCountrySelect'));
+                        else focusM(flatM[Math.min(flatM.length - 1, ri + 1)]);
+                    }
                     else if (k === 'ArrowUp') { const t = ri - 2 * colsM; if (t >= 0) focusM(flatM[t]); else focusM(sbM); }
                     else if (k === 'ArrowDown') { const t = ri + 2 * colsM; if (t < flatM.length) focusM(flatM[t]); }
                 } else { focusM(hdrM[0]); }
@@ -6915,6 +6965,7 @@ function playAudioDirect(video, url, token) {
             try { tvRenderTargets(); tvRemoteInfoRefresh(); } catch (e) {}
             try { initSettingsTabs(); } catch (e) {}
             try { firstRunDefaults(); } catch (e) {}
+            try { renderMovieSaved(); setTimeout(restoreLastVideo, 3000); } catch (e) {}
             try { tvLinkPaint(); } catch (e) {}
             try { document.getElementById('cloudBaseInput').value = localStorage.getItem('tv_cloud_base') || ''; } catch (e) {}
             startupSyncCheck();
