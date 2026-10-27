@@ -1225,10 +1225,15 @@
             document.getElementById('bufSpinner').style.display = 'none';
             if (curIdx >= 0 && allChannels[curIdx]) markChannelHealthy(allChannels[curIdx]);
         } else if (event.data === YT.PlayerState.PAUSED) {
+            document.getElementById('bufSpinner').style.display = 'none';
+            if (!ytUserPaused && !bgUserPaused && (typeof isPageReallyHidden === 'function' && (isPageReallyHidden() || !document.hasFocus()))) {
+                [30, 180, 500, 1200].forEach(ms => setTimeout(() => {
+                    if (!ytUserPaused && !bgUserPaused) { try { ytPlayer.playVideo(); } catch (e) {} }
+                }, ms));
+                return;
+            }
             document.getElementById('playIcon').innerText = 'play_arrow';
             try { refreshNowPlaying(); } catch (e) {}
-            if (document.hidden && !ytUserPaused) { try { ytPlayer.playVideo(); } catch (e) {} }
-            document.getElementById('bufSpinner').style.display = 'none';
         } else if (event.data === YT.PlayerState.ENDED) {
             nextCh(); // Video bitince sonrakine geçer
         }
@@ -4917,9 +4922,56 @@ async function resetQuarantine() {
     try { const _c = navigator.connection; if (_c && _c.addEventListener) _c.addEventListener('change', () => { applyQualityPolicy(); if (useLowQuality()) showOSD('Mobil veri algılandı', 'En düşük kalite seçildi'); }); } catch (e) {}
 
 
-    /* ===== ARKA PLAN ÇALMA & BİLDİRİM KONTROLLERİ (Media Session + APK köprüsü) ===== */
+    /* ===== ARKA PLAN ÇALMA & BİLDİRİM KONTROLLERİ (Media Session + WebAudio + APK köprüsü) ===== */
+    var bgUserPaused = false;
+    var lastBgTransitionAt = 0;
+    const __nativeHiddenDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'hidden') || Object.getOwnPropertyDescriptor(document, 'hidden');
+    const __nativeVisDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState') || Object.getOwnPropertyDescriptor(document, 'visibilityState');
+    function isPageReallyHidden() {
+        try {
+            if (window.__tvBg) return true;
+            if (__nativeHiddenDesc && typeof __nativeHiddenDesc.get === 'function') {
+                if (__nativeHiddenDesc.get.call(document)) return true;
+            }
+            if (__nativeVisDesc && typeof __nativeVisDesc.get === 'function') {
+                if (__nativeVisDesc.get.call(document) === 'hidden') return true;
+            }
+        } catch (e) {}
+        return !!document.hidden;
+    }
+
+    // Ekran kilitlendiğinde mobil işletim sisteminin ses oturumunu düşürmemesi için sessiz WebAudio tutucu
+    let bgAudioCtx = null, bgSilentOsc = null;
+    function ensureBgAudioKeepAlive() {
+        try {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return;
+            if (!bgAudioCtx) {
+                bgAudioCtx = new Ctx();
+                const gain = bgAudioCtx.createGain();
+                gain.gain.value = 0.00001; // Tamamen duyulmaz ama OS ses oturumunu canlı tutar
+                const osc = bgAudioCtx.createOscillator();
+                osc.frequency.value = 1;
+                osc.connect(gain);
+                gain.connect(bgAudioCtx.destination);
+                osc.start();
+                bgSilentOsc = osc;
+            }
+            if (bgAudioCtx.state === 'suspended' && !bgUserPaused) {
+                bgAudioCtx.resume().catch(() => {});
+            }
+        } catch (e) {}
+    }
+    ['touchstart', 'click', 'keydown'].forEach(ev => {
+        window.addEventListener(ev, () => { if (!bgUserPaused) ensureBgAudioKeepAlive(); }, { passive: true });
+    });
+
     function currentIsPlaying() {
         try {
+            // Ekran kilitliyken kullanıcı durdurmadıysa OS servisini düşürmemek için her zaman aktif bildir
+            if (!bgUserPaused && (isPageReallyHidden() || Date.now() - lastBgTransitionAt < 3000) && curIdx >= 0 && allChannels[curIdx]) {
+                return true;
+            }
             const ytc = document.getElementById('ytContainer');
             if (ytc && ytc.style.display === 'block' && ytPlayer && typeof ytPlayer.getPlayerState === 'function') return ytPlayer.getPlayerState() === 1;
             const v = document.getElementById('localPlayer'); return !!v && !v.paused;
@@ -4948,21 +5000,52 @@ async function resetQuarantine() {
             set('stop', () => toggleLocalPlaybackStatus(true));
         } catch (e) {}
     })();
-    // Uygulama arka plana alınınca tarayıcı videoyu durdurursa, ses kaldığı yerden devam etsin
-    (function keepAudioInBackground() {
-        let wasPlaying = false, userPaused = false;
-        document.addEventListener('visibilitychange', () => {
-            const v = document.getElementById('localPlayer');
-            if (!v) return;
-            const ytc = document.getElementById('ytContainer');
-            if (document.hidden && ytc && ytc.style.display === 'block' && typeof ytPlayer !== 'undefined' && ytPlayer) {
-                [200, 800, 2000, 5000].forEach(ms => setTimeout(() => { if (document.hidden && !ytUserPaused) { try { if (ytPlayer.getPlayerState() !== 1) ytPlayer.playVideo(); } catch (e) {} } }, ms));
+
+    function forceResumeActiveMediaInBg() {
+        if (bgUserPaused) return;
+        try { if (typeof remotePlayer !== 'undefined' && remotePlayer && remotePlayer.isConnected) return; } catch (e) {}
+        ensureBgAudioKeepAlive();
+        const ytc = document.getElementById('ytContainer');
+        const v = document.getElementById('localPlayer');
+        if (ytc && ytc.style.display === 'block' && typeof ytPlayer !== 'undefined' && ytPlayer && typeof ytPlayer.playVideo === 'function') {
+            if (!ytUserPaused) {
+                try {
+                    const st = typeof ytPlayer.getPlayerState === 'function' ? ytPlayer.getPlayerState() : -1;
+                    if (st !== 1) ytPlayer.playVideo();
+                } catch (e) {}
             }
-            if (document.hidden) {
-                wasPlaying = !v.paused && v.style.display !== 'none';
-                if (wasPlaying) { [150, 600, 1500].forEach(ms => setTimeout(() => { if (document.hidden && v.paused && wasPlaying) v.play().catch(() => {}); }, ms)); }
-            } else { wasPlaying = false; refreshNowPlaying(); }
-        });
+        } else if (v && v.style.display !== 'none' && !v.ended && (v.currentSrc || v.src)) {
+            if (v.paused) {
+                v.play().catch(() => {});
+            }
+        }
+        refreshNowPlaying();
+    }
+
+    // Uygulama arka plana alınınca veya ekran kilitlenince tarayıcı videoyu durdurursa anında devam ettir
+    (function keepAudioInBackground() {
+        const onBgChange = () => {
+            lastBgTransitionAt = Date.now();
+            if (isPageReallyHidden()) {
+                forceResumeActiveMediaInBg();
+                [40, 150, 400, 900, 1800, 3500].forEach(ms => setTimeout(() => {
+                    if (isPageReallyHidden() && !bgUserPaused) forceResumeActiveMediaInBg();
+                }, ms));
+            } else {
+                if (!bgUserPaused) forceResumeActiveMediaInBg();
+                else refreshNowPlaying();
+            }
+        };
+        document.addEventListener('visibilitychange', onBgChange, true);
+        window.addEventListener('pagehide', onBgChange, true);
+        window.addEventListener('blur', () => {
+            if (!bgUserPaused) {
+                lastBgTransitionAt = Date.now();
+                [80, 300, 900].forEach(ms => setTimeout(() => {
+                    if (!bgUserPaused && (isPageReallyHidden() || !document.hasFocus())) forceResumeActiveMediaInBg();
+                }, ms));
+            }
+        }, true);
     })();
 
 
@@ -5032,30 +5115,22 @@ async function resetQuarantine() {
     }
 
 
-    /* ===== SAYFA GİZLİ OLSA DA SES SÜRSÜN (APK) ===== */
-    if (window.Android) {
-        try {
-            Object.defineProperty(document, 'hidden', { get() { return false; }, configurable: true });
-            Object.defineProperty(document, 'visibilityState', { get() { return 'visible'; }, configurable: true });
-            document.addEventListener('visibilitychange', e => e.stopImmediatePropagation(), true);
-        } catch (e) {}
-    }
+    /* ===== SAYFA GİZLİ OLSA DA SES SÜRSÜN (APK & Mobil Tarayıcı) ===== */
+    try {
+        Object.defineProperty(document, 'hidden', { get() { return false; }, configurable: true });
+        Object.defineProperty(document, 'visibilityState', { get() { return 'visible'; }, configurable: true });
+        Object.defineProperty(document, 'webkitHidden', { get() { return false; }, configurable: true });
+    } catch (e) {}
 
 
     /* ===== ARKA PLANDA DURAKLAMAYI GERİ AL (APK uygulama küçülünce / ekran kilitliyken) ===== */
-    var bgUserPaused = false;
     function bgKeep() {
-        if (bgUserPaused || !(window.__tvBg || document.hidden)) return;
-        try { if (typeof remotePlayer !== 'undefined' && remotePlayer && remotePlayer.isConnected) return; } catch (e) {}
-        const ytc = document.getElementById('ytContainer'), v = document.getElementById('localPlayer');
-        if (ytc && ytc.style.display === 'block' && typeof ytPlayer !== 'undefined' && ytPlayer && typeof ytPlayer.getPlayerState === 'function') {
-            let st = -2; try { st = ytPlayer.getPlayerState(); } catch (e) { return; }
-            if (st === 2 || st === 5 || st === -1) { try { ytPlayer.playVideo(); } catch (e) {} }
-        } else if (v && v.style.display !== 'none' && v.paused && !v.ended && (v.currentSrc || v.src)) {
-            v.play().catch(() => {});
+        if (bgUserPaused) return;
+        if (isPageReallyHidden() || !document.hasFocus()) {
+            forceResumeActiveMediaInBg();
         }
     }
-    setInterval(bgKeep, 2000);
+    setInterval(bgKeep, 900);
 
 
     /* ===== TV'YE GÖNDER / UZAKTAN KUMANDA (aynı Wi-Fi, telefon APK -> TV APK) ===== */
@@ -8476,8 +8551,21 @@ function playAudioDirect(video, url, token) {
         const sp = document.getElementById('bufSpinner');
         ['waiting','loadstart'].forEach(ev => vid.addEventListener(ev, () => sp.style.display = 'block'));
         ['playing','canplay','error','pause'].forEach(ev => vid.addEventListener(ev, () => sp.style.display = 'none'));
-        vid.addEventListener('play', () => { document.getElementById('playIcon').innerText = 'pause'; if (!hold2xActive && userPlaybackRate !== 1.0) { try { vid.playbackRate = userPlaybackRate; } catch (e) {} } updateSeekBarUI(false); refreshNowPlaying(); });
-        vid.addEventListener('pause', () => { document.getElementById('playIcon').innerText = 'play_arrow'; updateSeekBarUI(false); refreshNowPlaying(); });
+        vid.addEventListener('play', () => { ensureBgAudioKeepAlive(); document.getElementById('playIcon').innerText = 'pause'; if (!hold2xActive && userPlaybackRate !== 1.0) { try { vid.playbackRate = userPlaybackRate; } catch (e) {} } updateSeekBarUI(false); refreshNowPlaying(); });
+        vid.addEventListener('pause', () => {
+            if (!bgUserPaused && !vid.ended && (vid.currentSrc || vid.src) && (isPageReallyHidden() || !document.hasFocus() || Date.now() - lastBgTransitionAt < 2500)) {
+                lastBgTransitionAt = Date.now();
+                vid.play().catch(() => {});
+                [60, 220, 600, 1400].forEach(ms => setTimeout(() => {
+                    if (!bgUserPaused && vid.paused && !vid.ended && (vid.currentSrc || vid.src)) vid.play().catch(() => {});
+                }, ms));
+                refreshNowPlaying();
+                return;
+            }
+            document.getElementById('playIcon').innerText = 'play_arrow';
+            updateSeekBarUI(false);
+            refreshNowPlaying();
+        });
         ['timeupdate', 'loadedmetadata', 'durationchange', 'progress'].forEach(ev => vid.addEventListener(ev, () => updateSeekBarUI(false)));
         setInterval(() => updateSeekBarUI(false), 500);
         const rwBtn = document.getElementById('rewindBtn');
