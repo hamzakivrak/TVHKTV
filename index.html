@@ -4786,7 +4786,7 @@ async function resetQuarantine() {
         tvSendTo(i, { cmd: 'play', url: String(ch.url), name: ch.name || 'Yayın', logo: ch.logo || '' });
         closeInfoModal();
     }
-    function tvRemoteKey(i, cmd, d) { const p = { cmd }; if (d !== undefined) p.d = d; tvSendTo(i, p); }
+    function tvRemoteKey(i, cmd, d, k) { const p = { cmd }; if (d !== undefined && d !== null) p.d = d; if (k) p.k = k; tvSendTo(i, p); }
     function openTvTargetModal(ch) {
         modalOpenedAt = Date.now();
         const ts = tvTargets();
@@ -4797,6 +4797,17 @@ async function resetQuarantine() {
             html += `<div style="border:1px solid var(--border); border-radius:12px; padding:10px;">
                 <div style="font-weight:600; margin-bottom:8px; text-align:left;">📺 ${esc(t.name)} <small style="color:#888">${esc(t.ip)}</small></div>
                 <button type="button" class="tv-modal-btn" style="width:100%; margin-bottom:6px; ${linkedHere ? 'background:rgba(0,206,201,0.25); border-color:var(--accent2);' : ''}" onclick="tvLinkToggle(${i})"><i class="material-icons-round" style="color:var(--accent2)">${linkedHere ? 'link_off' : 'link'}</i> ${linkedHere ? 'Bağlı — kesmek için bas' : 'Bu TV\'yi bağlı kontrol et'}</button>
+                ${linkedHere ? `<div style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:4px 0 8px;">
+                    <button type="button" class="tv-modal-btn" style="padding:10px;" onclick="tvRemoteKey(${i},'key',null,'Escape')"><i class="material-icons-round">arrow_back</i> Geri</button>
+                    <button type="button" class="tv-modal-btn" style="padding:10px;" onclick="tvRemoteKey(${i},'key',null,'ArrowUp')"><i class="material-icons-round">keyboard_arrow_up</i></button>
+                    <span></span>
+                    <button type="button" class="tv-modal-btn" style="padding:10px;" onclick="tvRemoteKey(${i},'key',null,'ArrowLeft')"><i class="material-icons-round">keyboard_arrow_left</i></button>
+                    <button type="button" class="tv-modal-btn" style="padding:10px; background:rgba(0,206,201,0.25); font-weight:700;" onclick="tvRemoteKey(${i},'key',null,'Enter')">OK</button>
+                    <button type="button" class="tv-modal-btn" style="padding:10px;" onclick="tvRemoteKey(${i},'key',null,'ArrowRight')"><i class="material-icons-round">keyboard_arrow_right</i></button>
+                    <span></span>
+                    <button type="button" class="tv-modal-btn" style="padding:10px;" onclick="tvRemoteKey(${i},'key',null,'ArrowDown')"><i class="material-icons-round">keyboard_arrow_down</i></button>
+                    <span></span></div>
+                    <input type="text" id="tvTextIn" placeholder="TV'deki kutuya yaz (telefon klavyesi)..." oninput="tvTextLive(${i}, this)" onkeydown="tvTextEnter(${i}, event)" autocomplete="off" style="margin-bottom:8px;">` : ''}
                 ${linkedHere ? '<div style="font-size:0.74rem; color:#aaa; margin-bottom:6px; text-align:left;">Telefonda seçtiğin kanal ve film/video TV\'de açılır; alt çubuktaki düğmeler TV\'yi kumanda eder.</div>' : ''}
                 <div style="display:flex; gap:6px; margin-bottom:6px;">
                     <button type="button" class="tv-modal-btn" style="flex:1; padding:8px;" onclick="tvRemoteKey(${i},'vol',-0.1)" title="Ses -"><i class="material-icons-round">volume_down</i></button>
@@ -4844,7 +4855,27 @@ async function resetQuarantine() {
         else if (o.cmd === 'vol') { tvVolume(Number(o.d) || 0); }
         else if (o.cmd === 'mute') { toggleMute(); }
         else if (o.cmd === 'seek') { seekRelative(Number(o.d) || 0, 1); }
+        else if (o.cmd === 'key') { tvFireKey(String(o.k || '')); }
+        else if (o.cmd === 'text') {
+            const ae = document.activeElement;
+            if (ae && ((ae.tagName === 'INPUT' && ae.type !== 'checkbox' && ae.type !== 'radio') || ae.tagName === 'TEXTAREA')) {
+                if (ae.hasAttribute('readonly')) unlockInputForTyping(ae);
+                ae.value = String(o.t || '');
+                ae.dispatchEvent(new Event('input', { bubbles: true }));
+            } else showOSD('TV\'de seçili bir yazı kutusu yok', 'Önce TV\'de kutuya gelin (ok tuşlarıyla)');
+        }
     }
+    function tvFireKey(name) {
+        const map = { ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, Enter: 13, Escape: 27 };
+        const kc = map[name]; if (!kc) return;
+        const tgt = document.activeElement || document.body;
+        const mk = (type) => new KeyboardEvent(type, { key: name, code: name, keyCode: kc, which: kc, bubbles: true, cancelable: true });
+        tgt.dispatchEvent(mk('keydown'));
+        setTimeout(() => tgt.dispatchEvent(mk('keyup')), name === 'Enter' ? 90 : 30);
+    }
+    let tvTextTimer = null;
+    function tvTextLive(i, el) { clearTimeout(tvTextTimer); tvTextTimer = setTimeout(() => tvSendTo(i, { cmd: 'text', t: el.value }), 250); }
+    function tvTextEnter(i, ev) { if (ev && (ev.key === 'Enter' || ev.keyCode === 13)) { ev.preventDefault(); tvSendTo(i, { cmd: 'text', t: ev.target.value }); setTimeout(() => tvSendTo(i, { cmd: 'key', k: 'Enter' }), 120); } }
 
     /* ===== TELEFON -> TV BAĞLI KONTROL MODU ===== */
     function tvLinkIdx() { let ip = ''; try { ip = localStorage.getItem('tv_link_ip') || ''; } catch (e) {} if (!ip) return -1; return tvTargets().findIndex(t => t.ip === ip); }
@@ -5145,10 +5176,10 @@ async function resetQuarantine() {
 
 
     async function mvSearchDailymotion(q) {
-        const url = `https://api.dailymotion.com/videos?search=${encodeURIComponent(q)}&fields=id,title,duration,thumbnail_240_url,owner.screenname&limit=20&longer_than=10`;
+        const url = `https://api.dailymotion.com/videos?search=${encodeURIComponent(q)}&fields=id,title,duration,thumbnail_240_url,owner.screenname,allow_embed,private&limit=40&longer_than=10`;
         const r = await fetchTO(url, 8000);
         const d = await r.json();
-        return ((d && d.list) || []).map(x => ({
+        return ((d && d.list) || []).filter(x => x.allow_embed !== false && !x.private).map(x => ({
             src: 'dm',
             id: x.id,
             title: x.title || 'Dailymotion Video',
@@ -5161,7 +5192,7 @@ async function resetQuarantine() {
 
 
     async function mvSearchPeerTube(q) {
-        const url = `https://sepiasearch.org/api/v1/search/videos?search=${encodeURIComponent(q)}&count=15&sort=-match`;
+        const url = `https://sepiasearch.org/api/v1/search/videos?search=${encodeURIComponent(q)}&count=30&sort=-match`;
         const r = await fetchTO(url, 8000);
         const d = await r.json();
         return ((d && d.data) || []).map(x => ({
@@ -5275,50 +5306,96 @@ async function resetQuarantine() {
         }
 
 
-        st.style.color = '#f1c40f'; st.innerText = 'Tüm web ve video kaynakları taranıyor...';
-        const errs = [], jobs = [];
-        const wantWeb = document.getElementById('srcMvWeb') ? document.getElementById('srcMvWeb').checked : true;
-        const wantYt = document.getElementById('srcMvYt') ? document.getElementById('srcMvYt').checked : true;
-        const wantArc = document.getElementById('srcMvArc') ? document.getElementById('srcMvArc').checked : true;
-
-
-        if (wantWeb) {
-            jobs.push(mvSearchWebEngine(q).catch(e => { errs.push('Web: ' + (e.message || e)); return []; }));
-            jobs.push(mvSearchDailymotion(q).catch(() => []));
-            jobs.push(mvSearchPeerTube(q).catch(() => []));
+        st.style.color = '#f1c40f'; st.innerText = 'Tüm web ve video kaynakları taranıyor (%100 eşleşmeden başlanır)...';
+        const errs = [];
+        const runSources = async (qq) => {
+            const jobs = [
+                mvSearchWebEngine(qq).catch(e => { errs.push('Web: ' + (e.message || e)); return []; }),
+                mvSearchDailymotion(qq).catch(() => []),
+                mvSearchPeerTube(qq).catch(() => []),
+                mvSearchYt(qq, getActiveApiKey()).catch(e => { errs.push('YouTube: ' + (e.message || e)); return []; }),
+                mvSearchArchive(qq).catch(e => { errs.push('Internet Archive: ' + (e.message || e)); return []; }),
+                mvSearchCommons(qq).catch(() => [])
+            ];
+            return Promise.all(jobs);
+        };
+        const pool = new Map();
+        const absorb = (parts) => {
+            const mx = Math.max(0, ...parts.map(p => p.length));
+            for (let i = 0; i < mx; i++) parts.forEach(p => { if (p[i] && p[i].id && !pool.has(p[i].id)) pool.set(p[i].id, p[i]); });
+        };
+        const scoreAll = () => {
+            const arr = Array.from(pool.values());
+            arr.forEach(x => { x.score = mvScore(q, x.title); });
+            return arr.filter(x => x.score >= 0.7).sort((a, b) => b.score - a.score);
+        };
+        absorb(await runSources(q));
+        let good = scoreAll();
+        // yeterli sonuç yoksa: sorgudan sondaki kelimeleri adım adım atarak (en az %70 kelime) yeniden tara
+        const toks = mvTokens(q);
+        if (good.length < 6 && toks.length >= 3) {
+            const minK = Math.ceil(toks.length * 0.7);
+            for (let k = toks.length - 1; k >= minK && good.length < 6; k--) {
+                st.innerText = `Eşleşme genişletiliyor (%${Math.round(k / toks.length * 100)})...`;
+                absorb(await runSources(q.split(/\s+/).slice(0, k).join(' ')));
+                good = scoreAll();
+            }
         }
-        if (wantYt) {
-            const key = getActiveApiKey();
-            jobs.push(mvSearchYt(q, key).catch(e => { errs.push('YouTube: ' + (e.message || e)); return []; }));
-        }
-        if (wantArc) {
-            jobs.push(mvSearchArchive(q).catch(e => { errs.push('Internet Archive: ' + (e.message || e)); return []; }));
-        }
-        if (!jobs.length) { st.style.color = '#e74c3c'; st.innerText = errs[0] || 'En az bir kaynak seçin.'; return; }
-
-
-        const parts = await Promise.all(jobs);
-        const merged = [];
-        const seenIds = new Set();
-        const mx = Math.max(0, ...parts.map(p => p.length));
-        for (let i = 0; i < mx; i++) {
-            parts.forEach(p => {
-                if (p[i] && !seenIds.has(p[i].id)) {
-                    seenIds.add(p[i].id);
-                    merged.push(p[i]);
-                }
-            });
-        }
-        movieResults = merged;
-        if (!merged.length) {
+        good.forEach(x => { x.sub = '%' + Math.round(x.score * 100) + ' · ' + x.sub; });
+        movieResults = good;
+        if (!good.length) {
             st.style.color = '#e74c3c';
-            st.innerText = errs.length ? 'Sonuç alınamadı: ' + errs[0] : 'Sonuç bulunamadı.';
+            st.innerText = (errs.length ? 'Kaynak hatası: ' + errs[0] + ' · ' : '') + 'En az %70 eşleşen video bulunamadı. Yazımı değiştirip deneyin.';
             renderMovies();
             return;
         }
         st.style.color = '#2ecc71';
-        st.innerText = `${merged.length} video bulundu.` + (errs.length ? ' (' + errs[0] + ')' : '') + ' İzlemek için ▶, listeye eklemek için ➕ düğmesine basın.';
+        st.innerText = `${good.length} video bulundu (eşleşmeye göre sıralı).` + (errs.length ? ' (' + errs[0] + ')' : '') + ' İzlemek için ▶, listeye eklemek için ➕.';
         renderMovies();
+    }
+
+    function mvNorm(t) { return String(t || '').toLocaleLowerCase('tr').replace(/ı/g, 'i').replace(/ş/g, 's').replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ö/g, 'o').replace(/ü/g, 'u').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim(); }
+    function mvTokens(t) { return mvNorm(t).split(' ').filter(Boolean); }
+    function mvLev(a, b) {
+        const m = a.length, n = b.length; if (!m) return n; if (!n) return m;
+        let prev = Array.from({ length: n + 1 }, (_, i) => i);
+        for (let i = 1; i <= m; i++) {
+            const cur = [i];
+            for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+            prev = cur;
+        }
+        return prev[n];
+    }
+    function mvScore(q, title) {
+        const nq = mvNorm(q), nt = mvNorm(title);
+        if (!nq || !nt) return 0;
+        if (nt.indexOf(nq) >= 0) return 1;
+        const qt = nq.split(' '), tt = nt.split(' ');
+        let sum = 0;
+        qt.forEach(w => {
+            let best = 0;
+            tt.forEach(x => {
+                if (x === w) best = 1;
+                else if (best < 1) {
+                    const sim = 1 - mvLev(w, x) / Math.max(w.length, x.length);
+                    if (w.length >= 4 && sim >= 0.75) best = Math.max(best, sim);
+                }
+            });
+            sum += best;
+        });
+        let sc = sum / qt.length;
+        if (sc >= 1 && nt.indexOf(nq) < 0) sc = 0.97; // tüm kelimeler var ama aynı sırada/bitişik değil
+        return sc;
+    }
+    async function mvSearchCommons(q) {
+        const u = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent('filetype:video ' + q)}&gsrnamespace=6&gsrlimit=15&prop=imageinfo&iiprop=url|mime&iiurlwidth=240&format=json&origin=*`;
+        const d = await (await fetchTO(u, 8000)).json();
+        const pages = (d && d.query && d.query.pages) ? Object.values(d.query.pages) : [];
+        return pages.filter(p => p.imageinfo && p.imageinfo[0] && p.imageinfo[0].url).map(p => ({
+            src: 'direct', id: p.imageinfo[0].url, pageUrl: p.imageinfo[0].url,
+            title: String(p.title || '').replace(/^File:/, '').replace(/\.[a-z0-9]+$/i, ''),
+            sub: 'Wikimedia Commons (açık lisans)', thumb: p.imageinfo[0].thumburl || '', dur: 0
+        }));
     }
 
 
@@ -5343,7 +5420,7 @@ async function resetQuarantine() {
             if (st) { st.style.color = '#f1c40f'; st.innerText = 'Dailymotion video akışı çözülüyor...'; }
             const dmM3u8 = await resolveDailymotionM3u8(r.id);
             if (dmM3u8) return { type: 'stream', url: dmM3u8 };
-            return { type: 'embed', url: `https://www.dailymotion.com/embed/video/${r.id}?autoplay=1` };
+            throw new Error('Bu Dailymotion videosu bölge / izin kısıtlı (Forbidden). Başka sonucu deneyin.');
         }
         if (r.src === 'arc') {
             if (st) { st.style.color = '#f1c40f'; st.innerText = 'Archive.org film dosyası aranıyor...'; }
@@ -6099,6 +6176,20 @@ function playAudioDirect(video, url, token) {
             if (movieMode) { const sel = document.getElementById('rightCountrySelect'); if (sel) sel.value = '__movie__'; }
         };
     })();
+    // Telefon/Android Geri düğmesi: açık pencereleri sırayla kapatır. 1 = işlendi.
+    function tvBack() {
+        if (castShown) { castStop(); return 1; }
+        if (tvPick) { tvClosePicker(); return 1; }
+        const m = (id) => { const e = document.getElementById(id); return e && e.classList.contains('show') ? e : null; };
+        if (m('tvConfirmModal')) { resolveTvConfirm(false); return 1; }
+        if (m('bulkNumModal')) { closeBulkNumModal(); return 1; }
+        if (m('channelActionModal')) { closeChannelActionModal(); return 1; }
+        if (m('subSetModal')) { closeSubSettings(); return 1; }
+        if (m('infoModal')) { closeInfoModal(); return 1; }
+        if (m('smartPreviewModal')) { closeSmartPreview(); return 1; }
+        if (drawerBack()) return 1;
+        return 0;
+    }
     // Geri: önce yazı kutusu, sonra sekmeler, sonra menü kapanır. 1 dönerse işlendi.
     function drawerBack() {
         const L = document.getElementById('leftSidebar');
@@ -6302,6 +6393,7 @@ function playAudioDirect(video, url, token) {
         }
         const infoModalEl = document.getElementById('infoModal');
         if (infoModalEl && infoModalEl.classList.contains('show')) {
+            if (ae && ae.id === 'tvTextIn') return;
             e.preventDefault(); e.stopImmediatePropagation();
             if (['Escape', 'BrowserBack', 'GoBack'].includes(k) || kc === 4 || kc === 27) { if (!e.repeat) closeInfoModal(); return; }
             const infoBtns = Array.from(infoModalEl.querySelectorAll('button')).filter(el => el.getClientRects().length > 0 && !el.disabled);
