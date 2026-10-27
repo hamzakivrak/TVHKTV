@@ -37,6 +37,8 @@
         #webEmbedContainer { position:absolute; top:0; left:0; width:100%; height:100%; z-index:2; background:#000; display:none; pointer-events:none; }
         #webEmbedContainer iframe { width:100%; height:100%; border:none; background:#000; pointer-events:none; }
         .movie-card.active { border-color:var(--primary) !important; background:#252244 !important; box-shadow:0 0 14px rgba(108,92,231,0.55); }
+        .movie-card .mc-thumb { position:relative; }
+        .movie-card .mc-dur-badge { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,0.78); color:#fff; font-size:0.74rem; font-weight:700; padding:4px 10px; border-radius:99px; border:1px solid rgba(255,255,255,0.25); pointer-events:none; z-index:3; white-space:nowrap; letter-spacing:0.3px; box-shadow:0 3px 10px rgba(0,0,0,0.65); font-variant-numeric:tabular-nums; }
         .channel-item.multi-picked { border:3px solid var(--accent2) !important; background:rgba(0,206,201,0.22) !important; box-shadow:0 0 16px rgba(0,206,201,0.4); }
         .channel-item.multi-picked::after { content:"\2713"; position:absolute; top:6px; right:8px; width:24px; height:24px; border-radius:50%; background:var(--accent2); color:#000; font-weight:900; display:flex; align-items:center; justify-content:center; font-size:16px; z-index:3; }
         /* WebView'in videonun ortasına çizdiği takılı oynat/durdur simgesini tamamen gizle */
@@ -700,7 +702,7 @@
     let isErrorHandling = false;
     let currentPlaySession = 0;
     let globalIdCounter = Date.now();
-    let currentListContext = localStorage.getItem('tv_last_context') || 'tr';
+    let currentListContext = 'tr'; try { localStorage.setItem('tv_last_context', 'tr'); localStorage.removeItem('tv_last_channel'); localStorage.removeItem('tv_last_video'); } catch (e) {}
     let isDataSaver = localStorage.getItem('tv_data_saver') === 'true';
     let favUrls = JSON.parse(localStorage.getItem('tv_favorites')) || [];
     let brokenUrls = (JSON.parse(localStorage.getItem('tv_broken')) || []).filter(u => !u || (!u.includes('youtube.com') && !u.includes('youtu.be')));
@@ -1060,7 +1062,7 @@
 
         const importedKey = cleanApiKey(pick('apiKey', ['userYTApiKey', 'tv_yt_api_key', 'ytApiKey']) || (extraChannelsDict && extraChannelsDict['__yt_api_key__']) || "");
         if (importedKey) { userYTApiKey = importedKey; localStorage.setItem('tv_yt_api_key', userYTApiKey); document.getElementById('userApiKey').value = userYTApiKey; }
-        if (d.lastContext) { currentListContext = d.lastContext; localStorage.setItem('tv_last_context', d.lastContext); }
+        currentListContext = 'tr'; localStorage.setItem('tv_last_context', 'tr');
         return { yt: ytAll.length, pres: presAll.length, fav: favUrls.length, broken: brokenUrls.length, orders: Object.keys(customOrdersDict).length, hasKey: !!userYTApiKey };
     }
 
@@ -1802,8 +1804,7 @@
         localStorage.setItem('tv_custom', JSON.stringify(toSave));
         persistLocalIfNeeded(); sortAndRenderList();
         if (allChannels.length > 0 && curIdx === -1) {
-            const li = allChannels.findIndex(c => c.url === localStorage.getItem('tv_last_channel'));
-            play(li >= 0 ? li : 0, 1);
+            play(0, 1);
         }
     }
 
@@ -5259,7 +5260,31 @@ async function resetQuarantine() {
 
     /* ===== FİLM / VİDEO ARA (TÜM WEB + Dailymotion + YouTube API'siz + Internet Archive) ===== */
     var movieResults = [];
-    function mvDur(sec) { sec = Math.round(sec || 0); if (!sec) return ''; const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60); return h ? `${h} sa ${m} dk` : `${m} dk`; }
+    function mvParseLen(v) {
+        if (!v) return 0;
+        if (typeof v === 'number') return isFinite(v) && v > 0 ? Math.round(v) : 0;
+        const s = String(v).trim();
+        if (/^\d+(\.\d+)?$/.test(s)) return Math.round( parseFloat(s) );
+        if (/^PT/i.test(s)) return parseIso8601Duration(s);
+        const col = s.match(/^(?:(\d+):)?(\d{1,2}):(\d{2})$/);
+        if (col) return (parseInt(col[1] || '0', 10) * 3600) + (parseInt(col[2], 10) * 60) + parseInt(col[3], 10);
+        let sec = 0;
+        const hm = s.match(/(\d+)\s*(?:saat|sa|hour|hr|h)\b/i);
+        const mm = s.match(/(\d+)\s*(?:dakika|dk|min|m)\b/i);
+        const sm = s.match(/(\d+)\s*(?:saniye|sn|sec|s)\b/i);
+        if (hm) sec += parseInt(hm[1], 10) * 3600;
+        if (mm) sec += parseInt(mm[1], 10) * 60;
+        if (sm) sec += parseInt(sm[1], 10);
+        return sec;
+    }
+    function mvDur(sec) {
+        sec = mvParseLen(sec);
+        if (!sec || sec <= 0) return '';
+        const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = Math.floor(sec % 60);
+        if (h > 0) return `${h} sa ${m} dk`;
+        if (m > 0) return s > 0 && m < 10 ? `${m} dk ${s} sn` : `${m} dk`;
+        return `${s} sn`;
+    }
 
 
     async function mvSearchYt(q, key) {
@@ -5330,7 +5355,7 @@ async function resetQuarantine() {
 
     async function mvSearchArchive(q) {
         const query = `(${q}) AND mediatype:(movies)`;
-        const r = await fetchTO(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(query)}&fl[]=identifier&fl[]=title&fl[]=year&rows=50&sort[]=downloads+desc&output=json`, 10000);
+        const r = await fetchTO(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(query)}&fl[]=identifier&fl[]=title&fl[]=year&fl[]=length&fl[]=runtime&rows=50&sort[]=downloads+desc&output=json`, 10000);
         const d = await r.json();
         return ((d.response && d.response.docs) || []).map(x => ({
             src: 'arc',
@@ -5338,7 +5363,7 @@ async function resetQuarantine() {
             title: x.title || x.identifier,
             sub: 'Internet Archive (telifsiz)' + (x.year ? ' · ' + x.year : ''),
             thumb: `https://archive.org/services/img/${encodeURIComponent(x.identifier)}`,
-            dur: 0,
+            dur: mvParseLen(x.length || x.runtime || 0),
             embedFallback: `https://archive.org/embed/${encodeURIComponent(x.identifier)}?autoplay=1`
         }));
     }
@@ -5395,7 +5420,7 @@ async function resetQuarantine() {
     }
 
 
-    function classifyWebVideoUrl(href, title, thumbUrl) {
+    function classifyWebVideoUrl(href, title, thumbUrl, durSec = 0) {
         if (!href || !/^https?:\/\//i.test(href)) return null;
         let host = '';
         try { host = new URL(href).hostname.replace(/^www\./, ''); } catch (e) { return null; }
@@ -5409,7 +5434,7 @@ async function resetQuarantine() {
                 title: title || 'YouTube Video',
                 sub: 'YouTube (Web)',
                 thumb: thumbUrl || `https://i.ytimg.com/vi/${ytId}/mqdefault.jpg`,
-                dur: 0
+                dur: durSec || 0
             };
         }
         const dmMatch = href.match(/(?:dailymotion\.com\/(?:embed\/)?video\/|dai\.ly\/|geo\.dailymotion\.com\/player[^"']*?[?&]video=)([a-zA-Z0-9]+)/i);
@@ -5421,7 +5446,7 @@ async function resetQuarantine() {
                 title: title || 'Dailymotion Video',
                 sub: 'Dailymotion (Web)',
                 thumb: thumbUrl || `https://www.dailymotion.com/thumbnail/video/${dmId}`,
-                dur: 0,
+                dur: durSec || 0,
                 pageUrl: `https://www.dailymotion.com/video/${dmId}`,
                 embedFallback: `https://www.dailymotion.com/embed/video/${dmId}?autoplay=1&queue-enable=false&ui-logo=false`
             };
@@ -5438,7 +5463,7 @@ async function resetQuarantine() {
                 title: title || 'OK.ru Video',
                 sub: `🎬 OK.ru (${host})`,
                 thumb: thumbUrl || `https://www.google.com/s2/favicons?sz=64&domain_url=ok.ru`,
-                dur: 0
+                dur: durSec || 0
             };
         }
         const vkMatch = href.match(/vk\.(?:com|ru|video)\/video(-?\d+)_(\d+)/i);
@@ -5453,7 +5478,7 @@ async function resetQuarantine() {
                 title: title || 'VK Video',
                 sub: `🎬 VK Video (${host})`,
                 thumb: thumbUrl || `https://www.google.com/s2/favicons?sz=64&domain_url=vk.com`,
-                dur: 0
+                dur: durSec || 0
             };
         }
         const arcMatch = href.match(/archive\.org\/(?:details|embed)\/([^/?#&]+)/i);
@@ -5465,7 +5490,7 @@ async function resetQuarantine() {
                 title: title || aid,
                 sub: 'Internet Archive (Web)',
                 thumb: thumbUrl || `https://archive.org/services/img/${encodeURIComponent(aid)}`,
-                dur: 0,
+                dur: durSec || 0,
                 embedFallback: `https://archive.org/embed/${encodeURIComponent(aid)}?autoplay=1`
             };
         }
@@ -5476,7 +5501,7 @@ async function resetQuarantine() {
             title: title || 'Web Video',
             sub: `🌐 Web (${host})`,
             thumb: thumbUrl || `https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(host)}`,
-            dur: 0
+            dur: durSec || 0
         };
     }
 
@@ -5484,11 +5509,17 @@ async function resetQuarantine() {
     async function mvSearchWebEngine(q) {
         const results = [];
         const seen = new Set();
-        const addResult = (href, title, thumbUrl = '') => {
-            const item = classifyWebVideoUrl(href, title, thumbUrl);
+        const addResult = (href, title, thumbUrl = '', durSec = 0) => {
+            const item = classifyWebVideoUrl(href, title, thumbUrl, durSec);
             if (!item) return;
             const k = item.src + ':' + item.id;
-            if (seen.has(k) || seen.has(href)) return;
+            if (seen.has(k) || seen.has(href)) {
+                if (durSec > 0) {
+                    const ex = results.find(x => (x.src + ':' + x.id) === k || x.pageUrl === href);
+                    if (ex && !ex.dur) ex.dur = durSec;
+                }
+                return;
+            }
             seen.add(k); seen.add(href);
             results.push(item);
         };
@@ -5516,7 +5547,10 @@ async function resetQuarantine() {
                             try { href = decodeURIComponent(new URLSearchParams(href.substring(href.indexOf('?'))).get('uddg') || href); } catch (e) {}
                         }
                         const title = (a.textContent || '').trim();
-                        if (title) addResult(href, title);
+                        const snip = (el.textContent || '');
+                        const dm = snip.match(/\b(\d{1,2}:\d{2}(?::\d{2})?)\b/);
+                        const durSec = dm ? mvParseLen(dm[1]) : 0;
+                        if (title) addResult(href, title, '', durSec);
                     });
                 } catch (e) {}
             })()),
@@ -5524,12 +5558,24 @@ async function resetQuarantine() {
                 try {
                     const bingUrl = `https://www.bing.com/videos/search?q=${encodeURIComponent(bq)}`;
                     const html = await fetchHtmlViaProxy(bingUrl, 9000);
+                    const doc = new DOMParser().parseFromString(html, 'text/html');
+                    doc.querySelectorAll('[vrhm]').forEach(el => {
+                        try {
+                            const raw = el.getAttribute('vrhm') || '';
+                            const murl = (raw.match(/"murl"\s*:\s*"([^"]+)"/i) || [])[1];
+                            const t = (raw.match(/"t"\s*:\s*"([^"]+)"/i) || [])[1];
+                            const du = (raw.match(/"du"\s*:\s*"([^"]+)"/i) || [])[1] || (el.querySelector('.mc_bc_rc, .vrh_dur') || {}).textContent || '';
+                            if (murl) addResult(murl.replace(/\\u002f/gi, '/'), t || 'Web Video', '', mvParseLen(du));
+                        } catch (e) {}
+                    });
                     const mRegex = /murl&quot;:&quot;(https?:\/\/[^&]+?)&quot;.*?t&quot;:&quot;([^&]+?)&quot;/gi;
                     let m;
                     while ((m = mRegex.exec(html)) !== null) {
                         const href = m[1].replace(/\\u002f/gi, '/');
                         const title = m[2].replace(/&#(\d+);/g, (_, n) => String.fromCharCode(n));
-                        addResult(href, title || 'Web Video');
+                        const ctx = html.substring(Math.max(0, m.index - 250), Math.min(html.length, m.index + 500));
+                        const duM = ctx.match(/(?:du&quot;:&quot;|mc_bc_rc[^>]*>)(\d{1,2}:\d{2}(?::\d{2})?)/i);
+                        addResult(href, title || 'Web Video', '', duM ? mvParseLen(duM[1]) : 0);
                     }
                 } catch (e) {}
             })())
@@ -5537,6 +5583,106 @@ async function resetQuarantine() {
 
         await Promise.all(jobs);
         return results.slice(0, 80);
+    }
+
+
+    function updateMovieCardBadgeDOM(kind, idx, durSec) {
+        const txt = mvDur(durSec);
+        if (!txt) return;
+        const card = document.querySelector(`#moviePanel .movie-card[data-kind="${kind}"][data-i="${idx}"]`);
+        if (!card) return;
+        const th = card.querySelector('.mc-thumb');
+        if (!th) return;
+        let b = th.querySelector('.mc-dur-badge');
+        if (!b) {
+            b = document.createElement('span');
+            b.className = 'mc-dur-badge';
+            th.appendChild(b);
+        }
+        b.textContent = '⏱ ' + txt;
+    }
+
+    var mvEnrichSeq = 0;
+    async function enrichMissingMovieDurations(list, kind = 'res') {
+        const mySeq = ++mvEnrichSeq;
+        if (!Array.isArray(list) || !list.length) return;
+
+        // 1. Dailymotion toplu süre sorgusu (web aramasından gelen dm videoları için)
+        const dmMissing = list.map((r, i) => ({ r, i })).filter(x => !x.r.dur && x.r.src === 'dm' && x.r.id);
+        if (dmMissing.length) {
+            try {
+                const ids = [...new Set(dmMissing.map(x => String(x.r.id).split(/[?&]/)[0]))].slice(0, 50);
+                const r = await fetchTO(`https://api.dailymotion.com/videos?ids=${encodeURIComponent(ids.join(','))}&fields=id,duration&limit=50`, 6000);
+                const d = await r.json();
+                const map = new Map(((d && d.list) || []).map(v => [v.id, v.duration || 0]));
+                dmMissing.forEach(({ r, i }) => {
+                    const cleanId = String(r.id).split(/[?&]/)[0];
+                    if (map.get(cleanId) > 0) {
+                        r.dur = map.get(cleanId);
+                        updateMovieCardBadgeDOM(kind, i, r.dur);
+                    }
+                });
+            } catch (e) {}
+        }
+
+        // 2. YouTube toplu süre sorgusu (API anahtarı varsa veya Piped üzerinden)
+        const ytMissing = list.map((r, i) => ({ r, i })).filter(x => !x.r.dur && x.r.src === 'yt' && x.r.id);
+        if (ytMissing.length) {
+            const key = getActiveApiKey();
+            if (key) {
+                try {
+                    const ids = [...new Set(ytMissing.map(x => x.r.id))].slice(0, 45);
+                    const r2 = await fetchTO(`https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids.join(',')}&key=${encodeURIComponent(key)}`, 6000);
+                    const d2 = await r2.json();
+                    const map = new Map(((d2 && d2.items) || []).map(v => [v.id, parseIso8601Duration((v.contentDetails || {}).duration)]));
+                    ytMissing.forEach(({ r, i }) => {
+                        if (map.get(r.id) > 0) {
+                            r.dur = map.get(r.id);
+                            updateMovieCardBadgeDOM(kind, i, r.dur);
+                        }
+                    });
+                } catch (e) {}
+            }
+        }
+
+        // 3. Archive.org ve Web videoları için arka planda süre tamamlama
+        const otherMissing = list.map((r, i) => ({ r, i })).filter(x => !x.r.dur);
+        for (let bi = 0; bi < otherMissing.length; bi += 4) {
+            if (mySeq !== mvEnrichSeq) return;
+            const batch = otherMissing.slice(bi, bi + 4);
+            await Promise.all(batch.map(async ({ r, i }) => {
+                try {
+                    if (r.src === 'arc' && r.id) {
+                        const m = await (await fetchTO(`https://archive.org/metadata/${encodeURIComponent(r.id)}`, 6500)).json();
+                        let len = mvParseLen((m && m.metadata && (m.metadata.runtime || m.metadata.length)) || 0);
+                        if (!len && m && Array.isArray(m.files)) {
+                            for (const f of m.files) {
+                                const fl = mvParseLen(f.length);
+                                if (fl > len) len = fl;
+                            }
+                        }
+                        if (len > 0) { r.dur = len; updateMovieCardBadgeDOM(kind, i, len); }
+                    } else if (r.src === 'yt' && r.id && !r.dur) {
+                        const hosts = ytSortHosts(PIPED).slice(0, 2);
+                        for (const h of hosts) {
+                            try {
+                                const d = await ytFetchJson(`${h}/streams/${r.id}`, null, 4500);
+                                if (d && d.duration > 0) { r.dur = d.duration; updateMovieCardBadgeDOM(kind, i, r.dur); break; }
+                            } catch (e) {}
+                        }
+                    } else if (r.src === 'web' && (r.pageUrl || r.id)) {
+                        const html = await fetchHtmlViaProxy(r.pageUrl || r.id, 6000);
+                        const m1 = html.match(/"duration"\s*:\s*"?(PT[0-9HMS]+|\d+)"?/i) ||
+                                   html.match(/property=["']video:duration["'][^>]*content=["'](\d+)["']/i) ||
+                                   html.match(/itemprop=["']duration["'][^>]*content=["']([^"']+)["']/i);
+                        if (m1 && m1[1]) {
+                            const len = mvParseLen(m1[1]);
+                            if (len > 0) { r.dur = len; updateMovieCardBadgeDOM(kind, i, len); }
+                        }
+                    }
+                } catch (e) {}
+            }));
+        }
     }
 
 
@@ -5560,6 +5706,7 @@ async function resetQuarantine() {
             }];
             st.style.color = '#2ecc71'; st.innerText = 'Bağlantı hazır. ▶ ile hemen açabilirsiniz.';
             renderMovies();
+            enrichMissingMovieDurations(movieResults, 'res');
             return;
         }
 
@@ -5580,7 +5727,13 @@ async function resetQuarantine() {
         const pool = new Map();
         const absorb = (parts) => {
             const mx = Math.max(0, ...parts.map(p => p.length));
-            for (let i = 0; i < mx; i++) parts.forEach(p => { if (p[i] && p[i].id && !pool.has(p[i].id)) pool.set(p[i].id, p[i]); });
+            for (let i = 0; i < mx; i++) parts.forEach(p => {
+                if (p[i] && p[i].id) {
+                    const ex = pool.get(p[i].id);
+                    if (!ex) pool.set(p[i].id, p[i]);
+                    else if (!ex.dur && p[i].dur) ex.dur = p[i].dur;
+                }
+            });
         };
         const scoreAll = () => {
             const arr = Array.from(pool.values());
@@ -5616,6 +5769,7 @@ async function resetQuarantine() {
         st.style.color = '#2ecc71';
         st.innerText = `${good.length} video bulundu (eşleşmeye göre sıralı).` + (errs.length ? ' (' + errs[0] + ')' : '') + ' İzlemek için OK, oynarken ▲ ▼ ile kanal gibi gezebilirsiniz.';
         renderMovies();
+        enrichMissingMovieDurations(movieResults, 'res');
     }
 
     function mvNorm(t) { return String(t || '').toLocaleLowerCase('tr').replace(/ı/g, 'i').replace(/ş/g, 's').replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ö/g, 'o').replace(/ü/g, 'u').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim(); }
@@ -5652,21 +5806,23 @@ async function resetQuarantine() {
         return sc;
     }
     async function mvSearchCommons(q) {
-        const u = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent('filetype:video ' + q)}&gsrnamespace=6&gsrlimit=25&prop=imageinfo&iiprop=url|mime&iiurlwidth=240&format=json&origin=*`;
+        const u = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent('filetype:video ' + q)}&gsrnamespace=6&gsrlimit=25&prop=imageinfo&iiprop=url|mime|duration&iiurlwidth=240&format=json&origin=*`;
         const d = await (await fetchTO(u, 8000)).json();
         const pages = (d && d.query && d.query.pages) ? Object.values(d.query.pages) : [];
         return pages.filter(p => p.imageinfo && p.imageinfo[0] && p.imageinfo[0].url).map(p => ({
             src: 'direct', id: p.imageinfo[0].url, pageUrl: p.imageinfo[0].url,
             title: String(p.title || '').replace(/^File:/, '').replace(/\.[a-z0-9]+$/i, ''),
-            sub: 'Wikimedia Commons (açık lisans)', thumb: p.imageinfo[0].thumburl || '', dur: 0
+            sub: 'Wikimedia Commons (açık lisans)', thumb: p.imageinfo[0].thumburl || '', dur: Math.round(p.imageinfo[0].duration || 0)
         }));
     }
 
 
     function mvCols() { return window.innerWidth < 600 ? 3 : 6; }
-    function mvCard(thumb, title, sub, kind, i, isActive = false) {
+    function mvCard(thumb, title, sub, kind, i, isActive = false, durSec = 0) {
+        const durTxt = mvDur(durSec);
+        const durBadge = durTxt ? `<span class="mc-dur-badge">⏱ ${esc(durTxt)}</span>` : '';
         return `<div class="movie-card ${isActive ? 'active' : ''}" tabindex="0" data-kind="${kind}" data-i="${i}">
-            <div class="mc-thumb">${thumb ? `<img loading="lazy" decoding="async" src="${esc(thumb)}" onerror="this.style.display='none'">` : '<i class="material-icons-round" style="font-size:30px; color:#555; pointer-events:none; width:30px; height:30px; overflow:hidden;">movie</i>'}</div>
+            <div class="mc-thumb">${thumb ? `<img loading="lazy" decoding="async" src="${esc(thumb)}" onerror="this.style.display='none'">` : '<i class="material-icons-round" style="font-size:30px; color:#555; pointer-events:none; width:30px; height:30px; overflow:hidden;">movie</i>'}${durBadge}</div>
             <div class="mc-title">#${i + 1} · ${esc(title)}</div>
             <div class="mc-sub">${esc(sub)}</div></div>`;
     }
@@ -5679,7 +5835,7 @@ async function resetQuarantine() {
         const curCh = (curIdx >= 0 && allChannels[curIdx]) ? allChannels[curIdx] : null;
         box.innerHTML = movieResults.map((r, i) => {
             const isAct = !!(curCh && curCh._mvKind === 'res' && curCh._mvIdx === i);
-            return mvCard(r.thumb, r.title, r.sub + (r.dur ? ' · ' + mvDur(r.dur) : ''), 'res', i, isAct);
+            return mvCard(r.thumb, r.title, r.sub + (r.dur ? ' · ' + mvDur(r.dur) : ''), 'res', i, isAct, r.dur);
         }).join('');
     }
     // ---- Eklenenler (film / video listesi; aktif kanal listesinden ayrı)
@@ -5695,7 +5851,7 @@ async function resetQuarantine() {
         const curCh = (curIdx >= 0 && allChannels[curIdx]) ? allChannels[curIdx] : null;
         box.innerHTML = movieSaved.map((e, i) => {
             const isAct = !!(curCh && curCh._mvKind === 'sav' && curCh._mvIdx === i);
-            return mvCard(e.thumb, e.title, e.sub || '', 'sav', i, isAct);
+            return mvCard(e.thumb, e.title, e.sub || '', 'sav', i, isAct, e.dur || 0);
         }).join('');
     }
     // Kart davranışı: OK / dokunma = oynat, 3 sn basılı tut = Eklenenlere ekle (Eklenenlerdeyse sil)
@@ -5781,7 +5937,7 @@ async function resetQuarantine() {
         try {
             const res = await resolveMovieStreamUrl(r0, st);
             if (movieSaved.some(x => x.url === res.url)) { st.style.color = '#f1c40f'; st.innerText = 'Bu video zaten Eklenenler listesinde.'; return; }
-            movieSaved.push({ title: r0.title, thumb: r0.thumb || '', sub: String(r0.sub || '').replace(/^%\d+ · /, ''), kind: res.type, url: res.url, raw: res.raw || '', ref: res.ref || '' });
+            movieSaved.push({ title: r0.title, thumb: r0.thumb || '', sub: String(r0.sub || '').replace(/^%\d+ · /, ''), dur: r0.dur || 0, kind: res.type, url: res.url, raw: res.raw || '', ref: res.ref || '' });
             movieSavedSave(); renderMovieSaved();
             st.style.color = '#2ecc71'; st.innerText = `✅ "${r0.title}" Eklenenler listesine eklendi.`;
             showOSD('Eklenenlere eklendi', r0.title);
@@ -5885,6 +6041,7 @@ async function resetQuarantine() {
             const files = (m.files || []).filter(f => /\.(mp4|m4v|webm|ogv)$/i.test(f.name || '') && !/_thumb|sample|trailer|_512kb/i.test(f.name || ''));
             files.sort((a, b) => ((/h\.264|mpeg4/i.test(b.format || '') ? 1 : 0) - (/h\.264|mpeg4/i.test(a.format || '') ? 1 : 0)) || (Number(b.size || 0) - Number(a.size || 0)));
             const f = files[0] || (m.files || []).find(f => /\.(mp4|m4v|webm|ogv)$/i.test(f.name || ''));
+            if (f && f.length && !r.dur) r.dur = mvParseLen(f.length);
             if (!f) return { type: 'embed', url: `https://archive.org/embed/${encodeURIComponent(r.id)}?autoplay=1` };
             return {
                 type: 'stream',
@@ -6141,8 +6298,7 @@ async function resetQuarantine() {
         injectExtraChannels(); sortAndRenderList();
         stat.innerText = arr.length ? 'Liste Hazır!' : 'Bu liste boş';
         if (allChannels.length > 0) {
-            const li = allChannels.findIndex(c => c.url === localStorage.getItem('tv_last_channel'));
-            play(li >= 0 ? li : 0, 1);
+            play(0, 1);
         } else {
             showOSD('Liste boş');
         }
@@ -7343,7 +7499,7 @@ function playAudioDirect(video, url, token) {
             try { tvRenderTargets(); tvRemoteInfoRefresh(); } catch (e) {}
             try { initSettingsTabs(); } catch (e) {}
             try { firstRunDefaults(); } catch (e) {}
-            try { renderMovieSaved(); setTimeout(restoreLastVideo, 3000); } catch (e) {}
+            try { renderMovieSaved(); } catch (e) {}
             try { tvLinkPaint(); } catch (e) {}
             try { document.getElementById('cloudBaseInput').value = localStorage.getItem('tv_cloud_base') || ''; } catch (e) {}
             startupSyncCheck();
@@ -7352,8 +7508,10 @@ function playAudioDirect(video, url, token) {
                 if (Date.now() - last > 12 * 3600e3) setTimeout(() => updateAdRules(false), 4000);
             }
         } catch (e) {}
+        currentListContext = 'tr';
+        try { localStorage.setItem('tv_last_context', 'tr'); localStorage.removeItem('tv_last_channel'); localStorage.removeItem('tv_last_video'); } catch (e) {}
         updatePresetDropdown();
-        changeCountry(currentListContext);
+        changeCountry('tr');
         resetControlsTimer();
         const vid = document.getElementById('localPlayer');
         const sp = document.getElementById('bufSpinner');
