@@ -71,8 +71,8 @@ jobs:
                   applicationId "com.tvcast.player"
                   minSdk 21
                   targetSdk 34
-                  versionCode 7
-                  versionName "1.6"
+                  versionCode 8
+                  versionName "1.7"
               }
 
               buildTypes {
@@ -503,37 +503,43 @@ jobs:
 
                   @JavascriptInterface
                   public void tvScan(final String code) {
-                      final String me = localIp();
-                      if (me.length() == 0) { jsCb("window.__tvScanDone&&__tvScanDone([])"); return; }
-                      final String prefix = me.substring(0, me.lastIndexOf('.') + 1);
+                      final java.util.List<String> mine = localIps();
+                      if (mine.isEmpty()) { jsCb("window.__tvScanDone&&__tvScanDone([]," + JSONObject.quote("Wi-Fi adresi alinamadi") + ")"); return; }
                       final String cd = (code == null || code.length() != 4) ? "0000" : code;
                       new Thread(new Runnable() {
                           @Override
                           public void run() {
                               final java.util.List<String> found = java.util.Collections.synchronizedList(new java.util.ArrayList<String>());
-                              java.util.concurrent.ExecutorService ex = java.util.concurrent.Executors.newFixedThreadPool(48);
-                              for (int i = 1; i < 255; i++) {
-                                  final String ip = prefix + i;
-                                  if (ip.equals(me)) continue;
-                                  ex.execute(new Runnable() {
-                                      @Override
-                                      public void run() {
-                                          try {
-                                              HttpURLConnection c = (HttpURLConnection) new URL("http://" + ip + ":" + REMOTE_PORT + "/ping?code=" + cd).openConnection();
-                                              c.setConnectTimeout(700);
-                                              c.setReadTimeout(1500);
-                                              int rc = c.getResponseCode();
-                                              if (rc == 200 || rc == 403) found.add(ip + "|" + (rc == 200));
-                                              c.disconnect();
-                                          } catch (Exception ignored) { }
-                                      }
-                                  });
+                              java.util.concurrent.ExecutorService ex = java.util.concurrent.Executors.newFixedThreadPool(64);
+                              StringBuilder scanned = new StringBuilder();
+                              java.util.HashSet<String> seen = new java.util.HashSet<String>();
+                              for (final String me : mine) {
+                                  final String prefix = me.substring(0, me.lastIndexOf('.') + 1);
+                                  if (!seen.add(prefix)) continue;
+                                  scanned.append(prefix).append("x ");
+                                  for (int i = 1; i < 255; i++) {
+                                      final String ip = prefix + i;
+                                      if (mine.contains(ip)) continue;
+                                      ex.execute(new Runnable() {
+                                          @Override
+                                          public void run() {
+                                              try {
+                                                  HttpURLConnection c = (HttpURLConnection) new URL("http://" + ip + ":" + REMOTE_PORT + "/ping?code=" + cd).openConnection();
+                                                  c.setConnectTimeout(900);
+                                                  c.setReadTimeout(1500);
+                                                  int rc = c.getResponseCode();
+                                                  if (rc == 200 || rc == 403) found.add(ip + "|" + (rc == 200));
+                                                  c.disconnect();
+                                              } catch (Exception ignored) { }
+                                          }
+                                      });
+                                  }
                               }
                               ex.shutdown();
-                              try { ex.awaitTermination(25, java.util.concurrent.TimeUnit.SECONDS); } catch (Exception ignored) { }
+                              try { ex.awaitTermination(30, java.util.concurrent.TimeUnit.SECONDS); } catch (Exception ignored) { }
                               org.json.JSONArray arr = new org.json.JSONArray();
                               synchronized (found) { for (String f : found) arr.put(f); }
-                              jsCb("window.__tvScanDone&&__tvScanDone(" + arr.toString() + ")");
+                              jsCb("window.__tvScanDone&&__tvScanDone(" + arr.toString() + "," + JSONObject.quote(scanned.toString()) + ")");
                           }
                       }).start();
                   }
@@ -644,20 +650,32 @@ jobs:
                   if (remote != null) { remote.stop(); remote = null; }
               }
 
-              private String localIp() {
+              private java.util.List<String> localIps() {
+                  java.util.List<String> pref = new java.util.ArrayList<String>();
+                  java.util.List<String> rest = new java.util.ArrayList<String>();
                   try {
                       Enumeration<NetworkInterface> en = NetworkInterface.getNetworkInterfaces();
                       while (en != null && en.hasMoreElements()) {
                           NetworkInterface ni = en.nextElement();
                           if (!ni.isUp() || ni.isLoopback()) continue;
+                          String nm = ni.getName() == null ? "" : ni.getName().toLowerCase(Locale.US);
+                          boolean lan = nm.startsWith("wlan") || nm.startsWith("eth") || nm.startsWith("ap") || nm.startsWith("swlan");
                           Enumeration<InetAddress> ad = ni.getInetAddresses();
                           while (ad.hasMoreElements()) {
                               InetAddress a = ad.nextElement();
-                              if (a instanceof java.net.Inet4Address && !a.isLoopbackAddress() && a.isSiteLocalAddress()) return a.getHostAddress();
+                              if (a instanceof java.net.Inet4Address && !a.isLoopbackAddress() && a.isSiteLocalAddress()) {
+                                  (lan ? pref : rest).add(a.getHostAddress());
+                              }
                           }
                       }
                   } catch (Exception ignored) { }
-                  return "";
+                  pref.addAll(rest);
+                  return pref;
+              }
+
+              private String localIp() {
+                  java.util.List<String> l = localIps();
+                  return l.isEmpty() ? "" : l.get(0);
               }
 
               private void jsCb(final String js) {
@@ -849,6 +867,8 @@ jobs:
           import com.google.android.gms.cast.framework.SessionManagerListener;
           import com.google.android.gms.cast.framework.media.RemoteMediaClient;
           import com.google.android.gms.cast.CastMediaControlIntent;
+          import com.google.android.gms.cast.MediaStatus;
+          import com.google.android.gms.common.api.ResultCallback;
           import org.json.JSONArray;
           import org.json.JSONObject;
 
@@ -864,6 +884,26 @@ jobs:
               private boolean ready = false;
               private String pendUrl, pendMime, pendTitle, pendLogo;
               private String connectedRoute = "";
+              private RemoteMediaClient watched;
+              private final RemoteMediaClient.Callback rmcCb = new RemoteMediaClient.Callback() {
+                  @Override
+                  public void onStatusUpdated() {
+                      try {
+                          MediaStatus ms = watched == null ? null : watched.getMediaStatus();
+                          if (ms != null && ms.getPlayerState() == MediaStatus.PLAYER_STATE_IDLE && ms.getIdleReason() == MediaStatus.IDLE_REASON_ERROR) {
+                              out.js("window.__castState&&__castState(false,'TV akisi oynatamadi (adres erisilemiyor / CORS / bicim)')");
+                              resetSession();
+                          }
+                      } catch (Throwable ignored) { }
+                  }
+              };
+
+              private void resetSession() {
+                  try { if (watched != null) watched.unregisterCallback(rmcCb); } catch (Throwable ignored) { }
+                  watched = null;
+                  try { if (ctx != null) ctx.getSessionManager().endCurrentSession(true); } catch (Throwable ignored) { }
+                  connectedRoute = "";
+              }
 
               private final MediaRouter.Callback cb = new MediaRouter.Callback() { };
 
@@ -935,7 +975,16 @@ jobs:
                           for (MediaRouter.RouteInfo r : router.getRoutes()) { if (r.getId().equals(id)) { target = r; break; } }
                           if (target == null) { out.js("window.__castState&&__castState(false,'Cihaz artık görünmüyor, yeniden arayın')"); return; }
                           connectedRoute = id;
-                          router.selectRoute(target);
+                          final MediaRouter.RouteInfo tgt = target;
+                          try {
+                              MediaRouter.RouteInfo sr = router.getSelectedRoute();
+                              if (sr != null && !sr.isDefaultOrBluetooth()) {
+                                  router.unselect(MediaRouter.UNSELECT_REASON_STOPPED);
+                                  h.postDelayed(new Runnable() { @Override public void run() { router.selectRoute(tgt); } }, 600);
+                                  return;
+                              }
+                          } catch (Throwable ignored) { }
+                          router.selectRoute(tgt);
                       }
                   });
               }
@@ -954,9 +1003,18 @@ jobs:
                               .setContentType(pendMime == null || pendMime.length() == 0 ? "video/mp4" : pendMime)
                               .setMetadata(md)
                               .build();
-                      rmc.load(new MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(true).build());
+                      try { if (watched != null) watched.unregisterCallback(rmcCb); } catch (Throwable ignored) { }
+                      watched = rmc;
+                      rmc.registerCallback(rmcCb);
+                      rmc.load(new MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(true).build())
+                              .setResultCallback(new ResultCallback<RemoteMediaClient.MediaChannelResult>() {
+                                  @Override
+                                  public void onResult(RemoteMediaClient.MediaChannelResult r) {
+                                      if (r.getStatus().isSuccess()) out.js("window.__castState&&__castState(true,'')");
+                                      else { out.js("window.__castState&&__castState(false,'Yukleme reddedildi (kod " + r.getStatus().getStatusCode() + ")')"); resetSession(); }
+                                  }
+                              });
                       pendUrl = null;
-                      out.js("window.__castState&&__castState(true,'')");
                   } catch (Throwable t) {
                       out.js("window.__castState&&__castState(false," + JSONObject.quote(String.valueOf(t.getMessage())) + ")");
                   }
