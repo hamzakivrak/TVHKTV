@@ -34,6 +34,9 @@
         #ytContainer { position:absolute; top:0; left:0; width:100%; height:100%; z-index:2; background:#000; display:none; pointer-events:none; }
         #ytContainer iframe { width:100%; height:100%; border:none; }
         #ytContainer.yt-wait { visibility:hidden; }
+        #webEmbedContainer { position:absolute; top:0; left:0; width:100%; height:100%; z-index:2; background:#000; display:none; pointer-events:none; }
+        #webEmbedContainer iframe { width:100%; height:100%; border:none; background:#000; pointer-events:none; }
+        .movie-card.active { border-color:var(--primary) !important; background:#252244 !important; box-shadow:0 0 14px rgba(108,92,231,0.55); }
         .channel-item.multi-picked { border:3px solid var(--accent2) !important; background:rgba(0,206,201,0.22) !important; box-shadow:0 0 16px rgba(0,206,201,0.4); }
         .channel-item.multi-picked::after { content:"\2713"; position:absolute; top:6px; right:8px; width:24px; height:24px; border-radius:50%; background:var(--accent2); color:#000; font-weight:900; display:flex; align-items:center; justify-content:center; font-size:16px; z-index:3; }
         /* WebView'in videonun ortasına çizdiği takılı oynat/durdur simgesini tamamen gizle */
@@ -230,6 +233,7 @@
 <div id="playerWrapper" tabindex="0">
     <video id="localPlayer" playsinline crossorigin="anonymous"></video>
     <div id="ytContainer"><div id="ytPlayer"></div></div>
+    <div id="webEmbedContainer"></div>
     <div id="liveSubtitleOverlay">Çeviri bekleniyor...</div>
     <div id="castOnlyScreen">
         <i class="material-icons-round">cast_connected</i>
@@ -1286,6 +1290,14 @@
         document.getElementById('overlayBackdrop').classList.add('show');
         document.getElementById('controlsOverlay').classList.add('hide');
         setTimeout(() => {
+            if (typeof movieMode !== 'undefined' && movieMode) {
+                const activeMc = document.querySelector('#moviePanel .movie-card.active') || document.querySelector('#movieResults .movie-card, #movieSaved .movie-card') || document.getElementById('filterInput');
+                if (activeMc) {
+                    try { activeMc.focus({ preventScroll: true }); } catch(e) { activeMc.focus(); }
+                    try { activeMc.scrollIntoView({ block: 'nearest' }); } catch(e) {}
+                }
+                return;
+            }
             const visItems = getVisibleGridItems();
             const curEl = document.getElementById(`c-${curIdx}`);
             const target = (curEl && curEl.style.display !== 'none') ? curEl : (visItems[0] || document.getElementById('filterInput'));
@@ -3037,26 +3049,58 @@ async function resetQuarantine() {
         if (idx < 0 || idx >= allChannels.length) return;
         currentPlaySession++; let mySession = currentPlaySession; curIdx = idx; let ch = allChannels[curIdx]; bgUserPaused = false;
         ytRetry = {}; window.ytCurrentSource = null;
-        if (typeof castShown !== 'undefined' && castShown) { castLoad(ch).catch(e => showOSD('Cast başarısız', String(e && e.message || e).slice(0, 90))); return; }
-        try { localStorage.setItem('tv_last_channel', ch.url); } catch(e) {}
+        if (typeof castShown !== 'undefined' && castShown && !ch._mvRaw) { castLoad(ch).catch(e => showOSD('Cast başarısız', String(e && e.message || e).slice(0, 90))); return; }
+        try { if (ch.url && !ch.url.startsWith('mv_lazy:') && !ch.url.startsWith('#web_embed#')) localStorage.setItem('tv_last_channel', ch.url); } catch(e) {}
         autoPlayDirection = dir || 1;
         if (dir === 0 && ch.broken) {
             markChannelHealthy(ch);
-            sortAndRenderList();
+            sortAndRenderList(!!ch._mvRaw);
             idx = curIdx;
             ch = allChannels[curIdx];
         }
         document.querySelectorAll('.channel-item.active').forEach(el => el.classList.remove('active'));
         const activeItem = document.getElementById(`c-${curIdx}`);
         if (activeItem) { activeItem.classList.remove('broken'); activeItem.classList.add('active'); }
+        document.querySelectorAll('#moviePanel .movie-card.active').forEach(el => el.classList.remove('active'));
+        if (ch._mvKind && typeof ch._mvIdx === 'number') {
+            const mc = document.querySelector(`#moviePanel .movie-card[data-kind="${ch._mvKind}"][data-i="${ch._mvIdx}"]`);
+            if (mc) mc.classList.add('active');
+        }
         stopAcceleratingSeek();
         const sbw = document.getElementById('seekBarWrap'); if (sbw) sbw.classList.remove('show');
         document.getElementById('previewTitle').innerText = ch.name; updateMainFavBtn(); updateChannelMeta();
         document.getElementById('pStatus').innerText = "Bağlanıyor...";
-        showOSD((curIdx + 1) + ". " + ch.name);
+        const osdSub = ch._mvRaw ? `🎬 Video (${curIdx + 1} / ${allChannels.length}) · ▲ ▼ ile diğer sonuçlara geçebilirsiniz` : "";
+        showOSD((curIdx + 1) + ". " + ch.name, osdSub);
         try { refreshNowPlaying(); } catch (e) {}
-        playLocally(ch.url, mySession);
         hideControlsNow();
+        if (ch._mvRaw && (!ch._mvResolved || !ch.url || ch.url.startsWith('mv_lazy:'))) {
+            document.getElementById('pStatus').innerText = "Video Kaynağı Çözülüyor...";
+            document.getElementById('bufSpinner').style.display = 'block';
+            try {
+                const res = await resolveMovieStreamUrl(ch._mvRaw, null);
+                if (mySession !== currentPlaySession) return;
+                ch._mvResolved = res;
+                if (res.embedFallback) ch._mvRaw.embedFallback = res.embedFallback;
+                ch.url = res.type === 'embed' ? ('#web_embed#' + res.url) : res.url;
+                try {
+                    if (!ch.url.startsWith('#web_embed#')) localStorage.setItem('tv_last_channel', ch.url);
+                    rememberVideo(ch);
+                } catch (e) {}
+            } catch (err) {
+                if (mySession !== currentPlaySession) return;
+                document.getElementById('bufSpinner').style.display = 'none';
+                if (ch._mvRaw && ch._mvRaw.embedFallback && isSafeEmbedUrl(ch._mvRaw.embedFallback)) {
+                    ch.url = '#web_embed#' + ch._mvRaw.embedFallback;
+                    playLocally(ch.url, mySession);
+                    return;
+                }
+                handleStreamError(mySession);
+                return;
+            }
+        }
+        if (typeof castShown !== 'undefined' && castShown) { castLoad(ch).catch(e => showOSD('Cast başarısız', String(e && e.message || e).slice(0, 90))); return; }
+        playLocally(ch.url, mySession);
     }
 
 
@@ -3162,12 +3206,45 @@ async function resetQuarantine() {
     }
 
 
+    function isSafeEmbedUrl(u) {
+        if (!u || !/^https?:\/\//i.test(u)) return false;
+        return /(?:dailymotion\.com\/embed\/|ok\.ru\/videoembed\/|vk\.com\/video_ext\.php|archive\.org\/embed\/|player\.vimeo\.com\/video\/|youtube(?:-nocookie)?\.com\/embed\/|\/videos\/embed\/)/i.test(u);
+    }
+
     async function playLocally(url, sessionToken, isRetryAfterHeal = false) {
         const video = document.getElementById('localPlayer');
         const ytContainer = document.getElementById('ytContainer');
+        const webEmbedContainer = document.getElementById('webEmbedContainer');
         document.getElementById('castOnlyScreen').style.display = 'none';
         video.onerror = null; video.onloadedmetadata = null;
         if (hls) { hls.destroy(); hls = null; }
+        if (webEmbedContainer && !String(url || '').startsWith('#web_embed#')) {
+            webEmbedContainer.style.display = 'none';
+            webEmbedContainer.innerHTML = '';
+        }
+
+        if (String(url || '').startsWith('#web_embed#')) {
+            const embedUrl = String(url).substring('#web_embed#'.length);
+            if (!isSafeEmbedUrl(embedUrl)) {
+                handleStreamError(sessionToken);
+                return;
+            }
+            ytContainer.style.display = 'none'; ytContainer.classList.remove('yt-wait'); ytWatchStop();
+            try { if (isYtApiReady && ytPlayer && typeof ytPlayer.stopVideo === 'function') ytPlayer.stopVideo(); } catch (e) {}
+            video.style.display = 'none'; video.pause(); video.removeAttribute('src');
+            document.getElementById('bufSpinner').style.display = 'none';
+            if (webEmbedContainer) {
+                webEmbedContainer.style.display = 'block';
+                const refPol = /dailymotion\.com|ok\.ru|vk\.com|vimeo\.com|archive\.org/i.test(embedUrl) ? 'strict-origin-when-cross-origin' : 'no-referrer';
+                webEmbedContainer.innerHTML = `<iframe tabindex="-1" src="${esc(embedUrl)}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="${refPol}"></iframe>`;
+            }
+            document.getElementById('pStatus').innerText = "Cihazda İzleniyor (Web Player)";
+            document.getElementById('playIcon').innerText = 'pause';
+            if (curIdx >= 0 && allChannels[curIdx]) markChannelHealthy(allChannels[curIdx]);
+            const pw = document.getElementById('playerWrapper');
+            if (pw) { try { pw.focus({ preventScroll: true }); } catch(e) { pw.focus(); } }
+            return;
+        }
 
 
         if (url.includes('#web_live')) {
@@ -3243,9 +3320,38 @@ async function resetQuarantine() {
         video.removeAttribute('crossorigin');
         const cleanStreamUrl = url.split('#')[0];
         const forceProxyFirst = url.includes('#cors_proxy');
+        const isDirectVideoFile = /\.(mp4|m4v|webm|ogv|mov|mkv)(\?|$)/i.test(cleanStreamUrl) || url.includes('#direct_video') || /archive\.org\/download\/|wikimedia\.org\//i.test(cleanStreamUrl);
 
 
-        if (Hls.isSupported()) {
+        if (isDirectVideoFile) {
+            video.src = cleanStreamUrl;
+            video.onerror = function() {
+                if (sessionToken !== currentPlaySession) return;
+                const curCh = allChannels[curIdx];
+                if (curCh && curCh._mvRaw && curCh._mvRaw.embedFallback && isSafeEmbedUrl(curCh._mvRaw.embedFallback) && !url.startsWith('#web_embed#')) {
+                    curCh.url = '#web_embed#' + curCh._mvRaw.embedFallback;
+                    playLocally(curCh.url, sessionToken, true);
+                    return;
+                }
+                handleStreamError(sessionToken);
+            };
+            video.onended = function() {
+                if (sessionToken === currentPlaySession) nextCh();
+            };
+            video.play().then(() => {
+                if (sessionToken !== currentPlaySession) return;
+                markChannelHealthy(allChannels[curIdx] || url);
+                document.getElementById('bufSpinner').style.display = 'none';
+                document.getElementById('pStatus').innerText = "Cihazda İzleniyor";
+            }).catch((e) => {
+                if (e && e.name === 'NotAllowedError') {
+                    video.muted = true; document.getElementById('muteIcon').innerText = 'volume_off';
+                    video.play().catch(() => {});
+                } else if (e && e.name !== 'AbortError') {
+                    video.onerror();
+                }
+            });
+        } else if (Hls.isSupported()) {
             let triedProxyFallback = forceProxyFirst;
             const startHlsPlayback = (useProxyMode) => {
                 if (sessionToken !== currentPlaySession) return;
@@ -3263,8 +3369,14 @@ async function resetQuarantine() {
                         startHlsPlayback(true);
                         return;
                     }
-                    if (!isRetryAfterHeal && allChannels[curIdx]) {
-                        const healedUrl = await tryAutoHealChannelStream(allChannels[curIdx], url, sessionToken);
+                    const curCh = allChannels[curIdx];
+                    if (curCh && curCh._mvRaw && curCh._mvRaw.embedFallback && isSafeEmbedUrl(curCh._mvRaw.embedFallback) && !url.startsWith('#web_embed#')) {
+                        curCh.url = '#web_embed#' + curCh._mvRaw.embedFallback;
+                        playLocally(curCh.url, sessionToken, true);
+                        return;
+                    }
+                    if (!isRetryAfterHeal && curCh && !curCh._mvRaw) {
+                        const healedUrl = await tryAutoHealChannelStream(curCh, url, sessionToken);
                         if (sessionToken !== currentPlaySession) return;
                         if (healedUrl) {
                             playLocally(healedUrl, sessionToken, true);
@@ -3675,14 +3787,24 @@ async function resetQuarantine() {
 
 
     async function resolveDailymotionM3u8(dmId) {
-        const metaUrl = `https://www.dailymotion.com/player/metadata/video/${dmId}?embedder=${encodeURIComponent('https://www.dailymotion.com/video/' + dmId)}&app=com.dailymotion.neon`;
-        const tries = [metaUrl, MY_CLOUD_PROXY + encodeURIComponent(metaUrl), 'https://api.allorigins.win/raw?url=' + encodeURIComponent(metaUrl), 'https://corsproxy.io/?' + encodeURIComponent(metaUrl)];
-        for (const u of tries) {
+        const cleanId = String(dmId || '').split(/[?&]/)[0].trim();
+        if (!cleanId) return null;
+        const metaUrl = `https://www.dailymotion.com/player/metadata/video/${cleanId}?embedder=${encodeURIComponent('https://www.dailymotion.com/video/' + cleanId)}&app=com.dailymotion.neon`;
+        // Önce doğrudan cihazdan veya APK proxy üzerinden çekmeyi dene ki Dailymotion HLS token'ı cihazın kendi IP'sine üretilsin
+        const tries = [{ u: metaUrl, proxy: false }];
+        if (window.Android && typeof Android.proxyUrl === 'function') {
+            try { tries.push({ u: Android.proxyUrl(metaUrl, 'https://www.dailymotion.com/'), proxy: false }); } catch (e) {}
+        }
+        tries.push({ u: MY_CLOUD_PROXY + encodeURIComponent(metaUrl), proxy: true });
+        for (const t of tries) {
             try {
-                const d = await fastJsonFetch(u, 6000);
+                const d = await fastJsonFetch(t.u, 5500);
                 const q = d && d.qualities;
                 const arr = q && ((q.auto && q.auto[0]) || (q['720'] && q['720'][0]) || (q['480'] && q['480'][0]) || (q['380'] && q['380'][0]));
-                if (arr && arr.url) return arr.url;
+                if (arr && arr.url) {
+                    // Eğer metadata Cloudflare Worker (MY_CLOUD_PROXY) üzerinden alındıysa, Dailymotion token'ı Worker IP'sine kilitlidir; oynatırken de #cors_proxy ile aynı Worker üzerinden oynat ki 403 Forbidden vermesin
+                    return (t.proxy && !(window.Android && typeof Android.proxyUrl === 'function')) ? (arr.url + '#cors_proxy') : arr.url;
+                }
             } catch (e) {}
         }
         return null;
@@ -5141,104 +5263,249 @@ async function resetQuarantine() {
 
 
     async function mvSearchYt(q, key) {
+        const outAll = []; const seenIds = new Set();
+        const addYt = (it) => { if (it && it.id && !seenIds.has(it.id)) { seenIds.add(it.id); outAll.push(it); } };
         if (key) {
             try {
-                const r = await fetchTO(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoDuration=long&q=${encodeURIComponent(q)}&maxResults=25&key=${encodeURIComponent(key)}`, 9000);
-                const d = await r.json();
-                if (!d.error && d.items) {
-                    const items = (d.items || []).filter(x => x.id && x.id.videoId).map(x => ({ src: 'yt', id: x.id.videoId, title: x.snippet.title, sub: (x.snippet.channelTitle || 'YouTube') + ' · YouTube', thumb: (x.snippet.thumbnails && (x.snippet.thumbnails.medium || x.snippet.thumbnails.default) || {}).url || '', dur: 0 }));
-                    if (items.length) {
-                        try {
-                            const r2 = await fetchTO(`https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${items.map(i => i.id).join(',')}&key=${encodeURIComponent(key)}`, 7000);
+                const [rLong, rAny] = await Promise.all([
+                    fetchTO(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoDuration=long&q=${encodeURIComponent(q)}&maxResults=35&key=${encodeURIComponent(key)}`, 9000).then(r => r.json()).catch(() => ({})),
+                    fetchTO(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(q)}&maxResults=35&key=${encodeURIComponent(key)}`, 9000).then(r => r.json()).catch(() => ({}))
+                ]);
+                const rawItems = [...((rLong && rLong.items) || []), ...((rAny && rAny.items) || [])];
+                const items = [];
+                rawItems.forEach(x => {
+                    if (x && x.id && x.id.videoId && !seenIds.has(x.id.videoId)) {
+                        seenIds.add(x.id.videoId);
+                        items.push({ src: 'yt', id: x.id.videoId, title: x.snippet.title, sub: (x.snippet.channelTitle || 'YouTube') + ' · YouTube', thumb: (x.snippet.thumbnails && (x.snippet.thumbnails.medium || x.snippet.thumbnails.default) || {}).url || '', dur: 0 });
+                    }
+                });
+                if (items.length) {
+                    try {
+                        for (let bi = 0; bi < items.length; bi += 45) {
+                            const chunk = items.slice(bi, bi + 45);
+                            const r2 = await fetchTO(`https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${chunk.map(i => i.id).join(',')}&key=${encodeURIComponent(key)}`, 7000);
                             const d2 = await r2.json();
                             (d2.items || []).forEach(v => { const it = items.find(i => i.id === v.id); if (it) it.dur = parseIso8601Duration((v.contentDetails || {}).duration); });
-                        } catch (e) {}
-                        return items;
-                    }
+                        }
+                    } catch (e) {}
+                    return items;
                 }
             } catch (e) {}
         }
         loadInstances();
         const P = ytSortHosts(PIPED).slice(0, 4), I = ytSortHosts(INVID).slice(0, 4);
+        const queries = [q, q + ' full film izle'];
         for (const host of P) {
             try {
-                const d = await ytFetchJson(`${host}/search?q=${encodeURIComponent(q + ' full film izle')}&filter=videos`, null, 6000);
-                const out = (d.items || []).filter(x => x.url && x.url.includes('v=') && (!x.duration || x.duration > 600)).map(x => {
-                    const vid = new URLSearchParams(x.url.substring(x.url.indexOf('?'))).get('v');
-                    return vid ? { src: 'yt', id: vid, title: x.title || 'Video', sub: (x.uploaderName || 'YouTube') + ' · YouTube', thumb: x.thumbnail || '', dur: x.duration || 0 } : null;
-                }).filter(Boolean);
-                if (out.length) return out;
+                const resArr = await Promise.all(queries.map(qq => ytFetchJson(`${host}/search?q=${encodeURIComponent(qq)}&filter=videos`, null, 6000).catch(() => ({}))));
+                resArr.forEach(d => {
+                    ((d && d.items) || []).forEach(x => {
+                        if (!x || !x.url || !x.url.includes('v=')) return;
+                        const vid = new URLSearchParams(x.url.substring(x.url.indexOf('?'))).get('v');
+                        if (vid) addYt({ src: 'yt', id: vid, title: x.title || 'Video', sub: (x.uploaderName || 'YouTube') + ' · YouTube', thumb: x.thumbnail || `https://i.ytimg.com/vi/${vid}/mqdefault.jpg`, dur: x.duration || 0 });
+                    });
+                });
+                if (outAll.length) return outAll;
             } catch (e) {}
         }
         for (const host of I) {
             try {
-                const d = await ytFetchJson(`${host}/api/v1/search?q=${encodeURIComponent(q)}&type=video&duration=long`, null, 6000);
-                const out = (Array.isArray(d) ? d : []).filter(x => x.videoId).map(x => ({
-                    src: 'yt', id: x.videoId, title: x.title || 'Video', sub: (x.author || 'YouTube') + ' · YouTube',
-                    thumb: (x.videoThumbnails && x.videoThumbnails[0] && x.videoThumbnails[0].url) || `https://i.ytimg.com/vi/${x.videoId}/mqdefault.jpg`,
-                    dur: x.lengthSeconds || 0
-                }));
-                if (out.length) return out;
+                const [dLong, dAny] = await Promise.all([
+                    ytFetchJson(`${host}/api/v1/search?q=${encodeURIComponent(q)}&type=video&duration=long`, null, 6000).catch(() => []),
+                    ytFetchJson(`${host}/api/v1/search?q=${encodeURIComponent(q)}&type=video`, null, 6000).catch(() => [])
+                ]);
+                [...(Array.isArray(dLong) ? dLong : []), ...(Array.isArray(dAny) ? dAny : [])].forEach(x => {
+                    if (x && x.videoId) addYt({
+                        src: 'yt', id: x.videoId, title: x.title || 'Video', sub: (x.author || 'YouTube') + ' · YouTube',
+                        thumb: (x.videoThumbnails && x.videoThumbnails[0] && x.videoThumbnails[0].url) || `https://i.ytimg.com/vi/${x.videoId}/mqdefault.jpg`,
+                        dur: x.lengthSeconds || 0
+                    });
+                });
+                if (outAll.length) return outAll;
             } catch (e) {}
         }
-        return [];
+        return outAll;
     }
 
 
     async function mvSearchArchive(q) {
         const query = `(${q}) AND mediatype:(movies)`;
-        const r = await fetchTO(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(query)}&fl[]=identifier&fl[]=title&fl[]=year&rows=25&sort[]=downloads+desc&output=json`, 10000);
+        const r = await fetchTO(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(query)}&fl[]=identifier&fl[]=title&fl[]=year&rows=50&sort[]=downloads+desc&output=json`, 10000);
         const d = await r.json();
-        return ((d.response && d.response.docs) || []).map(x => ({ src: 'arc', id: x.identifier, title: x.title || x.identifier, sub: 'Internet Archive (telifsiz)' + (x.year ? ' · ' + x.year : ''), thumb: `https://archive.org/services/img/${encodeURIComponent(x.identifier)}`, dur: 0 }));
-    }
-
-
-    async function mvSearchDailymotion(q) {
-        const url = `https://api.dailymotion.com/videos?search=${encodeURIComponent(q)}&fields=id,title,duration,thumbnail_240_url,owner.screenname,allow_embed,private&limit=40&longer_than=10`;
-        const r = await fetchTO(url, 8000);
-        const d = await r.json();
-        return ((d && d.list) || []).filter(x => x.allow_embed !== false && !x.private).map(x => ({
-            src: 'dm',
-            id: x.id,
-            title: x.title || 'Dailymotion Video',
-            sub: 'Dailymotion · ' + (x['owner.screenname'] || 'Web'),
-            thumb: x.thumbnail_240_url || '',
-            dur: x.duration || 0,
-            pageUrl: `https://www.dailymotion.com/video/${x.id}`
+        return ((d.response && d.response.docs) || []).map(x => ({
+            src: 'arc',
+            id: x.identifier,
+            title: x.title || x.identifier,
+            sub: 'Internet Archive (telifsiz)' + (x.year ? ' · ' + x.year : ''),
+            thumb: `https://archive.org/services/img/${encodeURIComponent(x.identifier)}`,
+            dur: 0,
+            embedFallback: `https://archive.org/embed/${encodeURIComponent(x.identifier)}?autoplay=1`
         }));
     }
 
 
+    async function mvSearchDailymotion(q) {
+        const urls = [
+            `https://api.dailymotion.com/videos?search=${encodeURIComponent(q)}&fields=id,title,duration,thumbnail_240_url,owner.screenname,allow_embed,private&limit=80&longer_than=10`,
+            `https://api.dailymotion.com/videos?search=${encodeURIComponent(q)}&fields=id,title,duration,thumbnail_240_url,owner.screenname,allow_embed,private&limit=60`
+        ];
+        const out = []; const seen = new Set();
+        await Promise.all(urls.map(async u => {
+            try {
+                const r = await fetchTO(u, 8000);
+                const d = await r.json();
+                ((d && d.list) || []).filter(x => x && x.id && x.allow_embed !== false && !x.private).forEach(x => {
+                    if (seen.has(x.id)) return;
+                    seen.add(x.id);
+                    out.push({
+                        src: 'dm',
+                        id: x.id,
+                        title: x.title || 'Dailymotion Video',
+                        sub: 'Dailymotion · ' + (x['owner.screenname'] || 'Web'),
+                        thumb: x.thumbnail_240_url || '',
+                        dur: x.duration || 0,
+                        pageUrl: `https://www.dailymotion.com/video/${x.id}`,
+                        embedFallback: `https://www.dailymotion.com/embed/video/${x.id}?autoplay=1&queue-enable=false&ui-logo=false`
+                    });
+                });
+            } catch (e) {}
+        }));
+        return out;
+    }
+
+
     async function mvSearchPeerTube(q) {
-        const url = `https://sepiasearch.org/api/v1/search/videos?search=${encodeURIComponent(q)}&count=30&sort=-match`;
+        const url = `https://sepiasearch.org/api/v1/search/videos?search=${encodeURIComponent(q)}&count=50&sort=-match`;
         const r = await fetchTO(url, 8000);
         const d = await r.json();
-        return ((d && d.data) || []).map(x => ({
-            src: 'web',
-            id: x.url || (x.account && x.account.host ? `https://${x.account.host}/w/${x.shortUUID || x.uuid}` : ''),
-            pageUrl: x.url || '',
-            embedUrl: x.embedUrl ? (x.embedUrl.startsWith('http') ? x.embedUrl : `https://${x.account.host}${x.embedUrl}`) : '',
-            title: x.name || 'Web Video',
-            sub: 'PeerTube Web · ' + ((x.account && x.account.host) || ''),
-            thumb: x.thumbnailUrl || (x.previewPath && x.account ? `https://${x.account.host}${x.previewPath}` : ''),
-            dur: x.duration || 0
-        })).filter(x => x.pageUrl);
+        return ((d && d.data) || []).map(x => {
+            const emb = x.embedUrl ? (x.embedUrl.startsWith('http') ? x.embedUrl : `https://${x.account.host}${x.embedUrl}`) : '';
+            return {
+                src: 'web',
+                id: x.url || (x.account && x.account.host ? `https://${x.account.host}/w/${x.shortUUID || x.uuid}` : ''),
+                pageUrl: x.url || '',
+                embedUrl: emb,
+                embedFallback: emb,
+                title: x.name || 'Web Video',
+                sub: 'PeerTube Web · ' + ((x.account && x.account.host) || ''),
+                thumb: x.thumbnailUrl || (x.previewPath && x.account ? `https://${x.account.host}${x.previewPath}` : ''),
+                dur: x.duration || 0
+            };
+        }).filter(x => x.pageUrl);
+    }
+
+
+    function classifyWebVideoUrl(href, title, thumbUrl) {
+        if (!href || !/^https?:\/\//i.test(href)) return null;
+        let host = '';
+        try { host = new URL(href).hostname.replace(/^www\./, ''); } catch (e) { return null; }
+        if (!host || /google\.|duckduckgo\.|bing\.com|yahoo\.com|wikipedia\.|imdb\.com|sinemalar\.com|beyazperde\.com|eksisozluk\.|twitter\.|x\.com|instagram\.|facebook\.|tiktok\./i.test(host)) return null;
+
+        const ytId = extractYTId(href);
+        if (ytId) {
+            return {
+                src: 'yt',
+                id: ytId,
+                title: title || 'YouTube Video',
+                sub: 'YouTube (Web)',
+                thumb: thumbUrl || `https://i.ytimg.com/vi/${ytId}/mqdefault.jpg`,
+                dur: 0
+            };
+        }
+        const dmMatch = href.match(/(?:dailymotion\.com\/(?:embed\/)?video\/|dai\.ly\/|geo\.dailymotion\.com\/player[^"']*?[?&]video=)([a-zA-Z0-9]+)/i);
+        if (dmMatch && dmMatch[1]) {
+            const dmId = dmMatch[1];
+            return {
+                src: 'dm',
+                id: dmId,
+                title: title || 'Dailymotion Video',
+                sub: 'Dailymotion (Web)',
+                thumb: thumbUrl || `https://www.dailymotion.com/thumbnail/video/${dmId}`,
+                dur: 0,
+                pageUrl: `https://www.dailymotion.com/video/${dmId}`,
+                embedFallback: `https://www.dailymotion.com/embed/video/${dmId}?autoplay=1&queue-enable=false&ui-logo=false`
+            };
+        }
+        const okMatch = href.match(/(?:ok\.ru|odnoklassniki\.ru)\/(?:video|videoembed|live)\/(\d+)/i);
+        if (okMatch && okMatch[1]) {
+            const emb = `https://ok.ru/videoembed/${okMatch[1]}?autoplay=1`;
+            return {
+                src: 'web',
+                id: href,
+                pageUrl: href,
+                embedUrl: emb,
+                embedFallback: emb,
+                title: title || 'OK.ru Video',
+                sub: `🎬 OK.ru (${host})`,
+                thumb: thumbUrl || `https://www.google.com/s2/favicons?sz=64&domain_url=ok.ru`,
+                dur: 0
+            };
+        }
+        const vkMatch = href.match(/vk\.(?:com|ru|video)\/video(-?\d+)_(\d+)/i);
+        if (vkMatch) {
+            const emb = `https://vk.com/video_ext.php?oid=${vkMatch[1]}&id=${vkMatch[2]}&hd=2&autoplay=1`;
+            return {
+                src: 'web',
+                id: href,
+                pageUrl: href,
+                embedUrl: emb,
+                embedFallback: emb,
+                title: title || 'VK Video',
+                sub: `🎬 VK Video (${host})`,
+                thumb: thumbUrl || `https://www.google.com/s2/favicons?sz=64&domain_url=vk.com`,
+                dur: 0
+            };
+        }
+        const arcMatch = href.match(/archive\.org\/(?:details|embed)\/([^/?#&]+)/i);
+        if (arcMatch && arcMatch[1]) {
+            const aid = arcMatch[1];
+            return {
+                src: 'arc',
+                id: aid,
+                title: title || aid,
+                sub: 'Internet Archive (Web)',
+                thumb: thumbUrl || `https://archive.org/services/img/${encodeURIComponent(aid)}`,
+                dur: 0,
+                embedFallback: `https://archive.org/embed/${encodeURIComponent(aid)}?autoplay=1`
+            };
+        }
+        return {
+            src: /\.(m3u8|mp4|webm)(\?|$)/i.test(href) ? 'direct' : 'web',
+            id: href,
+            pageUrl: href,
+            title: title || 'Web Video',
+            sub: `🌐 Web (${host})`,
+            thumb: thumbUrl || `https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(host)}`,
+            dur: 0
+        };
     }
 
 
     async function mvSearchWebEngine(q) {
         const results = [];
         const seen = new Set();
+        const addResult = (href, title, thumbUrl = '') => {
+            const item = classifyWebVideoUrl(href, title, thumbUrl);
+            if (!item) return;
+            const k = item.src + ':' + item.id;
+            if (seen.has(k) || seen.has(href)) return;
+            seen.add(k); seen.add(href);
+            results.push(item);
+        };
         const searchQueries = [
             `${q} izle`,
-            `${q} full film tek parça`
+            `${q} full film tek parça`,
+            `${q} site:ok.ru OR site:dailymotion.com OR site:vk.com`
+        ];
+        const bingQueries = [
+            `${q} full izle`,
+            `${q} izle`
         ];
 
-
         const jobs = [
-            (async () => {
+            ...searchQueries.map(sq => (async () => {
                 try {
-                    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchQueries[0])}`;
+                    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(sq)}`;
                     const html = await fetchHtmlViaProxy(ddgUrl, 9000);
                     const doc = new DOMParser().parseFromString(html, 'text/html');
                     doc.querySelectorAll('.result').forEach(el => {
@@ -5248,55 +5515,28 @@ async function resetQuarantine() {
                         if (href.includes('uddg=')) {
                             try { href = decodeURIComponent(new URLSearchParams(href.substring(href.indexOf('?'))).get('uddg') || href); } catch (e) {}
                         }
-                        if (!/^https?:\/\//i.test(href)) return;
-                        let host = '';
-                        try { host = new URL(href).hostname.replace(/^www\./, ''); } catch (e) {}
-                        if (!host || /google\.|duckduckgo\.|wikipedia\.|imdb\.com|sinemalar\.com|beyazperde\.com|eksisozluk\.|twitter\.|instagram\.|facebook\.|tiktok\./i.test(host)) return;
-                        if (seen.has(href)) return;
-                        seen.add(href);
                         const title = (a.textContent || '').trim();
-                        if (!title) return;
-                        results.push({
-                            src: 'web',
-                            id: href,
-                            pageUrl: href,
-                            title: title,
-                            sub: `🌐 Web (${host})`,
-                            thumb: `https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(host)}`,
-                            dur: 0
-                        });
+                        if (title) addResult(href, title);
                     });
                 } catch (e) {}
-            })(),
-            (async () => {
+            })()),
+            ...bingQueries.map(bq => (async () => {
                 try {
-                    const bingUrl = `https://www.bing.com/videos/search?q=${encodeURIComponent(q + ' full izle')}`;
+                    const bingUrl = `https://www.bing.com/videos/search?q=${encodeURIComponent(bq)}`;
                     const html = await fetchHtmlViaProxy(bingUrl, 9000);
                     const mRegex = /murl&quot;:&quot;(https?:\/\/[^&]+?)&quot;.*?t&quot;:&quot;([^&]+?)&quot;/gi;
                     let m;
                     while ((m = mRegex.exec(html)) !== null) {
                         const href = m[1].replace(/\\u002f/gi, '/');
                         const title = m[2].replace(/&#(\d+);/g, (_, n) => String.fromCharCode(n));
-                        if (!/^https?:\/\//i.test(href) || seen.has(href)) continue;
-                        seen.add(href);
-                        let host = ''; try { host = new URL(href).hostname.replace(/^www\./, ''); } catch (e) {}
-                        results.push({
-                            src: 'web',
-                            id: href,
-                            pageUrl: href,
-                            title: title || 'Web Video',
-                            sub: `🎬 Web Video (${host})`,
-                            thumb: `https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(host)}`,
-                            dur: 0
-                        });
+                        addResult(href, title || 'Web Video');
                     }
                 } catch (e) {}
-            })()
+            })())
         ];
 
-
         await Promise.all(jobs);
-        return results.slice(0, 25);
+        return results.slice(0, 80);
     }
 
 
@@ -5309,7 +5549,7 @@ async function resetQuarantine() {
 
         if (/^https?:\/\//i.test(q)) {
             let host = 'Web'; try { host = new URL(q).hostname.replace(/^www\./, ''); } catch (e) {}
-            movieResults = [{
+            movieResults = [classifyWebVideoUrl(q, 'Doğrudan Bağlantı (' + host + ')') || {
                 src: /\.(m3u8|mp4|webm)(\?|$)/i.test(q) ? 'direct' : 'web',
                 id: q,
                 pageUrl: q,
@@ -5362,7 +5602,10 @@ async function resetQuarantine() {
                 good = scoreAll();
             }
         }
-        good.forEach(x => { x.sub = '%' + Math.round(x.score * 100) + ' · ' + x.sub; });
+        good.forEach(x => {
+            const cleanSub = String(x.sub || '').replace(/^%\d+\s*·\s*/, '');
+            x.sub = '%' + Math.round(x.score * 100) + ' · ' + cleanSub;
+        });
         movieResults = good;
         if (!good.length) {
             st.style.color = '#e74c3c';
@@ -5371,7 +5614,7 @@ async function resetQuarantine() {
             return;
         }
         st.style.color = '#2ecc71';
-        st.innerText = `${good.length} video bulundu (eşleşmeye göre sıralı).` + (errs.length ? ' (' + errs[0] + ')' : '') + ' İzlemek için OK, eklemek için 3 sn basılı tutun.';
+        st.innerText = `${good.length} video bulundu (eşleşmeye göre sıralı).` + (errs.length ? ' (' + errs[0] + ')' : '') + ' İzlemek için OK, oynarken ▲ ▼ ile kanal gibi gezebilirsiniz.';
         renderMovies();
     }
 
@@ -5409,7 +5652,7 @@ async function resetQuarantine() {
         return sc;
     }
     async function mvSearchCommons(q) {
-        const u = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent('filetype:video ' + q)}&gsrnamespace=6&gsrlimit=15&prop=imageinfo&iiprop=url|mime&iiurlwidth=240&format=json&origin=*`;
+        const u = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent('filetype:video ' + q)}&gsrnamespace=6&gsrlimit=25&prop=imageinfo&iiprop=url|mime&iiurlwidth=240&format=json&origin=*`;
         const d = await (await fetchTO(u, 8000)).json();
         const pages = (d && d.query && d.query.pages) ? Object.values(d.query.pages) : [];
         return pages.filter(p => p.imageinfo && p.imageinfo[0] && p.imageinfo[0].url).map(p => ({
@@ -5421,10 +5664,10 @@ async function resetQuarantine() {
 
 
     function mvCols() { return window.innerWidth < 600 ? 3 : 6; }
-    function mvCard(thumb, title, sub, kind, i) {
-        return `<div class="movie-card" tabindex="0" data-kind="${kind}" data-i="${i}">
+    function mvCard(thumb, title, sub, kind, i, isActive = false) {
+        return `<div class="movie-card ${isActive ? 'active' : ''}" tabindex="0" data-kind="${kind}" data-i="${i}">
             <div class="mc-thumb">${thumb ? `<img loading="lazy" decoding="async" src="${esc(thumb)}" onerror="this.style.display='none'">` : '<i class="material-icons-round" style="font-size:30px; color:#555; pointer-events:none; width:30px; height:30px; overflow:hidden;">movie</i>'}</div>
-            <div class="mc-title">${esc(title)}</div>
+            <div class="mc-title">#${i + 1} · ${esc(title)}</div>
             <div class="mc-sub">${esc(sub)}</div></div>`;
     }
     function renderMovies() {
@@ -5432,8 +5675,12 @@ async function resetQuarantine() {
         const box = document.getElementById('movieResults'), hdr = document.getElementById('movieResHdr');
         document.getElementById('moviePanel').style.setProperty('--movie-cols', mvCols());
         if (!movieResults.length) { box.style.display = 'none'; box.innerHTML = ''; if (hdr) hdr.style.display = 'none'; return; }
-        box.style.display = 'grid'; if (hdr) hdr.style.display = 'block';
-        box.innerHTML = movieResults.map((r, i) => mvCard(r.thumb, r.title, r.sub + (r.dur ? ' · ' + mvDur(r.dur) : ''), 'res', i)).join('');
+        box.style.display = 'grid'; if (hdr) { hdr.style.display = 'block'; hdr.innerText = `🔎 Arama Sonuçları (${movieResults.length} video · ▲ ▼ ile kanal gibi gezilebilir)`; }
+        const curCh = (curIdx >= 0 && allChannels[curIdx]) ? allChannels[curIdx] : null;
+        box.innerHTML = movieResults.map((r, i) => {
+            const isAct = !!(curCh && curCh._mvKind === 'res' && curCh._mvIdx === i);
+            return mvCard(r.thumb, r.title, r.sub + (r.dur ? ' · ' + mvDur(r.dur) : ''), 'res', i, isAct);
+        }).join('');
     }
     // ---- Eklenenler (film / video listesi; aktif kanal listesinden ayrı)
     var movieSaved = (function () { try { const a = JSON.parse(localStorage.getItem('tv_movie_saved') || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } })();
@@ -5445,7 +5692,11 @@ async function resetQuarantine() {
         if (!movieSaved.length) { box.style.display = 'none'; box.innerHTML = ''; hdr.style.display = 'none'; return; }
         hdr.style.display = 'block'; hdr.innerText = '⭐ Eklenenler (' + movieSaved.length + ')';
         box.style.display = 'grid';
-        box.innerHTML = movieSaved.map((e, i) => mvCard(e.thumb, e.title, e.sub || '', 'sav', i)).join('');
+        const curCh = (curIdx >= 0 && allChannels[curIdx]) ? allChannels[curIdx] : null;
+        box.innerHTML = movieSaved.map((e, i) => {
+            const isAct = !!(curCh && curCh._mvKind === 'sav' && curCh._mvIdx === i);
+            return mvCard(e.thumb, e.title, e.sub || '', 'sav', i, isAct);
+        }).join('');
     }
     // Kart davranışı: OK / dokunma = oynat, 3 sn basılı tut = Eklenenlere ekle (Eklenenlerdeyse sil)
     var mvHold = { timer: null, fired: false, card: null };
@@ -5490,7 +5741,7 @@ async function resetQuarantine() {
         }, true);
     })();
     function movieSavedDel(i) { movieSaved.splice(i, 1); movieSavedSave(); renderMovieSaved(); }
-    function rememberVideo(ch) { try { localStorage.setItem('tv_last_video', JSON.stringify({ name: ch.name, url: ch.url, logo: ch.logo || '' })); } catch (e) {} }
+    function rememberVideo(ch) { try { if (ch && ch.url && !ch.url.startsWith('mv_lazy:') && !ch.url.startsWith('#web_embed#')) localStorage.setItem('tv_last_video', JSON.stringify({ name: ch.name, url: ch.url, logo: ch.logo || '' })); } catch (e) {} }
     function playTempVideo(name, url, logo) {
         const ch = { id: 'ch_' + (globalIdCounter++), originalIndex: 0, name, url, logo: logo || '', broken: false, isFavorite: favUrls.includes(url) };
         closeAllDrawers(); curIdx = -1; allChannels = [ch]; sortAndRenderList(); play(0, 0); rememberVideo(ch);
@@ -5498,9 +5749,31 @@ async function resetQuarantine() {
     }
     function movieSavedPlay(i) {
         const e = movieSaved[i]; if (!e) return;
-        if (e.kind === 'embed') { openWebEmbedPlayer(e.title, e.url); return; }
-        if (typeof tvLinked === 'function' && tvLinked()) { tvSendTo(tvLinkIdx(), { cmd: 'play', url: e.raw || e.url, name: e.title, logo: e.thumb || '' }); showOSD('TV\'ye gönderildi', e.title); return; }
-        playTempVideo(e.title, e.url, e.thumb);
+        if (typeof tvLinked === 'function' && tvLinked()) {
+            if (e.kind === 'embed') { showOSD("Gömülü oynatıcı TV'ye gönderilemez"); return; }
+            tvSendTo(tvLinkIdx(), { cmd: 'play', url: e.raw || e.url, name: e.title, logo: e.thumb || '' });
+            showOSD("TV'ye gönderildi", e.title);
+            return;
+        }
+        allChannels = movieSaved.map((item, idx) => {
+            const itemUrl = item.kind === 'embed' ? ('#web_embed#' + item.url) : item.url;
+            return {
+                id: 'ch_mvsav_' + idx + '_' + (globalIdCounter++),
+                originalIndex: idx,
+                name: item.title,
+                url: itemUrl,
+                logo: item.thumb || '',
+                broken: false,
+                isFavorite: favUrls.includes(itemUrl),
+                _mvKind: 'sav',
+                _mvIdx: idx
+            };
+        });
+        curIdx = -1;
+        closeAllDrawers();
+        sortAndRenderList(true);
+        play(i, 0);
+        if (allChannels[i]) rememberVideo(allChannels[i]);
     }
     async function movieAddToList(i) {
         const r0 = movieResults[i]; if (!r0) return;
@@ -5565,11 +5838,14 @@ async function resetQuarantine() {
         return url;
     }
     async function resolveMovieStreamUrl(r, st) {
+        if (r && r._cachedResolved) return r._cachedResolved;
         const res = await resolveMovieStreamUrl0(r, st);
         if (res && res.type === 'stream' && !res.raw && !/youtube\.com|youtu\.be/i.test(res.url) && (r.src === 'web' || r.src === 'dm') && window.Android && typeof Android.proxyUrl === 'function') {
             const ref = r.src === 'dm' ? 'https://www.dailymotion.com/' : (r.pageUrl || r.id || '');
-            res.raw = res.url; res.ref = ref; res.url = mvProxy(res.url, ref);
+            const cleanU = String(res.url).split('#')[0];
+            res.raw = cleanU; res.ref = ref; res.url = mvProxy(cleanU, ref);
         }
+        if (r && res) r._cachedResolved = res;
         return res;
     }
     async function resolveMovieStreamUrl0(r, st) {
@@ -5579,8 +5855,9 @@ async function resetQuarantine() {
             const list = await mvSniff(pageUrl, 24000);
             const pick = mvPick(list);
             if (!pick) return null;
-            return { type: 'stream', url: mvProxy(pick.url, pick.ref || pageUrl), raw: pick.url, ref: pick.ref || pageUrl };
+            return { type: 'stream', url: mvProxy(pick.url, pick.ref || pageUrl), raw: pick.url, ref: pick.ref || pageUrl, embedFallback: r.embedFallback || '' };
         };
+        // Dailymotion veya Web kaynaklarında önce doğrudan akış (.m3u8 / .mp4) çözmeyi dene, olmazsa APK sniff çalıştır
         let res0 = null, err0 = null;
         try { res0 = await resolveMovieStreamUrlBase(r, st); } catch (e) { err0 = e; }
         if (res0 && res0.type === 'stream') return res0;
@@ -5597,18 +5874,23 @@ async function resetQuarantine() {
         if (r.src === 'yt') return { type: 'stream', url: 'https://www.youtube.com/watch?v=' + r.id };
         if (r.src === 'dm') {
             if (st) { st.style.color = '#f1c40f'; st.innerText = 'Dailymotion video akışı çözülüyor...'; }
+            const dmEmbed = `https://www.dailymotion.com/embed/video/${r.id}?autoplay=1&queue-enable=false&ui-logo=false`;
             const dmM3u8 = await resolveDailymotionM3u8(r.id);
-            if (dmM3u8) return { type: 'stream', url: dmM3u8 };
-            return { type: 'embed', url: `https://www.dailymotion.com/embed/video/${r.id}?autoplay=1&queue-enable=false&ui-logo=false` };
+            if (dmM3u8) return { type: 'stream', url: dmM3u8, embedFallback: dmEmbed };
+            return { type: 'embed', url: dmEmbed };
         }
         if (r.src === 'arc') {
             if (st) { st.style.color = '#f1c40f'; st.innerText = 'Archive.org film dosyası aranıyor...'; }
             const m = await (await fetchTO(`https://archive.org/metadata/${encodeURIComponent(r.id)}`, 10000)).json();
             const files = (m.files || []).filter(f => /\.(mp4|m4v|webm|ogv)$/i.test(f.name || '') && !/_thumb|sample|trailer|_512kb/i.test(f.name || ''));
             files.sort((a, b) => ((/h\.264|mpeg4/i.test(b.format || '') ? 1 : 0) - (/h\.264|mpeg4/i.test(a.format || '') ? 1 : 0)) || (Number(b.size || 0) - Number(a.size || 0)));
-            const f = files[0];
-            if (!f) throw new Error('Oynatılabilir video dosyası bulunamadı.');
-            return { type: 'stream', url: `https://archive.org/download/${encodeURIComponent(r.id)}/` + String(f.name).split('/').map(encodeURIComponent).join('/') };
+            const f = files[0] || (m.files || []).find(f => /\.(mp4|m4v|webm|ogv)$/i.test(f.name || ''));
+            if (!f) return { type: 'embed', url: `https://archive.org/embed/${encodeURIComponent(r.id)}?autoplay=1` };
+            return {
+                type: 'stream',
+                url: `https://archive.org/download/${encodeURIComponent(r.id)}/` + String(f.name).split('/').map(encodeURIComponent).join('/'),
+                embedFallback: `https://archive.org/embed/${encodeURIComponent(r.id)}?autoplay=1`
+            };
         }
         if (r.src === 'web') {
             const pageUrl = r.pageUrl || r.id;
@@ -5631,7 +5913,8 @@ async function resetQuarantine() {
                 if (ext.yt && ext.yt.length > 0) return { type: 'stream', url: ext.yt[0] };
                 if (ext.dm && ext.dm.length > 0) {
                     const dmUrl = await resolveDailymotionM3u8(ext.dm[0]);
-                    if (dmUrl) return { type: 'stream', url: dmUrl };
+                    if (dmUrl) return { type: 'stream', url: dmUrl, embedFallback: `https://www.dailymotion.com/embed/video/${ext.dm[0]}?autoplay=1&queue-enable=false&ui-logo=false` };
+                    return { type: 'embed', url: `https://www.dailymotion.com/embed/video/${ext.dm[0]}?autoplay=1&queue-enable=false&ui-logo=false` };
                 }
 
 
@@ -5640,61 +5923,68 @@ async function resetQuarantine() {
                         try {
                             const ifrHtml = await fetchHtmlViaProxy(ifr, 6000);
                             const ifrExt = extractStreamsFromHtml(ifrHtml, ifr);
-                            if (ifrExt.m3u8 && ifrExt.m3u8.length > 0) return { type: 'stream', url: ifrExt.m3u8[0] };
+                            const safeIfr = isSafeEmbedUrl(ifr) ? ifr : '';
+                            if (ifrExt.m3u8 && ifrExt.m3u8.length > 0) return { type: 'stream', url: ifrExt.m3u8[0], embedFallback: safeIfr };
                             const ifrMp4 = ifrHtml.replace(/\\\//g, '/').match(/https?:\/\/[A-Za-z0-9_\-\.\/:%\?=&~+#]+\.mp4(?:\?[A-Za-z0-9_\-\.\/:%=&~+#]*)?/i);
-                            if (ifrMp4 && ifrMp4[0]) return { type: 'stream', url: ifrMp4[0] };
-                            const ifrExtra = mvExtraVideoUrls(ifrHtml, ifr); if (ifrExtra.length) return { type: 'stream', url: ifrExtra[0] };
+                            if (ifrMp4 && ifrMp4[0]) return { type: 'stream', url: ifrMp4[0], embedFallback: safeIfr };
+                            const ifrExtra = mvExtraVideoUrls(ifrHtml, ifr); if (ifrExtra.length) return { type: 'stream', url: ifrExtra[0], embedFallback: safeIfr };
+                            if (ifrExt.dm && ifrExt.dm.length > 0) {
+                                const dmUrl2 = await resolveDailymotionM3u8(ifrExt.dm[0]);
+                                const dmEmb2 = `https://www.dailymotion.com/embed/video/${ifrExt.dm[0]}?autoplay=1&queue-enable=false&ui-logo=false`;
+                                if (dmUrl2) return { type: 'stream', url: dmUrl2, embedFallback: dmEmb2 };
+                                return { type: 'embed', url: dmEmb2 };
+                            }
                         } catch (e) {}
                     }
-                    return { type: 'embed', url: ext.iframes[0] };
+                    const validEmbedIfr = ext.iframes.find(u => isSafeEmbedUrl(u));
+                    if (validEmbedIfr) return { type: 'embed', url: validEmbedIfr };
                 }
             } catch (e) {}
-            if (r.embedUrl) return { type: 'embed', url: r.embedUrl };
-            return { type: 'embed', url: pageUrl };
+            if (r.embedUrl && isSafeEmbedUrl(r.embedUrl)) return { type: 'embed', url: r.embedUrl };
+            throw new Error('Bu web sayfasında doğrudan oynatılabilir video akışı bulunamadı');
         }
         throw new Error('Desteklenmeyen kaynak');
     }
 
 
     function openWebEmbedPlayer(title, embedUrl) {
-        const modal = document.getElementById('smartPreviewModal');
-        const vid = document.getElementById('smartPreviewVideo');
-        const iframeContainer = document.getElementById('smartPreviewIframe');
-        const stat = document.getElementById('smartPreviewStatus');
-        modalOpenedAt = Date.now();
-        document.getElementById('smartPreviewTitle').innerText = title;
-        if (smartPreviewHls) { smartPreviewHls.destroy(); smartPreviewHls = null; }
-        vid.pause(); vid.removeAttribute('src'); vid.load();
-        vid.style.display = 'none';
-        iframeContainer.style.display = 'block';
-        iframeContainer.innerHTML = `<iframe src="${esc(embedUrl)}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="${/dailymotion\.com/i.test(embedUrl) ? 'strict-origin-when-cross-origin' : 'no-referrer'}"></iframe>`;
-        stat.innerText = "Web Oynatıcıda Açıldı. Görüntü gelmezse bu site kendi sayfası dışında oynatmaya izin vermiyor olabilir; başka bir sonuç deneyin.";
-        stat.style.color = "#2ecc71";
-        modal.classList.add('show');
+        if (!isSafeEmbedUrl(embedUrl)) {
+            showOSD("Bu kaynak doğrudan oynatılamıyor", "Başka bir sonuç deneyin");
+            return;
+        }
+        const ch = { id: 'ch_' + (globalIdCounter++), originalIndex: 0, name: title || 'Web Video', url: '#web_embed#' + embedUrl, logo: '', broken: false, isFavorite: false };
+        closeAllDrawers();
+        curIdx = -1; allChannels = [ch]; sortAndRenderList(true);
+        play(0, 0);
+        showOSD('Film açılıyor', title);
     }
 
 
     async function movieWatch(i) {
         const r = movieResults[i]; if (!r) return;
         const st = document.getElementById('movieStatus');
-        try {
-            const res = await resolveMovieStreamUrl(r, st);
-            if (res.type === 'embed') {
-                st.style.color = '#2ecc71'; st.innerText = 'Web oynatıcıda açıldı: ' + r.title;
-                openWebEmbedPlayer(r.title, res.url);
-                return;
-            }
-            const url = res.url;
-            st.style.color = '#2ecc71'; st.innerText = 'Açılıyor: ' + r.title;
-            const ch = { id: 'ch_' + (globalIdCounter++), originalIndex: 0, name: r.title, url, logo: r.thumb, broken: false, isFavorite: favUrls.includes(url) };
-            closeAllDrawers();
-            curIdx = -1; allChannels = [ch]; sortAndRenderList();
-            play(0, 0);
-            rememberVideo(ch);
-            showOSD('Film açılıyor', r.title);
-        } catch (e) {
-            st.style.color = '#e74c3c'; st.innerText = 'Dosya bilgisi alınamadı: ' + (e.message || e);
-        }
+        if (st) { st.style.color = '#2ecc71'; st.innerText = 'Açılıyor: ' + r.title + ' (▲ ▼ ile diğer sonuçlara geçebilirsiniz)'; }
+        allChannels = movieResults.map((item, idx) => {
+            const cached = item._cachedResolved;
+            const initUrl = cached ? (cached.type === 'embed' ? ('#web_embed#' + cached.url) : cached.url) : ('mv_lazy:' + idx);
+            return {
+                id: 'ch_mv_' + idx + '_' + (globalIdCounter++),
+                originalIndex: idx,
+                name: item.title,
+                url: initUrl,
+                logo: item.thumb || '',
+                broken: false,
+                isFavorite: favUrls.includes(initUrl),
+                _mvRaw: item,
+                _mvResolved: cached || null,
+                _mvKind: 'res',
+                _mvIdx: idx
+            };
+        });
+        closeAllDrawers();
+        curIdx = -1;
+        sortAndRenderList(true);
+        play(i, 0);
     }
 
 
@@ -6378,7 +6668,7 @@ function playAudioDirect(video, url, token) {
     var __startVideo = (function () { try { const lv = JSON.parse(localStorage.getItem('tv_last_video') || 'null'); return (lv && lv.url && localStorage.getItem('tv_last_channel') === lv.url) ? lv : null; } catch (e) { return null; } })();
     function restoreLastVideo() {
         const lv = __startVideo;
-        if (!lv || !lv.url) return;
+        if (!lv || !lv.url || String(lv.url).startsWith('#web_embed#') || String(lv.url).startsWith('mv_lazy:')) return;
         if (allChannels.some(c => c.url === lv.url)) return;
         const ch = { id: 'ch_' + (globalIdCounter++), originalIndex: 0, name: lv.name, url: lv.url, logo: lv.logo || '', broken: false, isFavorite: favUrls.includes(lv.url) };
         curIdx = -1; allChannels = [ch]; sortAndRenderList(); play(0, 0);
@@ -7092,6 +7382,15 @@ function playAudioDirect(video, url, token) {
             handleStreamError(currentPlaySession);
         });
         setTimeout(() => { const pw = document.getElementById('playerWrapper'); if (pw) pw.focus(); }, 200);
+        window.addEventListener('blur', () => {
+            setTimeout(() => {
+                const ae = document.activeElement;
+                if (ae && ae.tagName === 'IFRAME' && !document.getElementById('leftSidebar').classList.contains('open') && !document.getElementById('rightSidebar').classList.contains('open') && !document.getElementById('smartPreviewModal').classList.contains('show')) {
+                    const pw = document.getElementById('playerWrapper');
+                    if (pw) { try { pw.focus({ preventScroll: true }); } catch (e) { pw.focus(); } }
+                }
+            }, 80);
+        });
     });
 </script>
 </body>
