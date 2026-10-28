@@ -19,7 +19,7 @@
         #playerWrapper { position:absolute; top:0; left:0; right:0; bottom:0; background:#000; display:flex; flex-direction:column; z-index:1; touch-action:none; cursor:default; outline:none; }
         video#localPlayer { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; background:#000; z-index:2; }
         video::cue { background-color:rgba(0,0,0,0.85); color:white; font-size:1.2rem; }
-        body.easy-mode #controlsOverlay { display:none !important; }
+        body.easy-mode #controlsOverlay, body.easy-mode #seekBarWrap { display:none !important; }
         @media (max-width:520px) { #bottomControlBar.center-buttons { gap:4px; padding:8px 12px; } .center-buttons .ctrl-btn { width:38px; height:38px; } .center-buttons .ctrl-btn.small { width:36px; height:36px; } .center-buttons .ctrl-btn.main { width:48px; height:48px; } .center-buttons .ctrl-btn i { font-size:24px; } }
         #castBtn.active i { color:var(--accent2); }
         #liveSubtitleOverlay { font-size:var(--sub-size,18px) !important; bottom:var(--sub-bottom,10%) !important; color:var(--sub-fg,#fff) !important; background:var(--sub-bg,rgba(0,0,0,0.8)) !important; text-shadow:var(--sub-sh,none); }
@@ -269,7 +269,7 @@
                 </div>
             </div>
         </div>
-        <div class="ctrl-hint-pill" id="ctrlHintPill">◀ ▶ Alt Kontroller &amp; Sarma · ▲ ▼ Kanal Değiştir · OK: Kanal Rehberi</div>
+        <div class="ctrl-hint-pill" id="ctrlHintPill">◀ ▶ Buton Seç · OK: Çalıştır · ▼ / Çift OK: Kanal Listesi · Geri: Gizle</div>
         <div class="center-buttons" id="bottomControlBar">
             <button class="ctrl-btn small" id="ccBtn" onclick="ccClick()" title="Altyazı Aç/Kapat (4 sn basılı tut: ayarlar)"><i class="material-icons-round">closed_caption</i></button>
             <button class="ctrl-btn" id="rewindBtn" onclick="triggerSingleSeek(-1)" title="10 Saniye Geri Sar"><i class="material-icons-round">replay_10</i></button>
@@ -288,14 +288,14 @@
             <button class="ctrl-btn small" id="infoBtn" onclick="openInfoModal()" title="Bilgi"><i class="material-icons-round">info</i></button>
             <button class="ctrl-btn small" id="castBtn" onclick="castStart()" title="Yayını TV'ye gönder (Cast)"><i class="material-icons-round">cast</i></button>
         </div>
-        <div class="seek-bar-wrap" id="seekBarWrap">
-            <span class="seek-time" id="seekCurTime">00:00</span>
-            <div class="seek-track" id="seekTrack">
-                <div class="seek-fill" id="seekFill"><div class="seek-thumb"></div></div>
-            </div>
-            <span class="seek-time" id="seekDurTime">00:00</span>
-            <span class="seek-step-badge" id="seekStepBadge"></span>
+    </div>
+    <div class="seek-bar-wrap" id="seekBarWrap">
+        <span class="seek-time" id="seekCurTime">00:00</span>
+        <div class="seek-track" id="seekTrack">
+            <div class="seek-fill" id="seekFill"><div class="seek-thumb"></div></div>
         </div>
+        <span class="seek-time" id="seekDurTime">00:00</span>
+        <span class="seek-step-badge" id="seekStepBadge"></span>
     </div>
     <div id="overlayBackdrop" class="overlay-backdrop" onclick="onBackdropClick(event)"></div>
 </div>
@@ -1316,6 +1316,13 @@
         if (leftOpen || rightOpen) {
             if (leftOpen && drawerBack()) { pushDrawerHistoryState(); return; }
             closeAllDrawers();
+            return;
+        }
+        const ctrlOverlay = document.getElementById('controlsOverlay');
+        const sbWrap = document.getElementById('seekBarWrap');
+        if ((ctrlOverlay && !ctrlOverlay.classList.contains('hide')) || (sbWrap && sbWrap.classList.contains('show'))) {
+            hideControlsNow();
+            return;
         }
     });
 
@@ -1326,7 +1333,7 @@
         lastDrawerActionTime = Date.now();
         pushDrawerHistoryState();
         setIgnoreKeyUntilRelease(false);
-        okPressContext = null; okLongPressFired = false; clearOkTimers();
+        okPressContext = null; okLongPressFired = false; clearOkTimers(); clearPendingSingleOk();
         lockAllInputs();
         document.getElementById('leftSidebar').classList.remove('open');
         document.getElementById('rightSidebar').classList.add('open');
@@ -1353,7 +1360,7 @@
     function closeAllDrawers() {
         lastDrawerActionTime = Date.now();
         setIgnoreKeyUntilRelease(false);
-        okPressContext = null; okLongPressFired = false; clearOkTimers();
+        okPressContext = null; okLongPressFired = false; clearOkTimers(); clearPendingSingleOk();
         if (movingChannelId) finishChannelMove(false);
         if (typeof isBulkOrderMode !== 'undefined' && isBulkOrderMode) finishBulkOrderMode(true);
         if (isMultiSel) toggleMultiSel(false);
@@ -1374,10 +1381,10 @@
         const bottomBar = document.getElementById('bottomControlBar');
         if (ae && bottomBar && bottomBar.contains(ae)) {
             pill.classList.add('screen-active');
-            pill.innerHTML = '◀ ▶ Buton Seç · <b>Hız (0.5x-2x)</b> · <b>İleri/Geri OK Basılı: İvmeli Sar</b> · ▲ ▼ Kanal Değiştir';
+            pill.innerHTML = '◀ ▶ Buton Seç · <b>OK: Çalıştır</b> · <b>▼ / Çift OK: Kanal Listesi</b> · <b>Geri: Gizle</b>';
         } else {
             pill.classList.remove('screen-active');
-            pill.innerHTML = '◀ ▶ Alt Kontroller &amp; Hız · ▲ ▼ Kanal Değiştir · OK: Rehber (Basılı Tut: 2x Hız)';
+            pill.innerHTML = '◀ ▶ Alt Kontroller · <b>▼ / Çift OK: Kanal Listesi</b> · <b>Geri: Gizle</b> · ▲ Kanal Değiştir';
         }
     }
     function closeSpeedMenu() {
@@ -1386,6 +1393,7 @@
     }
     function hideControlsNow() {
         clearTimeout(controlsTimer);
+        if (typeof clearPendingSingleOk === 'function') clearPendingSingleOk();
         closeSpeedMenu();
         const c = document.getElementById('controlsOverlay');
         const pw = document.getElementById('playerWrapper');
@@ -1396,11 +1404,14 @@
     function showControls(focusBottomBar = false) {
         if (easyMode) { easyHint(); return; }
         const ctrl = document.getElementById('controlsOverlay');
+        const wasHidden = ctrl.classList.contains('hide');
         ctrl.classList.remove('hide');
+        if (wasHidden) pushDrawerHistoryState();
         if (focusBottomBar) {
             const playBtn = document.getElementById('playPauseBtn');
             if (playBtn) { try { playBtn.focus({ preventScroll: true }); } catch(e) { playBtn.focus(); } }
         }
+        updateSeekBarUI(true);
         updateControlHintPill(); resetControlsTimer();
     }
     function resetControlsTimer() {
@@ -1414,6 +1425,8 @@
         controlsTimer = setTimeout(() => {
             if (ae && ctrl.contains(document.activeElement)) { const pw = document.getElementById('playerWrapper'); if (pw) pw.focus(); }
             ctrl.classList.add('hide');
+            closeSpeedMenu();
+            const sbw = document.getElementById('seekBarWrap'); if (sbw) sbw.classList.remove('show');
         }, inControls ? 6500 : 4000);
     }
 
@@ -2864,15 +2877,20 @@ async function resetQuarantine() {
         const wrap = document.getElementById('seekBarWrap');
         if (!wrap) return;
         if (reveal === true) {
+            const stCheck = getMediaTimeState();
+            if (!stCheck.seekable) { wrap.classList.remove('show'); return; }
             wrap.classList.add('show');
             if (seekBarHideTimer) clearTimeout(seekBarHideTimer);
+            const ctrlEl = document.getElementById('controlsOverlay');
+            const ctrlOpen = ctrlEl && !ctrlEl.classList.contains('hide');
             seekBarHideTimer = setTimeout(() => {
-                if (!seekHoldActive) {
+                const stillOpen = ctrlEl && !ctrlEl.classList.contains('hide');
+                if (!seekHoldActive && !stillOpen) {
                     wrap.classList.remove('show');
                     const b = document.getElementById('seekStepBadge');
                     if (b) b.innerText = '';
                 }
-            }, 4000);
+            }, ctrlOpen ? 6500 : 4000);
         }
         if (!wrap.classList.contains('show')) return;
         const st = getMediaTimeState();
@@ -2893,9 +2911,10 @@ async function resetQuarantine() {
         return Math.min(1200, 10 * Math.pow(2, stepCount - 1));
     }
     function seekRelative(deltaSec, stepCount = 1) {
-        showControls();
+        const ctrl = document.getElementById('controlsOverlay');
+        if (ctrl && !ctrl.classList.contains('hide')) resetControlsTimer();
         const st = getMediaTimeState();
-        if (!st.seekable) { showOSD("Bu Yayın İleri/Geri Sarılamıyor", "Canlı yayının geçmiş kaydı (DVR) bulunmuyor"); return; }
+        if (!st.seekable) { stopAcceleratingSeek(); showOSD("Bu Yayın İleri/Geri Sarılamıyor", "Canlı yayının geçmiş kaydı (DVR) bulunmuyor"); return; }
         const target = Math.max(st.start, Math.min(st.end, st.current + deltaSec));
         if (st.engine === 'yt' && ytPlayer && typeof ytPlayer.seekTo === 'function') { try { ytPlayer.seekTo(target, true); } catch (e) {} }
         else { const vid = document.getElementById('localPlayer'); if (vid) { try { vid.currentTime = target; } catch (e) {} } }
@@ -7536,9 +7555,18 @@ function playAudioDirect(video, url, token) {
     let okHoldTimer = null;
     let okHoldHintTimer = null;
     let okLongPressFired = false;
+    let mainOkClickTimer = null;
+    let seekBtnHoldTimer = null;
+    let okPressSeekDir = 0;
+    let okPressTargetBtn = null;
+    const DOUBLE_OK_DELAY = 270;
     function clearOkTimers() {
         if (okHoldHintTimer) { clearTimeout(okHoldHintTimer); okHoldHintTimer = null; }
         if (okHoldTimer) { clearTimeout(okHoldTimer); okHoldTimer = null; }
+        if (seekBtnHoldTimer) { clearTimeout(seekBtnHoldTimer); seekBtnHoldTimer = null; }
+    }
+    function clearPendingSingleOk() {
+        if (mainOkClickTimer) { clearTimeout(mainOkClickTimer); mainOkClickTimer = null; }
     }
     let touchGestureState = {
         startX: 0,
@@ -7859,6 +7887,21 @@ function playAudioDirect(video, url, token) {
         if (m('infoModal')) { closeInfoModal(); return 1; }
         if (m('smartPreviewModal')) { closeSmartPreview(); return 1; }
         if (drawerBack()) return 1;
+        const leftOpen = document.getElementById('leftSidebar').classList.contains('open');
+        const rightOpen = document.getElementById('rightSidebar').classList.contains('open');
+        if (leftOpen || rightOpen) {
+            if (rightOpen && movingChannelId) { finishChannelMove(true); return 1; }
+            if (rightOpen && isBulkOrderMode) { finishBulkOrderMode(true); return 1; }
+            if (rightOpen && isMultiSel) { toggleMultiSel(false); return 1; }
+            closeAllDrawers();
+            return 1;
+        }
+        const ctrlOverlay = document.getElementById('controlsOverlay');
+        const sbWrap = document.getElementById('seekBarWrap');
+        if ((ctrlOverlay && !ctrlOverlay.classList.contains('hide')) || (sbWrap && sbWrap.classList.contains('show'))) {
+            hideControlsNow();
+            return 1;
+        }
         return 0;
     }
     // Geri: önce yazı kutusu, sonra sekmeler, sonra menü kapanır. 1 dönerse işlendi.
@@ -7933,12 +7976,52 @@ function playAudioDirect(video, url, token) {
         const kc = e.keyCode || e.which || 0;
         let k = e.key;
         if (!k || k === 'Unidentified' || k === 'Process') k = TV_KC[kc] || k;
-        if (seekHoldActive && (k === 'Enter' || k === ' ' || k === 'ArrowLeft' || k === 'ArrowRight' || kc === 23 || kc === 13 || kc === 66)) stopAcceleratingSeek();
+        if (seekHoldActive && (k === 'Enter' || k === ' ' || k === 'ArrowLeft' || k === 'ArrowRight' || kc === 23 || kc === 13 || kc === 66 || kc === 21 || kc === 22 || kc === 37 || kc === 39)) stopAcceleratingSeek();
         if (k === 'Enter' || k === ' ' || kc === 23 || kc === 13 || kc === 66) {
+            if (okPressContext === 'double_ok_done') {
+                clearOkTimers();
+                okPressContext = null; okLongPressFired = false;
+                e.preventDefault(); e.stopImmediatePropagation();
+                return;
+            }
             if (okPressContext === 'cc') {
                 clearTimeout(ccKeyTimer); ccKeyTimer = null; okPressContext = null;
                 e.preventDefault(); e.stopImmediatePropagation();
-                toggleSubtitles();
+                clearPendingSingleOk();
+                mainOkClickTimer = setTimeout(() => {
+                    mainOkClickTimer = null;
+                    toggleSubtitles();
+                    resetControlsTimer();
+                }, DOUBLE_OK_DELAY);
+                return;
+            }
+            if (okPressContext === 'controls_seek') {
+                const dir = okPressSeekDir;
+                const wasHoldingSeek = !seekBtnHoldTimer;
+                clearOkTimers();
+                okPressContext = null;
+                e.preventDefault(); e.stopImmediatePropagation();
+                if (!wasHoldingSeek) {
+                    clearPendingSingleOk();
+                    mainOkClickTimer = setTimeout(() => {
+                        mainOkClickTimer = null;
+                        triggerSingleSeek(dir);
+                        resetControlsTimer();
+                    }, DOUBLE_OK_DELAY);
+                }
+                return;
+            }
+            if (okPressContext === 'controls_btn') {
+                const btnToClick = okPressTargetBtn;
+                okPressContext = null;
+                okPressTargetBtn = null;
+                e.preventDefault(); e.stopImmediatePropagation();
+                clearPendingSingleOk();
+                mainOkClickTimer = setTimeout(() => {
+                    mainOkClickTimer = null;
+                    if (btnToClick) btnToClick.click();
+                    resetControlsTimer();
+                }, DOUBLE_OK_DELAY);
                 return;
             }
             clearOkTimers(); clearChannelHoldTimers();
@@ -7958,7 +8041,11 @@ function playAudioDirect(video, url, token) {
             }
             if (ctx === 'main' && !wasLong) {
                 e.preventDefault(); e.stopImmediatePropagation();
-                openRightSidebar();
+                clearPendingSingleOk();
+                mainOkClickTimer = setTimeout(() => {
+                    mainOkClickTimer = null;
+                    showControls(true);
+                }, DOUBLE_OK_DELAY);
                 return;
             }
             if (ctx === 'right_item' && !wasChLong) {
@@ -8408,17 +8495,26 @@ function playAudioDirect(video, url, token) {
 
         const ctrlOverlay = document.getElementById('controlsOverlay');
         const ctrlVisible = !ctrlOverlay.classList.contains('hide');
+        const sbWrap = document.getElementById('seekBarWrap');
+        const seekBarShowing = sbWrap && sbWrap.classList.contains('show');
         const speedPopupEl = document.getElementById('speedPopup');
+
+        // İlk Geri (Back / Escape) tuşu açık olan alt kontrol çubuğunu / hız menüsünü / süre çubuğunu anında gizler
+        if (['Escape', 'BrowserBack', 'GoBack'].includes(k) || kc === 4 || kc === 27) {
+            e.preventDefault(); e.stopImmediatePropagation();
+            clearPendingSingleOk();
+            clearOkTimers();
+            stopAcceleratingSeek();
+            if (ctrlVisible || seekBarShowing) {
+                hideControlsNow();
+            }
+            return;
+        }
+
         if (ctrlVisible && speedPopupEl && speedPopupEl.classList.contains('show')) {
             const spOpts = Array.from(speedPopupEl.querySelectorAll('.speed-opt'));
             const spIdx = spOpts.indexOf(ae);
             resetControlsTimer();
-            if (['Escape', 'BrowserBack', 'GoBack'].includes(k) || kc === 4 || kc === 27) {
-                e.preventDefault(); e.stopImmediatePropagation();
-                closeSpeedMenu();
-                const sb = document.getElementById('speedBtn'); if (sb) sb.focus();
-                return;
-            }
             if (k === 'ArrowLeft' || k === 'ArrowUp') {
                 e.preventDefault(); e.stopImmediatePropagation();
                 const nextI = spIdx > 0 ? spIdx - 1 : 0;
@@ -8434,8 +8530,15 @@ function playAudioDirect(video, url, token) {
             if (k === 'Enter' || k === ' ' || kc === 23 || kc === 13 || kc === 66) {
                 e.preventDefault(); e.stopImmediatePropagation();
                 if (!e.repeat) {
-                    const targetOpt = spOpts[spIdx >= 0 ? spIdx : 0];
-                    if (targetOpt) targetOpt.click();
+                    if (mainOkClickTimer) {
+                        clearPendingSingleOk();
+                        okPressContext = 'double_ok_done';
+                        hideControlsNow();
+                        openRightSidebar();
+                        return;
+                    }
+                    okPressContext = 'controls_btn';
+                    okPressTargetBtn = spOpts[spIdx >= 0 ? spIdx : 0];
                 }
                 return;
             }
@@ -8447,94 +8550,120 @@ function playAudioDirect(video, url, token) {
         ].filter(Boolean);
         const inBottomIdx = bottomBtns.indexOf(ae);
 
-
-        if (ctrlVisible && inBottomIdx !== -1) {
+        if (ctrlVisible) {
             resetControlsTimer();
-            if (['Escape', 'BrowserBack', 'GoBack'].includes(k) || kc === 4 || kc === 27) {
-                e.preventDefault(); e.stopImmediatePropagation();
-                stopAcceleratingSeek();
-                const sbw = document.getElementById('seekBarWrap'); if (sbw) sbw.classList.remove('show');
-                if (seekBarHideTimer) { clearTimeout(seekBarHideTimer); seekBarHideTimer = null; }
-                ctrlOverlay.classList.add('hide');
-                const pw = document.getElementById('playerWrapper'); if (pw) pw.focus();
-                return;
-            }
             if (k === 'ArrowLeft') {
                 e.preventDefault(); e.stopImmediatePropagation();
+                clearPendingSingleOk();
                 stopAcceleratingSeek();
                 if (inBottomIdx > 0) bottomBtns[inBottomIdx - 1].focus();
-                else tvVolume(-0.1);
+                else if (inBottomIdx === -1) {
+                    const rw = document.getElementById('rewindBtn') || bottomBtns[0];
+                    if (rw) rw.focus();
+                }
                 updateControlHintPill();
                 return;
             }
             if (k === 'ArrowRight') {
                 e.preventDefault(); e.stopImmediatePropagation();
+                clearPendingSingleOk();
                 stopAcceleratingSeek();
-                if (inBottomIdx < bottomBtns.length - 1) bottomBtns[inBottomIdx + 1].focus();
-                else tvVolume(0.1);
+                if (inBottomIdx >= 0 && inBottomIdx < bottomBtns.length - 1) bottomBtns[inBottomIdx + 1].focus();
+                else if (inBottomIdx === -1) {
+                    const fw = document.getElementById('forwardBtn') || bottomBtns[0];
+                    if (fw) fw.focus();
+                }
                 updateControlHintPill();
                 return;
             }
             if (k === 'ArrowUp' || k === 'ChannelUp') {
                 e.preventDefault(); e.stopImmediatePropagation();
+                clearPendingSingleOk();
                 stopAcceleratingSeek();
                 const pw = document.getElementById('playerWrapper'); if (pw) pw.focus();
                 if (!e.repeat) { nextCh(); hideControlsNow(); }
                 return;
             }
-            if (k === 'ArrowDown' || k === 'ChannelDown') {
+            if (k === 'ChannelDown') {
                 e.preventDefault(); e.stopImmediatePropagation();
+                clearPendingSingleOk();
                 stopAcceleratingSeek();
                 const pw = document.getElementById('playerWrapper'); if (pw) pw.focus();
                 if (!e.repeat) { prevCh(); hideControlsNow(); }
                 return;
             }
-            if (k === 'Enter' || k === ' ' || kc === 23 || kc === 13 || kc === 66) {
+            if (k === 'ArrowDown') {
                 e.preventDefault(); e.stopImmediatePropagation();
-                const focusedBtn = bottomBtns[inBottomIdx];
-                if (focusedBtn && (focusedBtn.id === 'rewindBtn' || focusedBtn.id === 'forwardBtn')) {
-                    const dir = focusedBtn.id === 'rewindBtn' ? -1 : 1;
-                    if (!e.repeat && !seekHoldActive) { okPressContext = 'controls_seek'; startAcceleratingSeek(dir); }
-                    resetControlsTimer();
-                    return;
+                clearPendingSingleOk();
+                stopAcceleratingSeek();
+                if (!e.repeat) {
+                    hideControlsNow();
+                    openRightSidebar();
                 }
-                if (focusedBtn.id === 'ccBtn') {
-                    if (!e.repeat && okPressContext === null) {
-                        okPressContext = 'cc'; ccLongFired = false; clearTimeout(ccKeyTimer);
-                        ccKeyTimer = setTimeout(() => { ccKeyTimer = null; if (okPressContext === 'cc') { okPressContext = null; ccLongFired = true; openSubSettings(); } }, 4000);
-                    }
-                    resetControlsTimer();
-                    return;
-                }
-                if (!e.repeat) { okPressContext = 'controls'; focusedBtn.click(); resetControlsTimer(); }
                 return;
             }
-        }
-
-
-        const sbWrap = document.getElementById('seekBarWrap');
-        const seekBarShowing = sbWrap && sbWrap.classList.contains('show');
-        if (['Escape', 'BrowserBack', 'GoBack'].includes(k) || kc === 4 || kc === 27) {
-            e.preventDefault(); e.stopImmediatePropagation();
-            stopAcceleratingSeek();
-            if (ctrlVisible || seekBarShowing) {
-                if (sbWrap) sbWrap.classList.remove('show');
-                if (seekBarHideTimer) { clearTimeout(seekBarHideTimer); seekBarHideTimer = null; }
-                ctrlOverlay.classList.add('hide');
-                const pw = document.getElementById('playerWrapper'); if (pw) pw.focus();
-            } else {
-                showControls(true);
-                showOSD("Alt Kontroller Aktif", "◀ ▶ ile Sarma, Oynat/Durdur ve Altyazı seçin");
+            if (k === 'Enter' || k === ' ' || kc === 23 || kc === 13 || kc === 66) {
+                e.preventDefault(); e.stopImmediatePropagation();
+                if (e.repeat) return;
+                if (mainOkClickTimer) {
+                    clearPendingSingleOk();
+                    clearOkTimers();
+                    clearTimeout(ccKeyTimer); ccKeyTimer = null;
+                    stopAcceleratingSeek();
+                    okPressContext = 'double_ok_done';
+                    hideControlsNow();
+                    openRightSidebar();
+                    return;
+                }
+                const focusedBtn = inBottomIdx !== -1 ? bottomBtns[inBottomIdx] : document.getElementById('playPauseBtn');
+                if (focusedBtn && inBottomIdx === -1) {
+                    try { focusedBtn.focus({ preventScroll: true }); } catch (err) { focusedBtn.focus(); }
+                    updateControlHintPill();
+                }
+                if (focusedBtn && (focusedBtn.id === 'rewindBtn' || focusedBtn.id === 'forwardBtn')) {
+                    const dir = focusedBtn.id === 'rewindBtn' ? -1 : 1;
+                    okPressContext = 'controls_seek';
+                    okPressSeekDir = dir;
+                    clearOkTimers();
+                    seekBtnHoldTimer = setTimeout(() => {
+                        seekBtnHoldTimer = null;
+                        if (okPressContext === 'controls_seek' && !seekHoldActive) {
+                            startAcceleratingSeek(dir);
+                        }
+                    }, 320);
+                    resetControlsTimer();
+                    return;
+                }
+                if (focusedBtn && focusedBtn.id === 'ccBtn') {
+                    okPressContext = 'cc'; ccLongFired = false; clearTimeout(ccKeyTimer);
+                    ccKeyTimer = setTimeout(() => { ccKeyTimer = null; if (okPressContext === 'cc') { okPressContext = null; ccLongFired = true; openSubSettings(); } }, 4000);
+                    resetControlsTimer();
+                    return;
+                }
+                okPressContext = 'controls_btn';
+                okPressTargetBtn = focusedBtn;
+                resetControlsTimer();
+                return;
             }
             return;
         }
+
         if (k === 'ArrowUp' || k === 'ChannelUp') { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) nextCh(); return; }
         if (k === 'ArrowDown' || k === 'ChannelDown') { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) prevCh(); return; }
-        if (k === 'ArrowLeft') { e.preventDefault(); e.stopImmediatePropagation(); if (ctrlVisible) showControls(true); else { tvVolume(-0.1); showControls(true); } return; }
-        if (k === 'ArrowRight') { e.preventDefault(); e.stopImmediatePropagation(); if (ctrlVisible) showControls(true); else { tvVolume(0.1); showControls(true); } return; }
+        if (k === 'ArrowLeft') { e.preventDefault(); e.stopImmediatePropagation(); if (!seekHoldActive) startAcceleratingSeek(-1); return; }
+        if (k === 'ArrowRight') { e.preventDefault(); e.stopImmediatePropagation(); if (!seekHoldActive) startAcceleratingSeek(1); return; }
         if (k === 'Enter' || k === ' ' || kc === 23 || kc === 13 || kc === 66) {
             e.preventDefault(); e.stopImmediatePropagation();
-            if (!e.repeat && okPressContext === null) {
+            if (e.repeat) return;
+            if (mainOkClickTimer) {
+                clearPendingSingleOk();
+                clearOkTimers();
+                okPressContext = 'double_ok_done';
+                hideControlsNow();
+                openRightSidebar();
+                return;
+            }
+            if (okPressContext === null) {
                 okPressContext = 'main'; okLongPressFired = false; clearOkTimers();
                 okHoldTimer = setTimeout(() => {
                     if (okPressContext === 'main') {
