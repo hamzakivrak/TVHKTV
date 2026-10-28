@@ -7975,13 +7975,29 @@ function playAudioDirect(video, url, token) {
 
         clearOkTimers();
         okLongPressFired = false;
-        okHoldTimer = setTimeout(() => {
-            if (touchGestureState.active && !touchGestureState.moved) {
-                okLongPressFired = true;
-                clearOkTimers();
-                startHold2xSpeed();
-            }
-        }, 500);
+        if (easyMode) {
+            okHoldHintTimer = setTimeout(() => {
+                if (touchGestureState.active && !touchGestureState.moved) {
+                    showOSD('Kolay Kullanım Modu', 'Ayarlara girmek için basılı tutmaya devam edin...');
+                }
+            }, 1200);
+            okHoldTimer = setTimeout(() => {
+                if (touchGestureState.active && !touchGestureState.moved) {
+                    okLongPressFired = true;
+                    setIgnoreKeyUntilRelease(true);
+                    clearOkTimers();
+                    requestSettingsOpen();
+                }
+            }, 6000);
+        } else {
+            okHoldTimer = setTimeout(() => {
+                if (touchGestureState.active && !touchGestureState.moved) {
+                    okLongPressFired = true;
+                    clearOkTimers();
+                    startHold2xSpeed();
+                }
+            }, 500);
+        }
     }, { passive: true });
 
 
@@ -9034,13 +9050,29 @@ function playAudioDirect(video, url, token) {
             }
             if (okPressContext === null) {
                 okPressContext = 'main'; okLongPressFired = false; clearOkTimers();
-                okHoldTimer = setTimeout(() => {
-                    if (okPressContext === 'main') {
-                        okLongPressFired = true;
-                        clearOkTimers();
-                        startHold2xSpeed();
-                    }
-                }, 450);
+                if (easyMode) {
+                    okHoldHintTimer = setTimeout(() => {
+                        if (okPressContext === 'main') {
+                            showOSD('Kolay Kullanım Modu', 'Ayarlara girmek için basılı tutmaya devam edin...');
+                        }
+                    }, 1200);
+                    okHoldTimer = setTimeout(() => {
+                        if (okPressContext === 'main') {
+                            okLongPressFired = true;
+                            setIgnoreKeyUntilRelease(true);
+                            clearOkTimers();
+                            requestSettingsOpen();
+                        }
+                    }, 6000);
+                } else {
+                    okHoldTimer = setTimeout(() => {
+                        if (okPressContext === 'main') {
+                            okLongPressFired = true;
+                            clearOkTimers();
+                            startHold2xSpeed();
+                        }
+                    }, 450);
+                }
             }
             return;
         }
