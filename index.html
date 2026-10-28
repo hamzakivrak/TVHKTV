@@ -248,6 +248,7 @@
 
 <div id="playerWrapper" tabindex="0">
     <video id="localPlayer" playsinline crossorigin="anonymous"></video>
+    <audio id="bgAudioPlayer" playsinline preload="none" style="display:none;"></audio>
     <div id="ytContainer"><div id="ytPlayer"></div></div>
     <div id="webEmbedContainer"></div>
     <div id="liveSubtitleOverlay">Çeviri bekleniyor...</div>
@@ -2797,13 +2798,72 @@ async function resetQuarantine() {
         else { toggleLocalPlaybackStatus(); }
     }
     function toggleLocalPlaybackStatus(forcePause = null) {
-        const ytContainer = document.getElementById('ytContainer'); const vid = document.getElementById('localPlayer');
-        if (ytContainer.style.display === 'block' && ytPlayer) {
-            if (forcePause === true || ytPlayer.getPlayerState() === YT.PlayerState.PLAYING) { ytUserPaused = true; bgUserPaused = true; ytPlayer.pauseVideo(); }
-            else if (forcePause === false || ytPlayer.getPlayerState() !== YT.PlayerState.PLAYING) { ytUserPaused = false; bgUserPaused = false; ytPlayer.playVideo(); }
+        const ytContainer = document.getElementById('ytContainer');
+        const vid = document.getElementById('localPlayer');
+        const bgAud = document.getElementById('bgAudioPlayer');
+        if (typeof bgAudioActive !== 'undefined' && bgAudioActive && bgAud) {
+            const shouldPauseBg = (forcePause !== null) ? !!forcePause : !bgAud.paused;
+            if (shouldPauseBg) {
+                bgUserPaused = true;
+                ytUserPaused = true;
+                try { bgAud.pause(); } catch (e) {}
+                try { vid.pause(); } catch (e) {}
+                document.getElementById('playIcon').innerText = 'play_arrow';
+            } else {
+                bgUserPaused = false;
+                ytUserPaused = false;
+                bgAud.play().then(() => {
+                    document.getElementById('playIcon').innerText = 'pause';
+                    refreshNowPlaying();
+                }).catch(() => {
+                    activateBgAudioBridge(true);
+                });
+            }
+            refreshNowPlaying();
+            return;
+        }
+        if (ytContainer.style.display === 'block' && ytPlayer && typeof ytPlayer.getPlayerState === 'function') {
+            const isPlayingYt = ytPlayer.getPlayerState() === YT.PlayerState.PLAYING;
+            const shouldPauseYt = (forcePause !== null) ? !!forcePause : isPlayingYt;
+            if (shouldPauseYt) {
+                ytUserPaused = true; bgUserPaused = true;
+                try { ytPlayer.pauseVideo(); } catch (e) {}
+                document.getElementById('playIcon').innerText = 'play_arrow';
+            } else {
+                ytUserPaused = false; bgUserPaused = false;
+                if (typeof isPageReallyHidden === 'function' && isPageReallyHidden()) {
+                    activateBgAudioBridge(true);
+                } else {
+                    try { ytPlayer.playVideo(); } catch (e) {}
+                }
+            }
+            refreshNowPlaying();
         } else {
-            if (forcePause === true || !vid.paused) { bgUserPaused = true; vid.pause(); }
-            else if (forcePause === false || vid.paused) { bgUserPaused = false; vid.play(); }
+            const shouldPauseVid = (forcePause !== null) ? !!forcePause : !vid.paused;
+            if (shouldPauseVid) {
+                bgUserPaused = true;
+                try { vid.pause(); } catch (e) {}
+                if (bgAud && !bgAud.paused) { try { bgAud.pause(); } catch (e) {} }
+                document.getElementById('playIcon').innerText = 'play_arrow';
+            } else {
+                bgUserPaused = false;
+                if (typeof isPageReallyHidden === 'function' && isPageReallyHidden()) {
+                    activateBgAudioBridge(true);
+                } else {
+                    const p = vid.play();
+                    if (p && typeof p.catch === 'function') {
+                        p.catch(() => {
+                            if (!bgUserPaused) activateBgAudioBridge(true);
+                        });
+                    }
+                    setTimeout(() => {
+                        if (!bgUserPaused && vid.paused && (typeof isPageReallyHidden === 'function' && (isPageReallyHidden() || !document.hasFocus()))) {
+                            activateBgAudioBridge(true);
+                        }
+                    }, 220);
+                }
+            }
+            refreshNowPlaying();
         }
     }
     function toggleSubtitles() {
@@ -3407,6 +3467,8 @@ async function resetQuarantine() {
     }
 
     async function playLocally(url, sessionToken, isRetryAfterHeal = false) {
+        if (typeof stopBgAudioBridge === 'function') stopBgAudioBridge(false);
+        lastPlayedStreamUrl = url;
         const video = document.getElementById('localPlayer');
         const ytContainer = document.getElementById('ytContainer');
         const webEmbedContainer = document.getElementById('webEmbedContainer');
@@ -3653,6 +3715,7 @@ async function resetQuarantine() {
             muted = ytPlayer.isMuted();
         } else {
             const v = document.getElementById('localPlayer'); v.muted = !v.muted; muted = v.muted;
+            const bgAud = document.getElementById('bgAudioPlayer'); if (bgAud) bgAud.muted = muted;
         }
         document.getElementById('muteIcon').innerText = muted ? 'volume_off' : 'volume_up';
         showOSD(muted ? 'Ses Kapalı' : 'Ses Açık');
@@ -4990,9 +5053,13 @@ async function resetQuarantine() {
     try { const _c = navigator.connection; if (_c && _c.addEventListener) _c.addEventListener('change', () => { applyQualityPolicy(); if (useLowQuality()) showOSD('Mobil veri algılandı', 'En düşük kalite seçildi'); }); } catch (e) {}
 
 
-    /* ===== ARKA PLAN ÇALMA & BİLDİRİM KONTROLLERİ (Media Session + WebAudio + APK köprüsü) ===== */
+    /* ===== ARKA PLAN ÇALMA & BİLDİRİM KONTROLLERİ (Saf Ses <audio> Köprüsü + Media Session + APK) ===== */
     var bgUserPaused = false;
     var lastBgTransitionAt = 0;
+    var lastPlayedStreamUrl = '';
+    var bgAudioActive = false;
+    var bgHls = null;
+    var bgSwitchLock = false;
     const __nativeHiddenDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'hidden') || Object.getOwnPropertyDescriptor(document, 'hidden');
     const __nativeVisDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState') || Object.getOwnPropertyDescriptor(document, 'visibilityState');
     function isPageReallyHidden() {
@@ -5008,41 +5075,244 @@ async function resetQuarantine() {
         return !!document.hidden;
     }
 
-    // Ekran kilitlendiğinde mobil işletim sisteminin ses oturumunu düşürmemesi için sessiz WebAudio tutucu
-    let bgAudioCtx = null, bgSilentOsc = null;
-    function ensureBgAudioKeepAlive() {
-        try {
-            const Ctx = window.AudioContext || window.webkitAudioContext;
-            if (!Ctx) return;
-            if (!bgAudioCtx) {
-                bgAudioCtx = new Ctx();
-                const gain = bgAudioCtx.createGain();
-                gain.gain.value = 0.00001; // Tamamen duyulmaz ama OS ses oturumunu canlı tutar
-                const osc = bgAudioCtx.createOscillator();
-                osc.frequency.value = 1;
-                osc.connect(gain);
-                gain.connect(bgAudioCtx.destination);
-                osc.start();
-                bgSilentOsc = osc;
+    // Chromium/WebView arka planda video track (HasVideo()==true) olan <video> elemanlarını C++ seviyesinde durdurur.
+    // Arka plan <audio id="bgAudioPlayer"> için MediaSource'ta video SourceBuffer'ı sahte (no-op) tutarak HasVideo()==false sağlıyoruz.
+    function createMockVideoSourceBuffer(audioEl) {
+        const target = new EventTarget();
+        let updating = false;
+        let mode = 'segments';
+        let timestampOffset = 0;
+        let appendWindowStart = 0;
+        let appendWindowEnd = Infinity;
+        const finishAsync = () => {
+            updating = true;
+            setTimeout(() => {
+                updating = false;
+                try { target.dispatchEvent(new Event('update')); } catch (e) {}
+                try { target.dispatchEvent(new Event('updateend')); } catch (e) {}
+            }, 0);
+        };
+        Object.defineProperties(target, {
+            updating: { get: () => updating },
+            mode: { get: () => mode, set: (v) => { mode = v; } },
+            timestampOffset: { get: () => timestampOffset, set: (v) => { timestampOffset = v; } },
+            appendWindowStart: { get: () => appendWindowStart, set: (v) => { appendWindowStart = v; } },
+            appendWindowEnd: { get: () => appendWindowEnd, set: (v) => { appendWindowEnd = v; } },
+            buffered: {
+                get: () => {
+                    if (audioEl && audioEl.buffered && audioEl.buffered.length > 0) return audioEl.buffered;
+                    const cur = (audioEl && audioEl.currentTime) || 0;
+                    return { length: 1, start: () => Math.max(0, cur - 1), end: () => cur + 30 };
+                }
             }
-            if (bgAudioCtx.state === 'suspended' && !bgUserPaused) {
-                bgAudioCtx.resume().catch(() => {});
+        });
+        target.appendBuffer = function () { finishAsync(); };
+        target.remove = function () { finishAsync(); };
+        target.abort = function () { updating = false; };
+        target.changeType = function () {};
+        return target;
+    }
+
+    (function patchMediaSourceForBgAudio() {
+        const MS = window.MediaSource || window.WebKitMediaSource;
+        if (!MS || !MS.prototype || MS.prototype._bgPatched) return;
+        const origAddSB = MS.prototype.addSourceBuffer;
+        MS.prototype._bgPatched = true;
+        MS.prototype.addSourceBuffer = function (mimeType) {
+            const mStr = String(mimeType || '');
+            const isBgMS = this._isPureAudio || (bgHls && bgHls.mediaSource === this);
+            if (isBgMS && /^video\//i.test(mStr) && !/mp4a|aac|mp3|opus|vorbis/i.test(mStr)) {
+                return createMockVideoSourceBuffer(document.getElementById('bgAudioPlayer'));
+            }
+            return origAddSB.call(this, mimeType);
+        };
+    })();
+
+    function ensureBgAudioKeepAlive() {}
+
+    function setVideoTracksEnabled(vid, enabled) {
+        if (!vid) return;
+        try {
+            if (vid.videoTracks && vid.videoTracks.length > 0) {
+                for (let i = 0; i < vid.videoTracks.length; i++) {
+                    vid.videoTracks[i].selected = !!enabled;
+                }
             }
         } catch (e) {}
     }
-    ['touchstart', 'click', 'keydown'].forEach(ev => {
-        window.addEventListener(ev, () => { if (!bgUserPaused) ensureBgAudioKeepAlive(); }, { passive: true });
-    });
+
+    async function resolveYtBgAudioUrl(ytId) {
+        loadInstances();
+        const P = ytSortHosts(PIPED).slice(0, 4);
+        const I = ytSortHosts(INVID).slice(0, 4);
+        for (const host of P) {
+            try {
+                const d = await ytFetchJson(`${host}/streams/${ytId}`, null, 4500);
+                if (d && Array.isArray(d.audioStreams) && d.audioStreams.length > 0) {
+                    const aud = d.audioStreams.filter(x => x.url).sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+                    if (aud && aud.url) return { url: aud.url, type: 'direct' };
+                }
+                if (d && d.hls) return { url: d.hls, type: 'hls' };
+            } catch (e) {}
+        }
+        for (const host of I) {
+            try {
+                const d = await ytFetchJson(`${host}/api/v1/videos/${ytId}?local=true`, null, 4500);
+                if (d && Array.isArray(d.adaptiveFormats)) {
+                    const aud = d.adaptiveFormats.filter(x => /^audio\//i.test(x.type || '') && x.url).sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+                    if (aud && aud.url) return { url: ytAbs(host, aud.url), type: 'direct' };
+                }
+                if (d && d.hlsUrl) return { url: ytAbs(host, d.hlsUrl), type: 'hls' };
+            } catch (e) {}
+        }
+        return null;
+    }
+
+    async function activateBgAudioBridge(forceStart = false) {
+        if (bgUserPaused && !forceStart) return;
+        if (bgSwitchLock) return;
+        const ch = (curIdx >= 0 && allChannels[curIdx]) ? allChannels[curIdx] : null;
+        if (!ch && !lastPlayedStreamUrl) return;
+        const bgAud = document.getElementById('bgAudioPlayer');
+        const vid = document.getElementById('localPlayer');
+        if (!bgAud) return;
+        if (bgAudioActive && !bgAud.paused) {
+            refreshNowPlaying();
+            return;
+        }
+        const rawUrl = String(lastPlayedStreamUrl || ch.url || '');
+        if (!rawUrl || rawUrl.startsWith('#web_embed#') || rawUrl.startsWith('mv_lazy:')) return;
+
+        // Eğer yayın zaten saf radyo/ses akışıysa doğrudan localPlayer üzerinde devam edebilir
+        if (rawUrl.includes('#audio') || /\.(mp3|aac|ogg)(\?|$)/i.test(rawUrl.split('#')[0])) {
+            if (vid && vid.paused) {
+                vid.play().then(() => refreshNowPlaying()).catch(() => {});
+            }
+            return;
+        }
+
+        bgSwitchLock = true;
+        try {
+            if (bgHls) { try { bgHls.destroy(); } catch (e) {} bgHls = null; }
+            bgAud.pause();
+            bgAud.removeAttribute('src');
+            bgAud.muted = vid ? vid.muted : false;
+            bgAud.volume = vid ? vid.volume : 1;
+
+            const ytId = extractYTId(rawUrl);
+            if (ytId) {
+                const ytAud = await resolveYtBgAudioUrl(ytId);
+                if (!ytAud || !ytAud.url) { bgSwitchLock = false; return; }
+                bgAudioActive = true;
+                try { if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') ytPlayer.pauseVideo(); } catch (e) {}
+                if (ytAud.type === 'hls' && Hls.isSupported()) {
+                    bgHls = createHlsForStream(ytAud.url, false, { startLevel: 0, autoLevelCapping: 0, maxBufferLength: 12 });
+                    bgHls.on(Hls.Events.MEDIA_ATTACHED, () => { if (bgHls && bgHls.mediaSource) bgHls.mediaSource._isPureAudio = true; });
+                    bgHls.loadSource(ytAud.url);
+                    bgHls.attachMedia(bgAud);
+                    bgHls.on(Hls.Events.MANIFEST_PARSED, () => {
+                        bgAud.play().then(() => refreshNowPlaying()).catch(() => {});
+                    });
+                } else {
+                    bgAud.src = ytAud.url;
+                    bgAud.play().then(() => refreshNowPlaying()).catch(() => {});
+                }
+                bgSwitchLock = false;
+                return;
+            }
+
+            const cleanUrl = rawUrl.split('#')[0];
+            const useProxy = rawUrl.includes('#cors_proxy');
+            const isDirectFile = /\.(mp4|m4v|webm|ogv|mov|mkv)(\?|$)/i.test(cleanUrl) || rawUrl.includes('#direct_video') || /archive\.org\/download\/|wikimedia\.org\//i.test(cleanUrl);
+            const curTime = (vid && vid.currentTime > 0 && isFinite(vid.duration)) ? vid.currentTime : 0;
+
+            try { if (vid && !vid.paused) vid.pause(); } catch (e) {}
+            if (hls) { try { hls.stopLoad(); } catch (e) {} }
+
+            bgAudioActive = true;
+            if (!isDirectFile && Hls.isSupported()) {
+                bgHls = createHlsForStream(cleanUrl, useProxy, { startLevel: 0, autoLevelCapping: 0, maxBufferLength: 12 });
+                bgHls.on(Hls.Events.MEDIA_ATTACHED, () => {
+                    if (bgHls && bgHls.mediaSource) bgHls.mediaSource._isPureAudio = true;
+                });
+                bgHls.on(Hls.Events.ERROR, (ev, data) => {
+                    if (data && data.fatal && bgAudioActive) {
+                        try { bgHls.destroy(); } catch (e) {} bgHls = null;
+                        // Yedek olarak Android native HLS <audio> dene
+                        bgAud.src = cleanUrl;
+                        bgAud.play().then(() => refreshNowPlaying()).catch(() => {});
+                    }
+                });
+                bgHls.loadSource(cleanUrl);
+                bgHls.attachMedia(bgAud);
+                bgHls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    if (curTime > 2) { try { bgAud.currentTime = curTime; } catch (e) {} }
+                    bgAud.play().then(() => {
+                        document.getElementById('playIcon').innerText = 'pause';
+                        refreshNowPlaying();
+                    }).catch(() => {});
+                });
+            } else {
+                bgAud.src = cleanUrl;
+                if (curTime > 2) {
+                    bgAud.addEventListener('loadedmetadata', function onMeta() {
+                        bgAud.removeEventListener('loadedmetadata', onMeta);
+                        try { bgAud.currentTime = curTime; } catch (e) {}
+                    });
+                }
+                bgAud.play().then(() => {
+                    document.getElementById('playIcon').innerText = 'pause';
+                    refreshNowPlaying();
+                }).catch(() => {});
+            }
+        } finally {
+            bgSwitchLock = false;
+        }
+    }
+
+    function stopBgAudioBridge(resumeForeground = true) {
+        const bgAud = document.getElementById('bgAudioPlayer');
+        const vid = document.getElementById('localPlayer');
+        const ytc = document.getElementById('ytContainer');
+        const wasActive = bgAudioActive;
+        const bgTime = (bgAud && bgAud.currentTime > 0 && isFinite(bgAud.duration)) ? bgAud.currentTime : 0;
+        bgAudioActive = false;
+        if (bgHls) {
+            try { bgHls.destroy(); } catch (e) {}
+            bgHls = null;
+        }
+        if (bgAud) {
+            try { bgAud.pause(); bgAud.removeAttribute('src'); bgAud.load(); } catch (e) {}
+        }
+        if (vid) setVideoTracksEnabled(vid, true);
+        if (!wasActive || !resumeForeground || bgUserPaused) {
+            refreshNowPlaying();
+            return;
+        }
+        if (ytc && ytc.style.display === 'block' && ytPlayer && typeof ytPlayer.playVideo === 'function') {
+            try { ytPlayer.playVideo(); } catch (e) {}
+        } else if (vid && vid.style.display !== 'none') {
+            if (hls) {
+                try { hls.startLoad(); } catch (e) {}
+            }
+            if (bgTime > 2 && isFinite(vid.duration)) {
+                try { vid.currentTime = bgTime; } catch (e) {}
+            }
+            vid.play().catch(() => {
+                if (curIdx >= 0 && allChannels[curIdx]) playLocally(allChannels[curIdx].url, currentPlaySession);
+            });
+        }
+        refreshNowPlaying();
+    }
 
     function currentIsPlaying() {
         try {
-            // Ekran kilitliyken kullanıcı durdurmadıysa OS servisini düşürmemek için her zaman aktif bildir
-            if (!bgUserPaused && (isPageReallyHidden() || Date.now() - lastBgTransitionAt < 3000) && curIdx >= 0 && allChannels[curIdx]) {
-                return true;
-            }
+            const bgAud = document.getElementById('bgAudioPlayer');
+            if (bgAudioActive && bgAud && !bgAud.paused) return true;
             const ytc = document.getElementById('ytContainer');
             if (ytc && ytc.style.display === 'block' && ytPlayer && typeof ytPlayer.getPlayerState === 'function') return ytPlayer.getPlayerState() === 1;
-            const v = document.getElementById('localPlayer'); return !!v && !v.paused;
+            const v = document.getElementById('localPlayer');
+            return !!v && !v.paused;
         } catch (e) { return false; }
     }
     function refreshNowPlaying() {
@@ -5072,48 +5342,61 @@ async function resetQuarantine() {
     function forceResumeActiveMediaInBg() {
         if (bgUserPaused) return;
         try { if (typeof remotePlayer !== 'undefined' && remotePlayer && remotePlayer.isConnected) return; } catch (e) {}
-        ensureBgAudioKeepAlive();
+        const bgAud = document.getElementById('bgAudioPlayer');
+        if (bgAudioActive && bgAud) {
+            if (bgAud.paused) bgAud.play().catch(() => {});
+            refreshNowPlaying();
+            return;
+        }
         const ytc = document.getElementById('ytContainer');
         const v = document.getElementById('localPlayer');
-        if (ytc && ytc.style.display === 'block' && typeof ytPlayer !== 'undefined' && ytPlayer && typeof ytPlayer.playVideo === 'function') {
-            if (!ytUserPaused) {
-                try {
-                    const st = typeof ytPlayer.getPlayerState === 'function' ? ytPlayer.getPlayerState() : -1;
-                    if (st !== 1) ytPlayer.playVideo();
-                } catch (e) {}
-            }
-        } else if (v && v.style.display !== 'none' && !v.ended && (v.currentSrc || v.src)) {
+        if (ytc && ytc.style.display === 'block') {
+            if (!ytUserPaused) activateBgAudioBridge(false);
+            return;
+        }
+        if (v && v.style.display !== 'none' && !v.ended && (v.currentSrc || v.src)) {
+            setVideoTracksEnabled(v, false);
             if (v.paused) {
-                v.play().catch(() => {});
+                const p = v.play();
+                if (p && typeof p.catch === 'function') {
+                    p.catch(() => { if (!bgUserPaused) activateBgAudioBridge(false); });
+                }
+                setTimeout(() => {
+                    if (!bgUserPaused && v.paused && !bgAudioActive) {
+                        activateBgAudioBridge(false);
+                    }
+                }, 180);
             }
         }
         refreshNowPlaying();
     }
 
-    // Uygulama arka plana alınınca veya ekran kilitlenince tarayıcı videoyu durdurursa anında devam ettir
+    // Uygulama arka plana alınınca veya ekran kilitlenince saf ses (<audio>) köprüsünü devreye sok, ekrana dönünce <video>'ya aktar
     (function keepAudioInBackground() {
         const onBgChange = () => {
             lastBgTransitionAt = Date.now();
             if (isPageReallyHidden()) {
                 forceResumeActiveMediaInBg();
-                [40, 150, 400, 900, 1800, 3500].forEach(ms => setTimeout(() => {
+                [80, 260, 700].forEach(ms => setTimeout(() => {
                     if (isPageReallyHidden() && !bgUserPaused) forceResumeActiveMediaInBg();
                 }, ms));
             } else {
-                if (!bgUserPaused) forceResumeActiveMediaInBg();
-                else refreshNowPlaying();
+                if (bgAudioActive) {
+                    stopBgAudioBridge(true);
+                } else if (!bgUserPaused) {
+                    const v = document.getElementById('localPlayer');
+                    if (v) setVideoTracksEnabled(v, true);
+                    if (v && v.paused && (v.currentSrc || v.src)) v.play().catch(() => {});
+                    refreshNowPlaying();
+                } else {
+                    refreshNowPlaying();
+                }
             }
         };
         document.addEventListener('visibilitychange', onBgChange, true);
         window.addEventListener('pagehide', onBgChange, true);
-        window.addEventListener('blur', () => {
-            if (!bgUserPaused) {
-                lastBgTransitionAt = Date.now();
-                [80, 300, 900].forEach(ms => setTimeout(() => {
-                    if (!bgUserPaused && (isPageReallyHidden() || !document.hasFocus())) forceResumeActiveMediaInBg();
-                }, ms));
-            }
-        }, true);
+        window.addEventListener('pageshow', () => { if (!isPageReallyHidden() && bgAudioActive) stopBgAudioBridge(true); }, true);
+        window.addEventListener('focus', () => { if (!isPageReallyHidden() && bgAudioActive) stopBgAudioBridge(true); }, true);
     })();
 
 
@@ -8755,13 +9038,40 @@ function playAudioDirect(video, url, token) {
         ['waiting','loadstart'].forEach(ev => vid.addEventListener(ev, () => sp.style.display = 'block'));
         ['playing','canplay','error','pause'].forEach(ev => vid.addEventListener(ev, () => sp.style.display = 'none'));
         vid.addEventListener('play', () => { ensureBgAudioKeepAlive(); document.getElementById('playIcon').innerText = 'pause'; if (!hold2xActive && userPlaybackRate !== 1.0) { try { vid.playbackRate = userPlaybackRate; } catch (e) {} } updateSeekBarUI(false); refreshNowPlaying(); });
+        const bgAudEl = document.getElementById('bgAudioPlayer');
+        if (bgAudEl) {
+            bgAudEl.addEventListener('play', () => {
+                document.getElementById('playIcon').innerText = 'pause';
+                refreshNowPlaying();
+            });
+            bgAudEl.addEventListener('pause', () => {
+                if (bgAudioActive && !bgUserPaused && !bgAudEl.ended && isPageReallyHidden()) {
+                    setTimeout(() => { if (bgAudioActive && !bgUserPaused && bgAudEl.paused) bgAudEl.play().catch(() => {}); }, 150);
+                    return;
+                }
+                if (bgAudioActive) {
+                    document.getElementById('playIcon').innerText = 'play_arrow';
+                    refreshNowPlaying();
+                }
+            });
+            bgAudEl.addEventListener('ended', () => {
+                if (bgAudioActive) nextCh();
+            });
+        }
         vid.addEventListener('pause', () => {
+            if (bgAudioActive) { refreshNowPlaying(); return; }
             if (!bgUserPaused && !vid.ended && (vid.currentSrc || vid.src) && (isPageReallyHidden() || !document.hasFocus() || Date.now() - lastBgTransitionAt < 2500)) {
                 lastBgTransitionAt = Date.now();
-                vid.play().catch(() => {});
-                [60, 220, 600, 1400].forEach(ms => setTimeout(() => {
-                    if (!bgUserPaused && vid.paused && !vid.ended && (vid.currentSrc || vid.src)) vid.play().catch(() => {});
-                }, ms));
+                setVideoTracksEnabled(vid, false);
+                const p = vid.play();
+                if (p && typeof p.catch === 'function') {
+                    p.catch(() => { if (!bgUserPaused) activateBgAudioBridge(false); });
+                }
+                setTimeout(() => {
+                    if (!bgUserPaused && vid.paused && !bgAudioActive) {
+                        activateBgAudioBridge(false);
+                    }
+                }, 160);
                 refreshNowPlaying();
                 return;
             }
