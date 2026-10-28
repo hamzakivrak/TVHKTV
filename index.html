@@ -3420,7 +3420,7 @@ async function resetQuarantine() {
                 }
                 const isDmEmbed = /dailymotion\.com/i.test(finalEmbedUrl);
                 // file:// veya özel origin'de Dailymotion'ın 403 Forbidden vermemesi için no-referrer kullanılır
-                const refPol = isDmEmbed ? (/^https?:/.test(location.protocol) ? 'strict-origin-when-cross-origin' : 'no-referrer') : (/ok\.ru|vk\.|vimeo\.com|archive\.org|mail\.ru/i.test(finalEmbedUrl) ? 'strict-origin-when-cross-origin' : 'no-referrer');
+                const refPol = isDmEmbed ? 'no-referrer' : (/ok\.ru|vk\.|vimeo\.com|archive\.org|mail\.ru/i.test(finalEmbedUrl) ? 'strict-origin-when-cross-origin' : 'no-referrer');
                 webEmbedContainer.innerHTML = `<iframe tabindex="-1" src="${esc(finalEmbedUrl)}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="${refPol}"></iframe>`;
             }
             document.getElementById('pStatus').innerText = "Cihazda İzleniyor (Web Player)";
@@ -3547,6 +3547,15 @@ async function resetQuarantine() {
                 hls.on(Hls.Events.ERROR, async function (event, data) {
                     if (!data || !data.fatal) return;
                     if (sessionToken !== currentPlaySession) return;
+                    try {
+                        const _c0 = allChannels[curIdx];
+                        if (_c0 && _c0._mvRaw) {
+                            const code = data.response && data.response.code ? ('HTTP ' + data.response.code) : '';
+                            _c0._lastErr = [code, data.details || ''].filter(Boolean).join(' ');
+                            const st0 = document.getElementById('movieStatus');
+                            if (st0) { st0.style.color = '#e67e22'; st0.innerText = 'Oynatma hatası: ' + _c0._lastErr + ' (' + (_c0._mvRaw.src || '') + ')'; }
+                        }
+                    } catch (e) {}
                     if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
                         try { hls.recoverMediaError(); return; } catch (e) {}
                     }
