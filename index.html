@@ -36,8 +36,6 @@
         #ytContainer.yt-wait { visibility:hidden; }
         #webEmbedContainer { position:absolute; top:0; left:0; width:100%; height:100%; z-index:2; background:#000; display:none; pointer-events:none; }
         #webEmbedContainer iframe { width:100%; height:100%; border:none; background:#000; pointer-events:none; }
-        .movie-card.mv-bad { opacity:0.45; border-color:rgba(231,76,60,0.6) !important; }
-        .movie-card.mv-bad .mc-thumb::after { content:"\2717 Açılamadı"; position:absolute; bottom:4px; left:4px; background:rgba(231,76,60,0.9); color:#fff; font-size:0.62rem; font-weight:700; padding:2px 6px; border-radius:6px; pointer-events:none; }
         .movie-card.active { border-color:var(--primary) !important; background:#252244 !important; box-shadow:0 0 14px rgba(108,92,231,0.55); }
         .movie-card .mc-thumb { position:relative; }
         .movie-card .mc-dur-badge { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,0.78); color:#fff; font-size:0.74rem; font-weight:700; padding:4px 10px; border-radius:99px; border:1px solid rgba(255,255,255,0.25); pointer-events:none; z-index:3; white-space:nowrap; letter-spacing:0.3px; box-shadow:0 3px 10px rgba(0,0,0,0.65); font-variant-numeric:tabular-nums; }
@@ -891,18 +889,8 @@
     }, true);
 
 
-        function markMovieCardBad(ch, bad) {
-        if (!ch || ch._mvKind == null || typeof ch._mvIdx !== 'number') return;
-        const card = document.querySelector(`#moviePanel .movie-card[data-kind="${ch._mvKind}"][data-i="${ch._mvIdx}"]`);
-        if (card) card.classList.toggle('mv-bad', !!bad);
-    }
-    function markChannelHealthy(urlOrCh) {
+        function markChannelHealthy(urlOrCh) {
         if (!urlOrCh) return;
-        if (typeof urlOrCh === 'object' && (urlOrCh._mvRaw || urlOrCh._mvKind)) {
-            urlOrCh.broken = false; if (urlOrCh._mvRaw) urlOrCh._mvRaw._bad = false;
-            try { markMovieCardBad(urlOrCh, false); } catch (e) {}
-            return;
-        }
         const u = typeof urlOrCh === 'string' ? urlOrCh : urlOrCh.url;
         if (!u) return;
         const baseU = u.split('#')[0];
@@ -1593,15 +1581,11 @@
         const isPersonal = personalPresets.find(p => p.url === val) || val.startsWith('ytpl_');
         document.getElementById('removePresetBtn').style.display = isPersonal ? 'block' : 'none';
     }
-    // allChannels şu an film/video sonuçlarından (geçici liste) mı oluşuyor?
-    var tempListActive = false;
-    function isTempChannelList() { return tempListActive || allChannels.some(c => c && (c._mvKind || c._mvRaw)); }
     function syncAndChangeCountry(val) {
         if (val === '__yt_toggle__') { toggleYtLists(); return; }
         if (val === '__fav_only__') {
             favFilterOnly = true;
             updatePresetDropdown();
-            if (isTempChannelList()) { changeCountry(currentListContext); return; }
             performSearch();
             showOSD("Favori Kanallar ⭐", getActiveListDisplayName() + " favorileri gösteriliyor");
             return;
@@ -1609,13 +1593,11 @@
         if (val === '__all_channels__') {
             favFilterOnly = false;
             updatePresetDropdown();
-            if (isTempChannelList()) { changeCountry(currentListContext); return; }
             performSearch();
             showOSD("Tüm Kanallar 📋", getActiveListDisplayName() + " tüm kanallar gösteriliyor");
             return;
         }
-        // Film/video sonuçları geçici listedir: aynı listeyi seçsek bile gerçek liste yeniden yüklenmeli
-        const sameContext = (val === currentListContext) && !isTempChannelList();
+        const sameContext = (val === currentListContext);
         favFilterOnly = false;
         currentListContext = val;
         updatePresetDropdown();
@@ -1857,7 +1839,6 @@
 
     function changeCountry(v) {
         ytplLoadSession++;
-        tempListActive = false;
         const val = (typeof v === 'string') ? v : document.getElementById('countrySelect').value;
         currentListContext = val;
         localStorage.setItem('tv_last_context', currentListContext);
@@ -2944,12 +2925,7 @@ async function resetQuarantine() {
         const isYtChannel = !!extractYTId(ch.url) || String(currentListContext).startsWith('ytpl_');
         const isCustom = ch.id.startsWith('ch_ex_') || isYtChannel;
         const waitTime = isYtChannel ? 1200 : (isCustom ? 4000 : 1500);
-        if (ch._mvRaw || ch._mvKind) {
-            // Film/video sonucu: karantinaya KALICI yazma; yalnızca bu oturumda "açılamadı" diye işaretle
-            ch.broken = true;
-            if (ch._mvRaw) ch._mvRaw._bad = true;
-            try { markMovieCardBad(ch, true); } catch (e) {}
-        } else if (!isCustom && !isYtChannel) {
+        if (!isCustom && !isYtChannel) {
             ch.broken = true;
             if (!brokenUrls.includes(ch.url)) { brokenUrls.push(ch.url); localStorage.setItem('tv_broken', JSON.stringify(brokenUrls)); }
         }
@@ -3246,16 +3222,13 @@ async function resetQuarantine() {
         showOSD((curIdx + 1) + ". " + ch.name, osdSub);
         try { refreshNowPlaying(); } catch (e) {}
         hideControlsNow();
-        // Dailymotion/web akışları imzalı (token'lı) ve kısa ömürlü: 3 dakikadan eskiyse yeniden çöz (403 Forbidden önlemi)
-        if (ch._mvRaw && ch._mvResolved && ch._mvResolvedAt && (Date.now() - ch._mvResolvedAt > 180000) && isTokenBoundRaw(ch._mvRaw)) { ch._mvResolved = null; ch.url = 'mv_lazy:fresh'; }
-        ch._dmRetried = false;
         if (ch._mvRaw && (!ch._mvResolved || !ch.url || ch.url.startsWith('mv_lazy:'))) {
             document.getElementById('pStatus').innerText = "Video Kaynağı Çözülüyor...";
             document.getElementById('bufSpinner').style.display = 'block';
             try {
                 const res = await resolveMovieStreamUrl(ch._mvRaw, null);
                 if (mySession !== currentPlaySession) return;
-                ch._mvResolved = res; ch._mvResolvedAt = Date.now();
+                ch._mvResolved = res;
                 if (res.embedFallback) ch._mvRaw.embedFallback = res.embedFallback;
                 ch.url = res.type === 'embed' ? ('#web_embed#' + res.url) : res.url;
                 try {
@@ -3547,15 +3520,6 @@ async function resetQuarantine() {
                 hls.on(Hls.Events.ERROR, async function (event, data) {
                     if (!data || !data.fatal) return;
                     if (sessionToken !== currentPlaySession) return;
-                    try {
-                        const _c0 = allChannels[curIdx];
-                        if (_c0 && _c0._mvRaw) {
-                            const code = data.response && data.response.code ? ('HTTP ' + data.response.code) : '';
-                            _c0._lastErr = [code, data.details || ''].filter(Boolean).join(' ');
-                            const st0 = document.getElementById('movieStatus');
-                            if (st0) { st0.style.color = '#e67e22'; st0.innerText = 'Oynatma hatası: ' + _c0._lastErr + ' (' + (_c0._mvRaw.src || '') + ')'; }
-                        }
-                    } catch (e) {}
                     if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
                         try { hls.recoverMediaError(); return; } catch (e) {}
                     }
@@ -3566,14 +3530,6 @@ async function resetQuarantine() {
                         return;
                     }
                     const curCh = allChannels[curIdx];
-                    // Dailymotion 403/süresi dolmuş token: bir kez taze adres alıp yeniden dene, olmazsa embed'e düş
-                    if (curCh && curCh._mvRaw && curCh._mvRaw.src === 'dm' && !curCh._dmRetried) {
-                        curCh._dmRetried = true;
-                        document.getElementById('pStatus').innerText = "Dailymotion adresi yenileniyor...";
-                        const fresh = await resolveDailymotionM3u8(curCh._mvRaw.id);
-                        if (sessionToken !== currentPlaySession) return;
-                        if (fresh) { curCh.url = fresh; playLocally(fresh, sessionToken, true); return; }
-                    }
                     if (curCh && curCh._mvRaw && curCh._mvRaw.embedFallback && isSafeEmbedUrl(curCh._mvRaw.embedFallback) && !url.startsWith('#web_embed#')) {
                         curCh.url = '#web_embed#' + curCh._mvRaw.embedFallback;
                         playLocally(curCh.url, sessionToken, true);
@@ -4080,15 +4036,10 @@ async function resetQuarantine() {
                         }
                     }
                 } catch (e) {}
-                // Manifest tarayıcıdan okunamadıysa (CORS vb.) yine de imzalı adresi dene; hata olursa yeniden çözülür / embed'e düşer
-                return manifestUrl + '#no_proxy';
             } catch (e) {}
         }
         return null;
     }
-    // Token'lı (kısa ömürlü) kaynak mı? Bunlar asla kalıcı saklanmaz / önbelleğe alınmaz.
-    function isTokenBoundRaw(raw) { return !!raw && (raw.src === 'dm' || raw.src === 'web'); }
-    function isTokenBoundUrl(u) { return /dailymotion\.com|dmcdn\.net|[?&](?:sec|token|expires|hdnts|st|e)=/i.test(String(u || '')); }
 
 
     async function scrapeLivePageStreams(pageUrl, defaultName = '', fallbackStreams = [], defaultLogo = '') {
@@ -5336,7 +5287,7 @@ async function resetQuarantine() {
             if (idx >= 0) play(idx, 0);
             else {
                 const ch = { id: 'ch_' + (globalIdCounter++), originalIndex: 0, name: o.name || 'Yayın', url: o.url, logo: o.logo || '', broken: false, isFavorite: favUrls.includes(o.url) };
-                tempListActive = true; curIdx = -1; allChannels = [ch]; sortAndRenderList(); play(0, 0);
+                curIdx = -1; allChannels = [ch]; sortAndRenderList(); play(0, 0);
             }
             showOSD('Telefondan gönderildi', o.name || '');
         } else if (o.cmd === 'next') { nextCh(); }
@@ -6624,10 +6575,10 @@ async function resetQuarantine() {
 
 
     function mvCols() { return window.innerWidth < 600 ? 3 : 6; }
-    function mvCard(thumb, title, sub, kind, i, isActive = false, durSec = 0, isBad = false) {
+    function mvCard(thumb, title, sub, kind, i, isActive = false, durSec = 0) {
         const durTxt = mvDur(durSec);
         const durBadge = durTxt ? `<span class="mc-dur-badge">⏱ ${esc(durTxt)}</span>` : '';
-        return `<div class="movie-card ${isActive ? 'active' : ''} ${isBad ? 'mv-bad' : ''}" tabindex="0" data-kind="${kind}" data-i="${i}">
+        return `<div class="movie-card ${isActive ? 'active' : ''}" tabindex="0" data-kind="${kind}" data-i="${i}">
             <div class="mc-thumb">${thumb ? `<img loading="lazy" decoding="async" src="${esc(thumb)}" onerror="this.style.display='none'">` : '<i class="material-icons-round" style="font-size:30px; color:#555; pointer-events:none; width:30px; height:30px; overflow:hidden;">movie</i>'}${durBadge}</div>
             <div class="mc-title">#${i + 1} · ${esc(title)}</div>
             <div class="mc-sub">${esc(sub)}</div></div>`;
@@ -6641,7 +6592,7 @@ async function resetQuarantine() {
         const curCh = (curIdx >= 0 && allChannels[curIdx]) ? allChannels[curIdx] : null;
         box.innerHTML = movieResults.map((r, i) => {
             const isAct = !!(curCh && curCh._mvKind === 'res' && curCh._mvIdx === i);
-            return mvCard(r.thumb, r.title, r.sub + (r.dur ? ' · ' + mvDur(r.dur) : ''), 'res', i, isAct, r.dur, !!r._bad);
+            return mvCard(r.thumb, r.title, r.sub + (r.dur ? ' · ' + mvDur(r.dur) : ''), 'res', i, isAct, r.dur);
         }).join('');
     }
     // ---- Eklenenler (film / video listesi; aktif kanal listesinden ayrı)
@@ -6706,12 +6657,11 @@ async function resetQuarantine() {
     function rememberVideo(ch) { try { if (ch && ch.url && !ch.url.startsWith('mv_lazy:') && !ch.url.startsWith('#web_embed#')) localStorage.setItem('tv_last_video', JSON.stringify({ name: ch.name, url: ch.url, logo: ch.logo || '' })); } catch (e) {} }
     function playTempVideo(name, url, logo) {
         const ch = { id: 'ch_' + (globalIdCounter++), originalIndex: 0, name, url, logo: logo || '', broken: false, isFavorite: favUrls.includes(url) };
-        closeAllDrawers(); tempListActive = true; curIdx = -1; allChannels = [ch]; sortAndRenderList(); play(0, 0); rememberVideo(ch);
+        closeAllDrawers(); curIdx = -1; allChannels = [ch]; sortAndRenderList(); play(0, 0); rememberVideo(ch);
         showOSD('Film açılıyor', name);
     }
     function movieSavedPlay(i) {
         const e = movieSaved[i]; if (!e) return;
-        if (isMoviePlayingNow('sav', i, e.title)) { closeAllDrawers(); return; }
         if (typeof tvLinked === 'function' && tvLinked()) {
             if (e.kind === 'embed') { showOSD("Gömülü oynatıcı TV'ye gönderilemez"); return; }
             tvSendTo(tvLinkIdx(), { cmd: 'play', url: e.raw || e.url, name: e.title, logo: e.thumb || '' });
@@ -6719,21 +6669,18 @@ async function resetQuarantine() {
             return;
         }
         allChannels = movieSaved.map((item, idx) => {
-            const storedUrl = item.kind === 'embed' ? ('#web_embed#' + item.url) : item.url;
-            const lazy = !!item.rawItem;
-            const o = {
+            const itemUrl = item.kind === 'embed' ? ('#web_embed#' + item.url) : item.url;
+            return {
                 id: 'ch_mvsav_' + idx + '_' + (globalIdCounter++),
                 originalIndex: idx,
                 name: item.title,
-                url: lazy ? ('mv_lazy:sav' + idx) : storedUrl,
+                url: itemUrl,
                 logo: item.thumb || '',
                 broken: false,
-                isFavorite: favUrls.includes(storedUrl),
+                isFavorite: favUrls.includes(itemUrl),
                 _mvKind: 'sav',
                 _mvIdx: idx
             };
-            if (lazy) { o._mvRaw = Object.assign({}, item.rawItem); o._mvResolved = null; }
-            return o;
         });
         curIdx = -1;
         closeAllDrawers();
@@ -6746,16 +6693,8 @@ async function resetQuarantine() {
         const st = document.getElementById('movieStatus');
         try {
             const res = await resolveMovieStreamUrl(r0, st);
-            const lazy = isTokenBoundRaw(r0);   // Dailymotion/web: imzalı adres saklanmaz, her açılışta yeniden çözülür
-            const keyId = lazy ? ('lazy:' + r0.src + ':' + (r0.id || r0.pageUrl)) : res.url;
-            if (movieSaved.some(x => (x.lazyKey || x.url) === keyId)) { st.style.color = '#f1c40f'; st.innerText = 'Bu video zaten Eklenenler listesinde.'; return; }
-            const entry = { title: r0.title, thumb: r0.thumb || '', sub: String(r0.sub || '').replace(/^%\d+ · /, ''), dur: r0.dur || 0, kind: res.type, url: res.url, raw: res.raw || '', ref: res.ref || '' };
-            if (lazy) {
-                entry.lazyKey = keyId;
-                entry.rawItem = { src: r0.src, id: r0.id, pageUrl: r0.pageUrl || '', title: r0.title, thumb: r0.thumb || '', embedUrl: r0.embedUrl || '', embedFallback: r0.embedFallback || res.embedFallback || '' };
-                if (r0.src === 'dm') { entry.kind = 'embed'; entry.url = buildDailymotionEmbedUrl(r0.id); entry.raw = ''; }
-            }
-            movieSaved.push(entry);
+            if (movieSaved.some(x => x.url === res.url)) { st.style.color = '#f1c40f'; st.innerText = 'Bu video zaten Eklenenler listesinde.'; return; }
+            movieSaved.push({ title: r0.title, thumb: r0.thumb || '', sub: String(r0.sub || '').replace(/^%\d+ · /, ''), dur: r0.dur || 0, kind: res.type, url: res.url, raw: res.raw || '', ref: res.ref || '' });
             movieSavedSave(); renderMovieSaved();
             st.style.color = '#2ecc71'; st.innerText = `✅ "${r0.title}" Eklenenler listesine eklendi.`;
             showOSD('Eklenenlere eklendi', r0.title);
@@ -6976,8 +6915,7 @@ async function resetQuarantine() {
             const cleanU = String(res.url).split('#')[0];
             res.raw = cleanU; res.ref = ref; res.url = mvProxy(cleanU, ref);
         }
-        // İmzalı adresler önbelleğe alınmaz: süresi dolunca 403 Forbidden veriyordu
-        if (r && res && !isTokenBoundRaw(r) && !(res.type === 'stream' && isTokenBoundUrl(res.url))) r._cachedResolved = res;
+        if (r && res) r._cachedResolved = res;
         return res;
     }
     async function resolveMovieStreamUrl0(r, st) {
@@ -7164,30 +7102,18 @@ async function resetQuarantine() {
         }
         const ch = { id: 'ch_' + (globalIdCounter++), originalIndex: 0, name: title || 'Web Video', url: '#web_embed#' + embedUrl, logo: '', broken: false, isFavorite: false };
         closeAllDrawers();
-        tempListActive = true; curIdx = -1; allChannels = [ch]; sortAndRenderList(true);
+        curIdx = -1; allChannels = [ch]; sortAndRenderList(true);
         play(0, 0);
         showOSD('Film açılıyor', title);
     }
 
 
-    // Şu an oynayan video zaten bu karta aitse ve düzgün oynuyorsa yeniden başlatma, yalnızca ekrana dön
-    function isMoviePlayingNow(kind, i, rawOrTitle) {
-        const ch = (curIdx >= 0 && allChannels[curIdx]) ? allChannels[curIdx] : null;
-        if (!ch || ch._mvKind !== kind || ch._mvIdx !== i) return false;
-        if (kind === 'res' && ch._mvRaw !== rawOrTitle) return false;
-        if (kind === 'sav' && ch.name !== rawOrTitle) return false;
-        const vid = document.getElementById('localPlayer'), ytc = document.getElementById('ytContainer'), emb = document.getElementById('webEmbedContainer');
-        const st = (document.getElementById('pStatus') || {}).innerText || '';
-        const loaded = (emb && emb.style.display === 'block' && emb.querySelector('iframe')) || (ytc && ytc.style.display === 'block') || (vid && (vid.currentSrc || vid.src) && vid.style.display !== 'none');
-        return !!loaded && !/hata|bağlan|yükleniyor|karantina|deneniyor|hazırlan|çözülüyor|aranıyor|atlanıyor|alınamadı|yenileniyor/i.test(st);
-    }
     async function movieWatch(i) {
         const r = movieResults[i]; if (!r) return;
-        if (isMoviePlayingNow('res', i, r)) { closeAllDrawers(); return; }
         const st = document.getElementById('movieStatus');
         if (st) { st.style.color = '#2ecc71'; st.innerText = 'Açılıyor: ' + r.title + ' (▲ ▼ ile diğer sonuçlara geçebilirsiniz)'; }
         allChannels = movieResults.map((item, idx) => {
-            const cached = isTokenBoundRaw(item) ? null : item._cachedResolved;
+            const cached = item._cachedResolved;
             const initUrl = cached ? (cached.type === 'embed' ? ('#web_embed#' + cached.url) : cached.url) : ('mv_lazy:' + idx);
             return {
                 id: 'ch_mv_' + idx + '_' + (globalIdCounter++),
@@ -7888,7 +7814,7 @@ function playAudioDirect(video, url, token) {
         if (!lv || !lv.url || String(lv.url).startsWith('#web_embed#') || String(lv.url).startsWith('mv_lazy:')) return;
         if (allChannels.some(c => c.url === lv.url)) return;
         const ch = { id: 'ch_' + (globalIdCounter++), originalIndex: 0, name: lv.name, url: lv.url, logo: lv.logo || '', broken: false, isFavorite: favUrls.includes(lv.url) };
-        tempListActive = true; curIdx = -1; allChannels = [ch]; sortAndRenderList(); play(0, 0);
+        curIdx = -1; allChannels = [ch]; sortAndRenderList(); play(0, 0);
     }
     function firstRunDefaults() {
         let done = false; try { done = localStorage.getItem('tv_first_run_done') === '1'; } catch (e) {}
