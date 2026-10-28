@@ -1239,7 +1239,7 @@
             if (curIdx >= 0 && allChannels[curIdx]) markChannelHealthy(allChannels[curIdx]);
         } else if (event.data === YT.PlayerState.PAUSED) {
             document.getElementById('bufSpinner').style.display = 'none';
-            if (!ytUserPaused && !bgUserPaused && (typeof isPageReallyHidden === 'function' && (isPageReallyHidden() || !document.hasFocus()))) {
+            if (isBgPlayAllowed() && !ytUserPaused && !bgUserPaused && (typeof isPageReallyHidden === 'function' && (isPageReallyHidden() || !document.hasFocus()))) {
                 [30, 180, 500, 1200].forEach(ms => setTimeout(() => {
                     if (!ytUserPaused && !bgUserPaused) { try { ytPlayer.playVideo(); } catch (e) {} }
                 }, ms));
@@ -5060,6 +5060,50 @@ async function resetQuarantine() {
     var bgAudioActive = false;
     var bgHls = null;
     var bgSwitchLock = false;
+    var tvStoppedOnExit = false;
+
+    // Cihazın Mi Stick / Android TV / Smart TV mi yoksa Mobil (Telefon/Tablet) mi olduğunu otomatik algıla
+    function isTvOrStickDevice() {
+        try {
+            const ua = navigator.userAgent || '';
+            if (/\b(MIBOX|MiTV|Mi\s*TV|AFT[A-Z0-9]*|Android\s*TV|SmartTV|SMART-TV|BRAVIA|GoogleTV|Chromecast|Leanback|Tizen|Web0S|WebOS|VIDAA|HbbTV|NetCast|PhilipsTV|Hisense|TCL)\b/i.test(ua)) {
+                return true;
+            }
+            const chk = document.getElementById('remoteEnabledChk');
+            if (chk && chk.checked) return true;
+            // Mi Stick ve TV kutularında dokunmatik ekran yoktur (maxTouchPoints === 0)
+            const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+            if (!hasTouch) return true;
+        } catch (e) {}
+        return false;
+    }
+
+    function isBgPlayAllowed() {
+        return !isTvOrStickDevice();
+    }
+
+    function stopAllPlaybackOnTvExit() {
+        tvStoppedOnExit = true;
+        bgUserPaused = true;
+        ytUserPaused = true;
+        stopBgAudioBridge(false);
+        const vid = document.getElementById('localPlayer');
+        if (hls) { try { hls.stopLoad(); } catch (e) {} }
+        if (vid) { try { vid.pause(); } catch (e) {} }
+        if (typeof ytPlayer !== 'undefined' && ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
+            try { ytPlayer.pauseVideo(); } catch (e) {}
+        }
+        const webEmb = document.getElementById('webEmbedContainer');
+        if (webEmb && webEmb.style.display === 'block') {
+            webEmb.innerHTML = '';
+        }
+        try {
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
+        } catch (e) {}
+        try {
+            if (window.Android && typeof Android.nowPlaying === 'function') Android.nowPlaying('', false);
+        } catch (e) {}
+    }
     const __nativeHiddenDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'hidden') || Object.getOwnPropertyDescriptor(document, 'hidden');
     const __nativeVisDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState') || Object.getOwnPropertyDescriptor(document, 'visibilityState');
     function isPageReallyHidden() {
@@ -5169,6 +5213,7 @@ async function resetQuarantine() {
     }
 
     async function activateBgAudioBridge(forceStart = false) {
+        if (!isBgPlayAllowed()) { stopAllPlaybackOnTvExit(); return; }
         if (bgUserPaused && !forceStart) return;
         if (bgSwitchLock) return;
         const ch = (curIdx >= 0 && allChannels[curIdx]) ? allChannels[curIdx] : null;
@@ -5316,6 +5361,10 @@ async function resetQuarantine() {
         } catch (e) { return false; }
     }
     function refreshNowPlaying() {
+        if (!isBgPlayAllowed()) {
+            try { if (window.Android && typeof Android.nowPlaying === 'function') Android.nowPlaying('', false); } catch (e) {}
+            return;
+        }
         const ch = (curIdx >= 0) ? allChannels[curIdx] : null;
         const title = ch ? ch.name : 'TV Cast';
         const playing = currentIsPlaying();
@@ -5340,6 +5389,7 @@ async function resetQuarantine() {
     })();
 
     function forceResumeActiveMediaInBg() {
+        if (!isBgPlayAllowed()) { stopAllPlaybackOnTvExit(); return; }
         if (bgUserPaused) return;
         try { if (typeof remotePlayer !== 'undefined' && remotePlayer && remotePlayer.isConnected) return; } catch (e) {}
         const bgAud = document.getElementById('bgAudioPlayer');
@@ -5371,16 +5421,27 @@ async function resetQuarantine() {
         refreshNowPlaying();
     }
 
-    // Uygulama arka plana alınınca veya ekran kilitlenince saf ses (<audio>) köprüsünü devreye sok, ekrana dönünce <video>'ya aktar
+    // Uygulama arka plana alınınca: Mobilde saf ses (<audio>) köprüsünü devreye sok; TV / Mi Stick'te ise yayını tamamen durdur
     (function keepAudioInBackground() {
         const onBgChange = () => {
             lastBgTransitionAt = Date.now();
             if (isPageReallyHidden()) {
+                if (!isBgPlayAllowed()) {
+                    stopAllPlaybackOnTvExit();
+                    return;
+                }
                 forceResumeActiveMediaInBg();
                 [80, 260, 700].forEach(ms => setTimeout(() => {
                     if (isPageReallyHidden() && !bgUserPaused) forceResumeActiveMediaInBg();
                 }, ms));
             } else {
+                if (!isBgPlayAllowed() && tvStoppedOnExit) {
+                    tvStoppedOnExit = false;
+                    bgUserPaused = false;
+                    ytUserPaused = false;
+                    if (curIdx >= 0 && allChannels[curIdx]) play(curIdx, 0);
+                    return;
+                }
                 if (bgAudioActive) {
                     stopBgAudioBridge(true);
                 } else if (!bgUserPaused) {
@@ -5395,8 +5456,26 @@ async function resetQuarantine() {
         };
         document.addEventListener('visibilitychange', onBgChange, true);
         window.addEventListener('pagehide', onBgChange, true);
-        window.addEventListener('pageshow', () => { if (!isPageReallyHidden() && bgAudioActive) stopBgAudioBridge(true); }, true);
-        window.addEventListener('focus', () => { if (!isPageReallyHidden() && bgAudioActive) stopBgAudioBridge(true); }, true);
+        window.addEventListener('pageshow', () => {
+            if (!isPageReallyHidden()) {
+                if (!isBgPlayAllowed() && tvStoppedOnExit) {
+                    tvStoppedOnExit = false; bgUserPaused = false; ytUserPaused = false;
+                    if (curIdx >= 0 && allChannels[curIdx]) play(curIdx, 0);
+                } else if (bgAudioActive) {
+                    stopBgAudioBridge(true);
+                }
+            }
+        }, true);
+        window.addEventListener('focus', () => {
+            if (!isPageReallyHidden()) {
+                if (!isBgPlayAllowed() && tvStoppedOnExit) {
+                    tvStoppedOnExit = false; bgUserPaused = false; ytUserPaused = false;
+                    if (curIdx >= 0 && allChannels[curIdx]) play(curIdx, 0);
+                } else if (bgAudioActive) {
+                    stopBgAudioBridge(true);
+                }
+            }
+        }, true);
     })();
 
 
@@ -5476,6 +5555,10 @@ async function resetQuarantine() {
 
     /* ===== ARKA PLANDA DURAKLAMAYI GERİ AL (APK uygulama küçülünce / ekran kilitliyken) ===== */
     function bgKeep() {
+        if (!isBgPlayAllowed()) {
+            if (isPageReallyHidden()) stopAllPlaybackOnTvExit();
+            return;
+        }
         if (bgUserPaused) return;
         if (isPageReallyHidden() || !document.hasFocus()) {
             forceResumeActiveMediaInBg();
@@ -8185,6 +8268,9 @@ function playAudioDirect(video, url, token) {
             hideControlsNow();
             return 1;
         }
+        if (!isBgPlayAllowed()) {
+            stopAllPlaybackOnTvExit();
+        }
         return 0;
     }
     // Geri: önce yazı kutusu, sonra sekmeler, sonra menü kapanır. 1 dönerse işlendi.
@@ -9059,6 +9145,12 @@ function playAudioDirect(video, url, token) {
             });
         }
         vid.addEventListener('pause', () => {
+            if (!isBgPlayAllowed()) {
+                if (isPageReallyHidden()) { stopAllPlaybackOnTvExit(); return; }
+                document.getElementById('playIcon').innerText = 'play_arrow';
+                updateSeekBarUI(false);
+                return;
+            }
             if (bgAudioActive) { refreshNowPlaying(); return; }
             if (!bgUserPaused && !vid.ended && (vid.currentSrc || vid.src) && (isPageReallyHidden() || !document.hasFocus() || Date.now() - lastBgTransitionAt < 2500)) {
                 lastBgTransitionAt = Date.now();
