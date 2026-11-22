@@ -1237,6 +1237,7 @@
             document.getElementById('pStatus').innerText = "Cihazda İzleniyor (YT)";
             document.getElementById('bufSpinner').style.display = 'none';
             if (curIdx >= 0 && allChannels[curIdx]) markChannelHealthy(allChannels[curIdx]);
+            try { if (ytWatchId) ytHealOnPlaying(ytWatchId, currentPlaySession); } catch (e) {}
         } else if (event.data === YT.PlayerState.PAUSED) {
             document.getElementById('bufSpinner').style.display = 'none';
             if (isBgPlayAllowed() && !ytUserPaused && !bgUserPaused && (typeof isPageReallyHidden === 'function' && (isPageReallyHidden() || !document.hasFocus()))) {
@@ -1248,7 +1249,12 @@
             document.getElementById('playIcon').innerText = 'play_arrow';
             try { refreshNowPlaying(); } catch (e) {}
         } else if (event.data === YT.PlayerState.ENDED) {
-            nextCh(); // Video bitince sonrakine geçer
+            // Canlı yayın bittiyse önce kanalın güncel canlı yayını aranır; yoksa (veya normal videoysa) sonrakine geçer
+            const chE = allChannels[curIdx], idE = ytWatchId, tokE = currentPlaySession;
+            if (chE && idE && !chE._ytEndHeal && ytHealOn() && ytChMap[idE] && ytChMap[idE].lv) {
+                chE._ytEndHeal = true;
+                ytHealRun(chE, tokE, 'ended', idE).then(ok => { if (!ok && tokE === currentPlaySession) nextCh(); }, () => { nextCh(); });
+            } else nextCh(); // Video bitince sonrakine geçer
         }
     }
 
@@ -1256,6 +1262,16 @@
     function onYtPlayerError(event) {
         const c = event.data;
         if (c === 152 || c === 153 || c === 15) { showOSD("YouTube oynatmayı reddetti (" + c + ")", "Sayfayı file:// yerine https adresinden açın"); document.getElementById('pStatus').innerText = "YouTube engelledi"; return; }
+        const chE = allChannels[curIdx], tokE = currentPlaySession;
+        if (chE && ytWatchId && ytHealOn()) {
+            // Video kalktı / gömülemiyor: önce aynı kanalın güncel canlı yayınını bul, olmazsa eskisi gibi atla
+            ytHealRun(chE, tokE, 'error', ytWatchId).then(ok => {
+                if (ok || tokE !== currentPlaySession) return;
+                if (c === 101 || c === 150) showOSD("Bu video gömülü oynatılamıyor", "Atlanıyor...");
+                handleStreamError(tokE);
+            }, () => { handleStreamError(tokE); });
+            return;
+        }
         if (c === 101 || c === 150) showOSD("Bu video gömülü oynatılamıyor", "Atlanıyor...");
         handleStreamError(currentPlaySession);
     }
@@ -3015,7 +3031,22 @@ async function resetQuarantine() {
     }
 
 
+    // Yayın hatasında önce kanalın güncel canlı yayını aranır; bulunamazsa eskisi gibi sonraki kanala geçilir
     function handleStreamError(sessionToken) {
+        if (sessionToken !== undefined && sessionToken !== currentPlaySession) return;
+        const hc = allChannels[curIdx];
+        if (!isErrorHandling && hc && !hc.broken && (hc._healN || 0) < 2 && ytHealOn()) {
+            const tok = currentPlaySession;
+            isErrorHandling = true;
+            ytHealRun(hc, tok, 'error').then(ok => {
+                isErrorHandling = false;
+                if (!ok && tok === currentPlaySession) handleStreamErrorCore(tok);
+            }, () => { isErrorHandling = false; handleStreamErrorCore(tok); });
+            return;
+        }
+        handleStreamErrorCore(sessionToken);
+    }
+    function handleStreamErrorCore(sessionToken) {
         if (sessionToken !== undefined && sessionToken !== currentPlaySession) return;
         if (isErrorHandling || curIdx === -1 || !allChannels[curIdx]) return;
         const ch = allChannels[curIdx]; if (ch.broken) return;
@@ -3053,6 +3084,394 @@ async function resetQuarantine() {
         }, waitTime);
     }
 
+
+    /* ===== YT-CANLI-KURTARMA BEGIN =====
+       Bağlantı kopunca (yayın bitti / video kalktı / adres yenilendi) kanalın en güncel canlı yayınını bulup oynatır.
+       • YouTube kanalları: ~2 sn içinde oynamazsa (hata, bitti, açılmadı) aynı YouTube kanalının şu an canlı olan yayını aranır.
+         Öncelik gerçek canlı yayındır; canlı yoksa kanalın son yayını açılır. Bulunan yeni adres kanalın kayıtlı adresine yazılır.
+       • Diğer kanallar (HLS vb.): ~2 sn içinde açılmazsa aynı adlı kanalın başka kaynaklardaki adresi, yoksa YouTube'daki canlı yayını denenir.
+       • Kapatmak için: localStorage.setItem('tv_heal_off','1')  ·  Süre: YT_HEAL_MS
+    */
+    var YT_HEAL_MS = 2000;
+    var YT_CHMAP_KEY = 'tv_yt_chmap', YT_ALIAS_KEY = 'tv_heal_alias';
+    var ytChMap = {}, healAlias = {}, ytHealMemo = {}, ytHealTimer = null, ytPlayChecked = '', ytHealFailAt = {};
+    try { ytChMap = JSON.parse(localStorage.getItem(YT_CHMAP_KEY) || '{}') || {}; } catch (e) { ytChMap = {}; }
+    try { healAlias = JSON.parse(localStorage.getItem(YT_ALIAS_KEY) || '{}') || {}; } catch (e) { healAlias = {}; }
+
+    function ytHealOn() { try { return localStorage.getItem('tv_heal_off') !== '1'; } catch (e) { return true; } }
+    function ytLsSave(key, obj, max) {
+        try {
+            const ks = Object.keys(obj);
+            if (ks.length > max) ks.sort((a, b) => ((obj[a] && obj[a].t) || 0) - ((obj[b] && obj[b].t) || 0)).slice(0, ks.length - max).forEach(k => { delete obj[k]; });
+            localStorage.setItem(key, JSON.stringify(obj));
+        } catch (e) {}
+    }
+    function ytValidId(id) { return /^[\w-]{11}$/.test(id || ''); }
+    function ytVidUrl(id) { return 'https://www.youtube.com/watch?v=' + id; }
+    function ytPState() { try { return ytPlayer.getPlayerState(); } catch (e) { return -2; } }
+    // Kayıtlı adres yerine geçici/yeni adres varsa (2 saat geçerli) onu döndürür
+    function ytAliasFor(url) {
+        try {
+            const a = healAlias[url];
+            if (!a) return url;
+            if (a.u && Date.now() - a.t < 2 * 3600e3) return a.u;
+            delete healAlias[url];
+        } catch (e) {}
+        return url;
+    }
+
+    // ---- ad benzerliği (aynı kanalın başka kaynaktaki karşılığını bulmak için) ----
+    function ytNameKey(s) { return normTxt(s).replace(/[^a-z0-9 ]/g, ' ').replace(/\b(hd|sd|fhd|uhd|canli|yayin|yayini|izle|live|tv|resmi|official)\b/g, ' ').replace(/\s+/g, ' ').trim(); }
+    function ytTokens(s) { return ytNameKey(s).split(' ').filter(w => w.length > 1 || /\d/.test(w)); }
+    function ytLooseMatch(label, candTitle, candChan) {
+        const A = ytTokens(label), C = ytTokens(candChan), T = ytTokens(candTitle);
+        if (!A.length) return false;
+        if (C.length && C.every(w => A.includes(w))) return true;                      // kanal adı bizim etiketin içinde
+        return A.length >= 2 && A.every(w => C.includes(w) || T.includes(w));           // etiketin tüm sözcükleri sonuçta var
+    }
+
+    // ---- bir YouTube videosunun durumu: live | ended | gone | vod | unknown ----
+    async function ytProbeStatus(id) {
+        const key = getActiveApiKey();
+        if (key) {
+            try {
+                const r = await fetchTO(`https://www.googleapis.com/youtube/v3/videos?part=status,liveStreamingDetails&id=${encodeURIComponent(id)}&key=${encodeURIComponent(key)}`, 3000);
+                if (r.ok) {
+                    const d = await r.json(); const it = d && d.items && d.items[0];
+                    if (!it) return 'gone';
+                    if (it.status && (it.status.embeddable === false || it.status.privacyStatus === 'private')) return 'gone';
+                    const l = it.liveStreamingDetails;
+                    if (l) return l.actualEndTime ? 'ended' : 'live';
+                    return 'vod';
+                }
+            } catch (e) {}
+        }
+        try {
+            const r = await fetchTO('https://www.youtube.com/oembed?url=' + encodeURIComponent(ytVidUrl(id)) + '&format=json', 2500);
+            if (r.status === 404 || r.status === 401 || r.status === 403) return 'gone';
+        } catch (e) {}
+        return 'unknown';
+    }
+
+    // ---- videonun sahibi kanalı öğren (video silinmeden önce hatırlanır) ----
+    async function ytLearnChannel(id) {
+        if (!ytValidId(id)) return null;
+        const have = ytChMap[id]; if (have && (have.u || have.h)) return have;
+        const keep = (info) => { ytChMap[id] = Object.assign(ytChMap[id] || {}, info, { t: Date.now() }); ytLsSave(YT_CHMAP_KEY, ytChMap, 400); return ytChMap[id]; };
+        const key = getActiveApiKey();
+        if (key) {
+            try {
+                const r = await fetchTO(`https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails&id=${encodeURIComponent(id)}&key=${encodeURIComponent(key)}`, 4000);
+                if (r.ok) {
+                    const d = await r.json(); const it = d && d.items && d.items[0];
+                    if (it && it.snippet && it.snippet.channelId) return keep(Object.assign({ u: it.snippet.channelId, n: it.snippet.channelTitle || '' }, it.liveStreamingDetails ? { lv: 1 } : {}));
+                }
+            } catch (e) {}
+        }
+        try {
+            const r = await fetchTO('https://www.youtube.com/oembed?url=' + encodeURIComponent(ytVidUrl(id)) + '&format=json', 3500);
+            if (r.ok) { const d = await r.json(); if (d && d.author_url) return keep({ h: d.author_url, n: d.author_name || '' }); }
+        } catch (e) {}
+        return ytChMap[id] || null;
+    }
+    // Listelerdeki bütün YouTube kanallarının sahibini tek istekte (50'şerli) öğrenir; adresler bozulmadan önce hazır olsun
+    async function ytBackfillChannels() {
+        if (!ytHealOn()) return;
+        const key = getActiveApiKey(); if (!key) return;
+        const ids = new Set();
+        const take = u => { const id = extractYTId(u); if (ytValidId(id) && !(ytChMap[id] && (ytChMap[id].u || ytChMap[id].h))) ids.add(id); };
+        (allChannels || []).forEach(c => take(c && c.url));
+        Object.keys(extraChannelsDict || {}).forEach(k => { const a = extraChannelsDict[k]; if (Array.isArray(a)) a.forEach(c => take(c && c.url)); });
+        const list = [...ids].slice(0, 150);
+        let changed = false;
+        for (let i = 0; i < list.length; i += 50) {
+            try {
+                const r = await fetchTO(`https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails&id=${list.slice(i, i + 50).join(',')}&key=${encodeURIComponent(key)}`, 6000);
+                if (!r.ok) break;
+                const d = await r.json();
+                (d.items || []).forEach(it => {
+                    if (!it || !it.id || !it.snippet || !it.snippet.channelId) return;
+                    ytChMap[it.id] = Object.assign(ytChMap[it.id] || {}, { u: it.snippet.channelId, n: it.snippet.channelTitle || '', t: Date.now() }, it.liveStreamingDetails ? { lv: 1 } : {});
+                    changed = true;
+                });
+            } catch (e) { break; }
+        }
+        if (changed) ytLsSave(YT_CHMAP_KEY, ytChMap, 400);
+    }
+
+    // ---- kanalın şu anki canlı yayınını bul (kaynaklar paralel; ilk gerçek canlı yayın kazanır) ----
+    function ytFirstLive(promises) {
+        return new Promise(resolve => {
+            let left = promises.length, best = null, timer = null;
+            if (!left) { resolve(null); return; }
+            const done = v => { clearTimeout(timer); resolve(v); };
+            promises.forEach(p => {
+                Promise.resolve(p).then(r => {
+                    if (r && ytValidId(r.id)) {
+                        if (r.live) { done(r); return; }
+                        if (!best) { best = r; timer = setTimeout(() => done(best), 2500); }   // canlı olmayan bulundu: gerçek canlı için kısa süre daha bekle
+                    }
+                }, () => {}).then(() => { if (--left === 0) done(best); });
+            });
+        });
+    }
+    async function ytApiLive(ucid, key) {
+        const base = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=3&channelId=${encodeURIComponent(ucid)}&key=${encodeURIComponent(key)}`;
+        let r = await fetchTO(base + '&eventType=live', 4500);
+        if (!r.ok) throw new Error('api ' + r.status);
+        let d = await r.json(), it = d && d.items && d.items[0];
+        if (it && it.id && ytValidId(it.id.videoId)) return { id: it.id.videoId, live: true, title: (it.snippet || {}).title || '', ch: (it.snippet || {}).channelTitle || '' };
+        r = await fetchTO(base + '&eventType=completed&order=date', 4500);
+        if (!r.ok) return null;
+        d = await r.json(); it = d && d.items && d.items[0];
+        if (it && it.id && ytValidId(it.id.videoId)) return { id: it.id.videoId, live: false, title: (it.snippet || {}).title || '', ch: (it.snippet || {}).channelTitle || '' };
+        return null;
+    }
+    // Anahtarsız yol: kanalın /live sayfası canlı yayına yönlenir (canonical adres canlı videoyu gösterir)
+    async function ytScrapeLive(info) {
+        const base = info.u ? 'https://www.youtube.com/channel/' + info.u : String(info.h || '').replace(/\/+$/, '');
+        if (!/^https:\/\/www\.youtube\.com\//.test(base)) return null;
+        const html = await fetchHtmlViaProxy(base + '/live', 6000);
+        const m = html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([\w-]{11})"/);
+        if (!m) return null;
+        return { id: m[1], live: /"liveBroadcastDetails"\s*:\s*\{\s*"isLiveNow"\s*:\s*true/.test(html), title: '', ch: info.n || '' };
+    }
+    async function ytKeylessLive(ucid) {
+        const jobs = [];
+        ytSortHosts(INVID).slice(0, 2).forEach(a => jobs.push((async () => {
+            const d = await ytFetchJson(`${a}/api/v1/channels/${encodeURIComponent(ucid)}/streams`, null, 4500);
+            const arr = Array.isArray(d) ? d : ((d && d.videos) || []);
+            const v = arr.find(x => x && x.liveNow && ytValidId(x.videoId));
+            if (v) return { id: v.videoId, live: true, title: v.title || '', ch: v.author || '' };
+            const n = arr.find(x => x && ytValidId(x.videoId));
+            return n ? { id: n.videoId, live: false, title: n.title || '', ch: n.author || '' } : null;
+        })()));
+        ytSortHosts(PIPED).slice(0, 2).forEach(a => jobs.push((async () => {
+            const d = await ytFetchJson(`${a}/channel/${encodeURIComponent(ucid)}`, null, 4500);
+            const pick = x => { const m = String((x && x.url) || '').match(/[?&]v=([\w-]{11})/); return m ? m[1] : ''; };
+            const v = ((d && d.relatedStreams) || []).find(x => x && x.duration === -1 && pick(x));
+            return v ? { id: pick(v), live: true, title: v.title || '', ch: (d && d.name) || '' } : null;
+        })()));
+        return await ytFirstLive(jobs);
+    }
+    // Kanal sahibi bilinmiyorsa (video çoktan silinmiş) kanal adıyla canlı yayın ara; yalnızca ad yeterince benziyorsa kabul et
+    async function ytSearchByName(label, key) {
+        const q = String(label || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+        if (!q) return null;
+        const r = await fetchTO(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&eventType=live&maxResults=10&q=${encodeURIComponent(q)}&key=${encodeURIComponent(key)}`, 4500);
+        if (!r.ok) return null;
+        const d = await r.json();
+        for (const it of (d.items || [])) {
+            if (!it || !it.id || !ytValidId(it.id.videoId) || !it.snippet) continue;
+            if (ytLooseMatch(label, it.snippet.title, it.snippet.channelTitle)) return { id: it.id.videoId, live: true, title: it.snippet.title || '', ch: it.snippet.channelTitle || '', u: it.snippet.channelId || '' };
+        }
+        return null;
+    }
+    async function ytFindLive(info, label) {
+        const key = getActiveApiKey();
+        const jobs = [];
+        if (info && info.u) {
+            if (key) jobs.push(ytApiLive(info.u, key));
+            jobs.push(ytScrapeLive(info));
+            jobs.push(ytKeylessLive(info.u));
+        } else if (info && info.h) {
+            jobs.push(ytScrapeLive(info));
+        }
+        let res = jobs.length ? await ytFirstLive(jobs) : null;
+        if (!res && !info && key && label) { try { res = await ytSearchByName(label, key); } catch (e) {} }
+        if (res && !res.u && info && info.u) res.u = info.u;
+        return res;
+    }
+
+    // ---- bulunan yeni adresi kanalın her yerdeki kaydına işle (liste, favori, sıralama, ek kanallar) ----
+    function ytReplaceUrl(ch, oldUrl, newUrl) {
+        if (!oldUrl || !newUrl || oldUrl === newUrl) return;
+        ch.url = newUrl; ch.broken = false;
+        try {
+            brokenUrls = brokenUrls.filter(u => u !== oldUrl && u !== newUrl);
+            localStorage.setItem('tv_broken', JSON.stringify(brokenUrls));
+            const fi = favUrls.indexOf(oldUrl);
+            if (fi !== -1) { favUrls[fi] = newUrl; localStorage.setItem('tv_favorites', JSON.stringify(favUrls)); }
+            let exChanged = false;
+            Object.keys(extraChannelsDict).forEach(k => {
+                const a = extraChannelsDict[k]; if (!Array.isArray(a)) return;
+                a.forEach(ex => { if (ex && (ex.id === ch.id || ex.url === oldUrl)) { ex.url = newUrl; exChanged = true; } });
+            });
+            if (exChanged) localStorage.setItem('tv_extras_dict', JSON.stringify(extraChannelsDict));
+            Object.keys(customOrdersDict).forEach(k => { const a = customOrdersDict[k]; if (Array.isArray(a)) { const i = a.indexOf(oldUrl); if (i !== -1) a[i] = newUrl; } });
+            localStorage.setItem('tv_custom_orders', JSON.stringify(customOrdersDict));
+            persistLocalIfNeeded();
+        } catch (e) {}
+    }
+    function ytApplyFound(ch, found, oldId, info, token) {
+        const oldUrl = ch.url, newUrl = ytVidUrl(found.id);
+        const rec = Object.assign({}, info || {});
+        if (found.u) rec.u = found.u;
+        rec.n = found.ch || rec.n || ''; rec.lv = 1; rec.t = Date.now();
+        ytChMap[found.id] = rec; ytLsSave(YT_CHMAP_KEY, ytChMap, 400);
+        if (ytValidId(extractYTId(oldUrl))) ytReplaceUrl(ch, oldUrl, newUrl);     // yalnızca kayıtlı adres zaten YouTube ise kalıcı yaz
+        healAlias[oldUrl] = { u: newUrl, t: Date.now() }; ytLsSave(YT_ALIAS_KEY, healAlias, 100);
+        ytHealMemo = {};
+        showOSD(found.live ? 'Canlı yayın bulundu' : 'Canlı yayın yok · son yayın açılıyor', found.ch || ch.name);
+        playLocally(newUrl, token);
+    }
+
+    async function ytHealYt(ch, token, reason, oldId) {
+        if (!ytValidId(oldId)) return false;
+        let info = ytChMap[oldId];
+        if (!(info && (info.u || info.h))) info = await ytLearnChannel(oldId);
+        if (token !== currentPlaySession) return true;
+        const found = await ytFindLive(info, ch.name);
+        if (token !== currentPlaySession) return true;
+        if (!found || !ytValidId(found.id) || found.id === oldId) return false;
+        if (reason === 'stale' && !found.live) return false;            // oynayan zaten son yayın; daha iyisi yok
+        const st = await ytProbeStatus(found.id);
+        if (token !== currentPlaySession) return true;
+        if (st === 'gone') return false;
+        ytApplyFound(ch, found, oldId, info, token);
+        return true;
+    }
+
+    // ---- YouTube dışı kanallar: aynı adlı kanalın başka kaynaktaki adresi, olmazsa YouTube'daki canlı yayını ----
+    async function ytFindOther(ch, token) {
+        const want = ytNameKey(ch.name);
+        const here = String(ch.url || '').split('#')[0];
+        const cands = [];
+        if (want.length >= 3) {
+            let pool = [];
+            try { pool = await Promise.race([loadTrCommunityStreams(), new Promise(r => setTimeout(() => r([]), 6000))]); } catch (e) {}
+            for (const c of (pool || [])) {
+                if (c && c.url && c.url !== here && ytNameKey(c.name) === want && !cands.includes(c.url)) cands.push(c.url);
+                if (cands.length >= 6) break;
+            }
+        }
+        if (token !== currentPlaySession) return null;
+        if (cands.length) {
+            try {
+                const u = await Promise.any(cands.slice(0, 4).map(async cu => { const r = await verifyAndResolveStream(cu, 4000); if (!r.ok || !r.url) throw new Error('x'); return r.url; }));
+                if (u) return { url: u, kind: 'list' };
+            } catch (e) {}
+        }
+        if (token !== currentPlaySession) return null;
+        const key = getActiveApiKey();
+        if (key && want.length >= 3) {
+            try {
+                const f = await ytSearchByName(ch.name, key);
+                if (f && f.live) { ytChMap[f.id] = { u: f.u || '', n: f.ch || '', lv: 1, t: Date.now() }; ytLsSave(YT_CHMAP_KEY, ytChMap, 400); return { url: ytVidUrl(f.id), kind: 'yt', ch: f.ch }; }
+            } catch (e) {}
+        }
+        return null;
+    }
+    async function ytHealOther(ch, token, reason) {
+        const alt = await ytFindOther(ch, token);
+        if (token !== currentPlaySession) return true;
+        if (!alt) return false;
+        const v = document.getElementById('localPlayer');
+        if (reason === 'timeout' && v && v.readyState >= 2) return true;     // asıl yayın bu arada açıldı: dokunma
+        const old = ch.url;
+        healAlias[old] = { u: alt.url, t: Date.now() }; ytLsSave(YT_ALIAS_KEY, healAlias, 100);   // kayıtlı adres değişmez; 2 saatliğine yedek kullanılır
+        ytHealMemo = {};
+        showOSD(alt.kind === 'yt' ? "YouTube'da canlı yayın bulundu" : 'Yedek kaynak bulundu', alt.kind === 'yt' ? (alt.ch || ch.name) : ch.name);
+        playLocally(alt.url, token, true);
+        return true;
+    }
+
+    // ---- ortak giriş: aynı oynatma oturumunda tek kurtarma çalışır ----
+    function ytHealEligible(ch, isYt) {
+        if (!ch || ch._mvRaw || ch._mvKind) return false;
+        const u = String(ch.url || '');
+        if (!u || u.startsWith('mv_lazy:') || u.startsWith('#web_embed#')) return false;
+        if (/#audio|\.(mp3|aac|ogg)(\?|$)/i.test(u)) return false;
+        if (String(currentListContext).startsWith('ytpl_')) return false;          // YouTube oynatma listesi: bölümler canlı değildir
+        if (isYt) return true;
+        return ch._playDir === 0 || !!ch.isFavorite || String(ch.id || '').startsWith('ch_ex_');   // diğer kanallarda yalnızca seçilen/favori/eklenen kanallar (hızlı geçişi yavaşlatmasın)
+    }
+    function ytHealRun(ch, token, reason, curId) {
+        if (!ytHealOn() || !ch) return Promise.resolve(false);
+        if (ytHealMemo && ytHealMemo.token === token && ytHealMemo.p) return ytHealMemo.p;
+        const yid = curId || extractYTId(ytAliasFor(ch.url));
+        const isYt = ytValidId(yid);
+        if (!ytHealEligible(ch, isYt)) return Promise.resolve(false);
+        if ((ch._healN || 0) >= 2) return Promise.resolve(false);
+        const fk = ch.url;
+        if (Date.now() - (ytHealFailAt[fk] || 0) < 600000) return Promise.resolve(false);   // 10 dk içinde başarısız olduysa tekrar arama (kota/hız)
+        ch._healN = (ch._healN || 0) + 1;
+        try { delete healAlias[ch.url]; } catch (e) {}
+        try { document.getElementById('pStatus').innerText = 'Canlı yayın aranıyor...'; } catch (e) {}
+        const p = (isYt ? ytHealYt(ch, token, reason, yid) : ytHealOther(ch, token, reason)).then(
+            ok => { if (!ok) ytHealFailAt[fk] = Date.now(); return !!ok; },
+            () => { ytHealFailAt[fk] = Date.now(); return false; }
+        );
+        ytHealMemo = { token, p };
+        return p;
+    }
+
+    // ---- YouTube nöbetçisi: ~2 sn içinde oynamıyorsa gerçekten kopuk mu bakar, kopuksa kurtarır ----
+    function ytHealArm(ytId, token) {
+        if (!ytHealOn()) return;
+        clearTimeout(ytHealTimer);
+        let round = 0;
+        const tick = async () => {
+            try {
+                if (token !== currentPlaySession) return;
+                const ch = allChannels[curIdx]; if (!ch || ch._mvRaw || ch._mvKind) return;
+                round++;
+                if (ytPState() === 1) { ytHealOnPlaying(ytId, token); return; }
+                const stat = await ytProbeStatus(ytId);
+                if (token !== currentPlaySession) return;
+                const st2 = ytPState();
+                if (st2 === 1) { ytHealOnPlaying(ytId, token); return; }
+                const dead = stat === 'gone' || stat === 'ended';
+                const stuck = stat === 'unknown' && ((round >= 2 && st2 !== 3) || round >= 3);   // anahtar yoksa: açılmıyor / uzun süre yükleniyor
+                if (dead || stuck) { ytHealRun(ch, token, 'timeout', ytId).then(() => {}, () => {}); return; }
+                if (round < 3) ytHealTimer = setTimeout(tick, YT_HEAL_MS);                        // yayın canlı ama yavaş açılıyor: biraz daha bekle
+            } catch (e) {}
+        };
+        ytHealTimer = setTimeout(tick, YT_HEAL_MS);
+    }
+    // Oynamaya başladı: canlı mı diye bak. Daha önce canlıydı ama şimdi tekrar/bitmiş yayın oynuyorsa güncel canlıyı ara
+    async function ytHealOnPlaying(id, token) {
+        try {
+            if (!ytHealOn()) return;
+            const k = token + ':' + id; if (ytPlayChecked === k) return; ytPlayChecked = k;
+            await new Promise(r => setTimeout(r, 1500));
+            if (token !== currentPlaySession) return;
+            const ch = allChannels[curIdx]; if (!ch) return;
+            let isLive = false;
+            try {
+                const vd = ytPlayer.getVideoData ? ytPlayer.getVideoData() : null;
+                isLive = (vd && typeof vd.isLive === 'boolean') ? vd.isLive : (Number(ytPlayer.getDuration() || 0) === 0);
+            } catch (e) {}
+            const cur = ytChMap[id] || {};
+            if (isLive) {
+                if (!cur.lv) { cur.lv = 1; cur.t = Date.now(); ytChMap[id] = cur; ytLsSave(YT_CHMAP_KEY, ytChMap, 400); }
+                if (!cur.u && !cur.h) ytLearnChannel(id).catch(() => {});
+                return;
+            }
+            const st = await ytProbeStatus(id);
+            if (token !== currentPlaySession) return;
+            if (st === 'ended' && !cur.lv) { cur.lv = 1; cur.t = Date.now(); ytChMap[id] = cur; ytLsSave(YT_CHMAP_KEY, ytChMap, 400); }
+            const liveType = !!(ytChMap[id] && ytChMap[id].lv);
+            if (!(cur.u || cur.h)) ytLearnChannel(id).catch(() => {});
+            if (liveType && (st === 'ended' || st === 'gone' || st === 'unknown')) await ytHealRun(ch, token, 'stale', id);
+        } catch (e) {}
+    }
+    // Diğer kanallar: ~2 sn içinde ilk görüntü gelmediyse arka planda yedek ara (asıl yayın yüklenmeye devam eder)
+    function ytHealArmOther(ch, token, video) {
+        if (!ytHealOn() || !ch || ch._mvRaw || ch._mvKind) return;
+        clearTimeout(ytHealTimer);
+        ytHealTimer = setTimeout(() => {
+            try {
+                if (token !== currentPlaySession) return;
+                if (video.readyState >= 2) return;
+                const cur = allChannels[curIdx]; if (!cur || cur.id !== ch.id) return;
+                ytHealRun(ch, token, 'timeout').then(() => {}, () => {});
+            } catch (e) {}
+        }, YT_HEAL_MS);
+    }
+    setTimeout(() => { try { ytBackfillChannels(); } catch (e) {} }, 9000);
+    setTimeout(() => { try { if (!isDataSaver && ytHealOn()) loadTrCommunityStreams().catch(() => {}); } catch (e) {} }, 25000);
+    /* ===== YT-CANLI-KURTARMA END ===== */
 
     /* ===== YOUTUBE & STREAM ENGINE: çok kaynaklı, nazik (rate-limit dostu) reklamsız akış çözücü =====
        Kaynaklar: Piped API · Invidious API · (ikisi de CORS/bölge engeline karşı kendi Cloudflare worker'ınız üzerinden) · Invidious /latest_version yönlendirmesi.
@@ -3328,6 +3747,7 @@ async function resetQuarantine() {
         // Dailymotion/web akışları imzalı (token'lı) ve kısa ömürlü: 3 dakikadan eskiyse yeniden çöz (403 Forbidden önlemi)
         if (ch._mvRaw && ch._mvResolved && ch._mvResolvedAt && (Date.now() - ch._mvResolvedAt > 180000) && isTokenBoundRaw(ch._mvRaw)) { ch._mvResolved = null; ch.url = 'mv_lazy:fresh'; }
         ch._dmRetried = false;
+        ch._healN = 0; ch._ytEndHeal = false; ch._playDir = dir;
         if (ch._mvRaw && (!ch._mvResolved || !ch.url || ch.url.startsWith('mv_lazy:'))) {
             document.getElementById('pStatus').innerText = "Video Kaynağı Çözülüyor...";
             document.getElementById('bufSpinner').style.display = 'block';
@@ -3354,7 +3774,7 @@ async function resetQuarantine() {
             }
         }
         if (typeof castShown !== 'undefined' && castShown) { castLoad(ch).catch(e => showOSD('Cast başarısız', String(e && e.message || e).slice(0, 90))); return; }
-        playLocally(ch.url, mySession);
+        playLocally(ytAliasFor(ch.url), mySession);
     }
 
 
@@ -3551,6 +3971,7 @@ async function resetQuarantine() {
             if (isYtApiReady && ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
                 ytPlayer.loadVideoById(ytId);
                 ytWatchStart(ytId);
+                try { ytHealArm(ytId, sessionToken); } catch (e) {}
                 document.getElementById('pStatus').innerText = "Cihazda İzleniyor (YT)";
                 setTimeout(() => {
                     try {
@@ -3587,6 +4008,7 @@ async function resetQuarantine() {
         const cleanStreamUrl = url.split('#')[0];
         const forceProxyFirst = url.includes('#cors_proxy');
         const isDirectVideoFile = /\.(mp4|m4v|webm|ogv|mov|mkv)(\?|$)/i.test(cleanStreamUrl) || url.includes('#direct_video') || /archive\.org\/download\/|wikimedia\.org\//i.test(cleanStreamUrl);
+        if (!isDirectVideoFile) { try { ytHealArmOther(allChannels[curIdx], sessionToken, video); } catch (e) {} }
 
 
         if (isDirectVideoFile) {
