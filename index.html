@@ -3092,7 +3092,8 @@ async function resetQuarantine() {
        • Diğer kanallar (HLS vb.): ~2 sn içinde açılmazsa aynı adlı kanalın başka kaynaklardaki adresi, yoksa YouTube'daki canlı yayını denenir.
        • Kapatmak için: localStorage.setItem('tv_heal_off','1')  ·  Süre: YT_HEAL_MS
     */
-    var YT_HEAL_MS = 2000;
+    var YT_HEAL_MS = 2000;      // YouTube kanalları
+    var YT_HEAL_OTHER_MS = 4000; // m3u8 vb. diğer kanallar
     var YT_CHMAP_KEY = 'tv_yt_chmap', YT_ALIAS_KEY = 'tv_heal_alias';
     var ytChMap = {}, healAlias = {}, ytHealMemo = {}, ytHealTimer = null, ytPlayChecked = '', ytHealFailAt = {};
     try { ytChMap = JSON.parse(localStorage.getItem(YT_CHMAP_KEY) || '{}') || {}; } catch (e) { ytChMap = {}; }
@@ -3360,6 +3361,22 @@ async function resetQuarantine() {
                 if (f && f.live) { ytChMap[f.id] = { u: f.u || '', n: f.ch || '', lv: 1, t: Date.now() }; ytLsSave(YT_CHMAP_KEY, ytChMap, 400); return { url: ytVidUrl(f.id), kind: 'yt', ch: f.ch }; }
             } catch (e) {}
         }
+        if (token !== currentPlaySession) return null;
+        if (want.length >= 3) { try { const dm = await ytSearchDailymotionLive(ch.name); if (dm) return dm; } catch (e) {} }
+        return null;
+    }
+    // Dailymotion'da kanal adına benzeyen şu an canlı yayını bul (herkese açık API)
+    async function ytSearchDailymotionLive(label) {
+        const q = String(label || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+        if (!q) return null;
+        const r = await fetchTO('https://api.dailymotion.com/videos?flags=live_onair&limit=10&fields=id,title,owner.screenname&search=' + encodeURIComponent(q), 5000);
+        if (!r.ok) return null;
+        const d = await r.json();
+        for (const it of (d.list || [])) {
+            if (!it || !it.id || !ytLooseMatch(label, it.title, it['owner.screenname'])) continue;
+            const m3u8 = await resolveDailymotionM3u8(it.id);
+            if (m3u8) { const v = await verifyAndResolveStream(m3u8, 4000); if (v.ok) return { url: v.url || m3u8, kind: 'dm', ch: it['owner.screenname'] || '' }; }
+        }
         return null;
     }
     async function ytHealOther(ch, token, reason) {
@@ -3371,19 +3388,19 @@ async function resetQuarantine() {
         const old = ch.url;
         healAlias[old] = { u: alt.url, t: Date.now() }; ytLsSave(YT_ALIAS_KEY, healAlias, 100);   // kayıtlı adres değişmez; 2 saatliğine yedek kullanılır
         ytHealMemo = {};
-        showOSD(alt.kind === 'yt' ? "YouTube'da canlı yayın bulundu" : 'Yedek kaynak bulundu', alt.kind === 'yt' ? (alt.ch || ch.name) : ch.name);
+        showOSD(alt.kind === 'yt' ? "YouTube'da canlı yayın bulundu" : alt.kind === 'dm' ? "Dailymotion'da canlı yayın bulundu" : 'Yedek kaynak bulundu', (alt.kind === 'list' ? ch.name : (alt.ch || ch.name)));
         playLocally(alt.url, token, true);
         return true;
     }
 
     // ---- ortak giriş: aynı oynatma oturumunda tek kurtarma çalışır ----
-    function ytHealEligible(ch, isYt) {
+    function ytHealEligible(ch, isYt, reason) {
         if (!ch || ch._mvRaw || ch._mvKind) return false;
         const u = String(ch.url || '');
         if (!u || u.startsWith('mv_lazy:') || u.startsWith('#web_embed#')) return false;
         if (/#audio|\.(mp3|aac|ogg)(\?|$)/i.test(u)) return false;
         if (String(currentListContext).startsWith('ytpl_')) return false;          // YouTube oynatma listesi: bölümler canlı değildir
-        if (isYt) return true;
+        if (isYt || reason === 'timeout') return true;     // 4 sn içinde açılmayan her kanal
         return ch._playDir === 0 || !!ch.isFavorite || String(ch.id || '').startsWith('ch_ex_');   // diğer kanallarda yalnızca seçilen/favori/eklenen kanallar (hızlı geçişi yavaşlatmasın)
     }
     function ytHealRun(ch, token, reason, curId) {
@@ -3391,7 +3408,7 @@ async function resetQuarantine() {
         if (ytHealMemo && ytHealMemo.token === token && ytHealMemo.p) return ytHealMemo.p;
         const yid = curId || extractYTId(ytAliasFor(ch.url));
         const isYt = ytValidId(yid);
-        if (!ytHealEligible(ch, isYt)) return Promise.resolve(false);
+        if (!ytHealEligible(ch, isYt, reason)) return Promise.resolve(false);
         if ((ch._healN || 0) >= 2) return Promise.resolve(false);
         const fk = ch.url;
         if (Date.now() - (ytHealFailAt[fk] || 0) < 600000) return Promise.resolve(false);   // 10 dk içinde başarısız olduysa tekrar arama (kota/hız)
@@ -3467,7 +3484,7 @@ async function resetQuarantine() {
                 const cur = allChannels[curIdx]; if (!cur || cur.id !== ch.id) return;
                 ytHealRun(ch, token, 'timeout').then(() => {}, () => {});
             } catch (e) {}
-        }, YT_HEAL_MS);
+        }, YT_HEAL_OTHER_MS);
     }
     setTimeout(() => { try { ytBackfillChannels(); } catch (e) {} }, 9000);
     setTimeout(() => { try { if (!isDataSaver && ytHealOn()) loadTrCommunityStreams().catch(() => {}); } catch (e) {} }, 25000);
